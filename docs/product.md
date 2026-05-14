@@ -1,7 +1,7 @@
 # Product Definition
 
 ## Product name
-未定
+TBD
 
 ## Target customers
 日本企业客户 / 据点管理员 / 受付担当者 / 邮件群发或出入管理相关业务用户。
