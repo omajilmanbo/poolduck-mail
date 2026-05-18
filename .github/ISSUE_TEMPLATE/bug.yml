@@ -1,1 +1,76 @@
+name: Bug Task
+description: 报告并跟踪一个可在 1-8 小时内修复的缺陷
+title: "[Bug] <short title>"
+labels:
+  - type:bug
+body:
+  - type: textarea
+    id: background
+    attributes:
+      label: Background
+      description: 缺陷出现的背景
+    validations:
+      required: true
 
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: 修复范围（1-8 小时可完成）
+    validations:
+      required: true
+
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+      description: 本次修复不包含什么
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: 修复后应满足的可验证结果
+    validations:
+      required: true
+
+  - type: textarea
+    id: tests
+    attributes:
+      label: Test requirements
+      description: 需覆盖 normal/error/permission/tenant/boundary/regression/manual
+    validations:
+      required: true
+
+  - type: input
+    id: recommended_labels
+    attributes:
+      label: Recommended labels
+      placeholder: type:bug, area:xxx, risk:xxx
+    validations:
+      required: true
+
+  - type: dropdown
+    id: risk_labels
+    attributes:
+      label: Risk labels
+      options:
+        - risk:low
+        - risk:medium
+        - risk:high
+        - risk:security
+        - risk:data
+    validations:
+      required: true
+
+  - type: dropdown
+    id: human_decision
+    attributes:
+      label: Human decision required
+      options:
+        - "No"
+        - "Yes"
+    validations:
+      required: true
