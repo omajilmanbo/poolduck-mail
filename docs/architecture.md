@@ -1,40 +1,98 @@
-# Architecture
+# 架构设计（Web SaaS, MVP）
 
-## System type
-B2B Web SaaS.
+## 1. 总体架构
 
-## Components
-- Frontend: TBD
-- Backend: TBD
-- Database: TBD
-- Authentication: TBD
-- Email: Gmail API / SES / SMTP, TBD
-- Hosting: TBD
-- CI/CD: GitHub Actions, TBD
+- 前端：Web 应用（浏览器访问）
+- 后端：REST API 服务
+- 数据库：数据存储方案待技术栈 ADR 最终确认（可为关系型或 NoSQL）
+- 认证：基于 token/session 的认证与授权
+- 邮件服务：通过 SMTP 或第三方邮件 API 发送
 
-## High-level flow
+## 2. 前端层
 
-Browser
-  ↓ HTTPS
-Frontend
-  ↓ API
-Backend
-  ↓
-Database / Email Provider / Logs
+- 登录页、扫码录入页、任务状态页、管理页
+- 调用 `/api/*` 后端接口
+- 按角色展示可见功能（普通用户/管理员）
 
-## Tenant model
-- Each customer company is a tenant.
-- Each user belongs to one tenant.
-- All business data must be scoped by tenant_id.
-- Frontend must not be trusted for tenant_id.
+## 3. 后端层
 
-## Subscription model
-- trial
-- active
-- expired
-- suspended
+- Auth 模块：登录、token 刷新、权限校验
+- Tenant 模块：租户管理与隔离
+- Subscription 模块：订阅状态与有效期校验
+- Scan 模块：扫码事件入库、幂等处理
+- Mail 模块：邮件任务创建、发送、重试
+- Audit 模块：关键操作审计日志
 
-## Security principles
-- Billing and authorization must be enforced in backend.
-- No production secrets in repository.
-- No cross-tenant access.
+## 4. 数据层
+
+- 单库多租户（shared DB + tenant_id 隔离）
+- 所有业务核心表包含 `tenant_id`
+- 查询默认附带 tenant scope，防止越权读取
+
+## 5. 认证与授权
+
+- MVP 使用账号密码登录
+- token 中包含 user_id / tenant_id / role
+- 基于 RBAC 执行接口级权限控制
+
+## 6. 邮件服务集成
+
+- 抽象邮件发送 provider 接口（便于替换 SMTP/第三方）
+- 保存发送请求与回执状态
+- 支持失败重试与死信标记（后续扩展）
+
+## 7. 租户模型
+
+- tenant 为一级隔离边界
+- user、device、scan_event、mail_job 均归属 tenant
+- 审计日志保留 tenant 与 operator 信息
+
+## 8. 订阅模型
+
+- subscription 与 tenant 一对一（MVP）
+- 关键字段：plan、status、start_at、end_at
+- API 请求进入业务前先执行 license check
+
+## 9. 安全原则
+
+- 最小权限原则（least privilege）
+- 默认拒绝跨租户访问
+- 敏感数据脱敏日志
+- 密钥与配置通过环境变量注入
+- 审计关键写操作（登录失败、权限拒绝、发送失败）
+
+
+## 10. 核心业务流程（Mermaid）
+
+```mermaid
+flowchart TD
+    A[租户客户公司] --> B[管理员登录系统]
+    B --> C[租户功能管理]
+    C --> CA[维护用户账号订阅；新增或删除办公室/学校（需管理员权限）]
+    C --> CB[维护扫码编号与邮箱对应关系（人员一览）]
+    C --> CC[扫码邮件（核心功能）]
+    C --> CD[群发邮件]
+    
+    CA --> CA1[待后续补充]
+    CB --> CB1[待后续补充]
+
+    CC --> CC1[切换办公室/校舍]
+    CC1 --> CC2{订阅是否有效?}
+    CC2 -- 有效 --> CC3[扫码面板以及邮件文本编辑]
+    CC2 -- 过期/暂停 --> CC12[限制扫码和邮件发送功能]    
+
+    CC3 --> CC4[使用扫码枪扫描条码/二维码]
+    CC4 --> CC5[系统接收扫描结果]
+    CC5 --> CC6{是否找到对应邮箱?}
+    CC6 -- 是 --> CC7[创建扫码记录]
+    CC7 --> CC8[创建邮件发送任务：邮件正文 = 固定前缀（租户公司名 + 办公室/学校名） + 用户自定义文本]
+    CC8 --> CC9[发送邮件给对应邮箱]
+    CC9 --> CC10[记录发送结果]
+    CC10 --> CC11[管理员查看历史记录/导出]
+
+    CC6 -- 否 --> CC13[提示未找到对应邮箱]
+    CC13 --> CC14[记录异常扫码事件]
+    CC14 --> CC15[管理员确认人员信息]
+
+    CD --> CD1[待后续补充]
+```

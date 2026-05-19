@@ -1,91 +1,45 @@
-# 研发工作流（SaaS 扫码发邮项目）
+# 研发流程（GitHub Flow）
 
-> 目标：在正式开发前，统一分支、Issue、任务拆分、测试与发布协作规则，使团队可直接从第一个 Issue 开始执行。
+## 1. 标准链路
 
-## 1. 分支策略
+1. 创建/认领 GitHub Issue
+2. 从主分支拉取并创建分支
+3. 开发与自测
+4. 提交 PR（使用模板）
+5. 触发 CI 检查
+6. Code Review
+7. 合并到主分支
 
-- `main`：稳定分支，仅接受通过评审与测试的合并。
-- `develop`：集成分支，用于汇总已完成功能。
-- `feature/<issue-id>-<short-name>`：功能开发分支（例如 `feature/1-scan-input-ui`）。
-- `fix/<issue-id>-<short-name>`：缺陷修复分支。
-- `chore/<short-name>`：文档、CI、模板等非功能代码维护。
+## 2. 分支命名建议
 
-### 分支保护建议
+- `feature/*`：功能开发
+- `fix/*`：缺陷修复
+- `setup/*`：初始化与规范建设
+- `docs/*`：纯文档更新
 
-- `main` / `develop` 必须启用：
-  - 至少 1 位评审通过
-  - CI 必须通过
-  - 禁止直接 push
+## 3. Issue 要求
 
-## 2. Issue 到开发的标准流程
+- 明确背景、范围、验收标准
+- 标注角色标签（如 `role:backend`）
+- 标注风险标签（如 `risk:auth`）
+- 涉及高风险（auth/billing/data/security）需人工审批
 
-1. 在 GitHub 使用模板创建 Issue（Feature / Bug）。
-2. 负责人补充：范围、验收标准、测试要求、风险标签。
-3. 创建分支：
-   - `feature/<issue-id>-<short-name>` 或 `fix/<issue-id>-<short-name>`
-4. 开发与自测：
-   - 必须按 `docs/testing.md` 的测试规则补齐案例与结果。
-5. 提交 PR：
-   - 使用 PR 模板，关联 Issue（`Closes #<id>`）。
-6. 通过评审和 CI 后合并到 `develop`。
-7. 达到发布标准后，从 `develop` 合并至 `main`。
+## 4. PR 要求
 
-## 3. 任务拆分规则（Issue 粒度）
+- 关联 Issue（`Closes #id` 或 `Refs #id`）
+- 填写变更内容、测试、风险、文档更新
+- 不允许混入无关重构
+- 业务行为变更必须同步更新 docs
 
-- 每个 Issue 建议 1–8 小时可完成。
-- 禁止创建过大的“史诗任务”直接开发，先拆解。
-- 每个 Issue 必须包含：
-  - 背景（Background）
-  - 范围（Scope）
-  - 非范围（Out of scope）
-  - 验收标准（Acceptance criteria）
-  - 测试要求（Test requirements）
-  - 推荐标签（Recommended labels）
-  - 风险标签（Risk labels）
-  - 是否需要人工决策（Human decision required）
+## 5. CI 建议检查项
 
-## 4. 标签约定
+- lint
+- unit test
+- integration test（按需）
+- migration check（若存在数据库变更）
 
-### 类型标签（type）
+## 6. 合并策略
 
-- `type:feature`
-- `type:bug`
-- `type:chore`
-- `type:test`
-- `type:docs`
-
-### 模块标签（area）
-
-- `area:scanner-input`
-- `area:mail-routing`
-- `area:email-delivery`
-- `area:tenant`
-- `area:admin`
-- `area:infra`
-
-### 风险标签（risk）
-
-- `risk:low`
-- `risk:medium`
-- `risk:high`
-- `risk:security`
-- `risk:data`
-
-## 5. Definition of Ready（DoR）
-
-Issue 开发前必须满足：
-
-- 需求目标明确
-- 依赖已标记
-- 验收标准可测试
-- 风险等级已评估
-- 是否需要人工决策已标记
-
-## 6. Definition of Done（DoD）
-
-Issue 完成必须满足：
-
-- 代码与文档同步更新
-- 自动化测试通过（至少包含对应层级测试）
-- 手工测试步骤可复现并记录结果
-- PR 完成评审并关联 Issue
+- 默认 squash merge
+- 至少 1 名 reviewer 通过
+- 所有必需检查通过后方可合并

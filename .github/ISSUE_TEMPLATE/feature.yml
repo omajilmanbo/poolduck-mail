@@ -1,79 +1,49 @@
-name: Feature Task
-description: 创建一个可在 1-8 小时内完成的功能任务
-title: "[Feature] <short title>"
-labels:
-  - type:feature
+name: Feature
+about: 新功能需求模板
+labels: ["type:feature"]
 body:
   - type: textarea
     id: background
     attributes:
-      label: Background
-      description: 背景与业务价值
-      placeholder: 为什么要做这个功能？
+      label: 背景
+      description: 说明该需求出现的业务背景与价值
     validations:
       required: true
-
   - type: textarea
-    id: scope
+    id: description
     attributes:
-      label: Scope
-      description: 本任务包含的内容（1-8 小时可完成）
+      label: 功能描述
+      description: 清晰描述需要实现的功能
     validations:
       required: true
-
-  - type: textarea
-    id: out_of_scope
-    attributes:
-      label: Out of scope
-      description: 明确不在本任务内的内容
-    validations:
-      required: true
-
   - type: textarea
     id: acceptance
     attributes:
-      label: Acceptance criteria
-      description: 可验证的验收条件（建议 Given/When/Then）
+      label: 验收标准
+      description: 请用可验证的条目描述完成标准
+      placeholder: |
+        - [ ] 标准 1
+        - [ ] 标准 2
     validations:
       required: true
-
-  - type: textarea
-    id: tests
-    attributes:
-      label: Test requirements
-      description: 需覆盖 normal/error/permission/tenant/boundary/regression/manual
-    validations:
-      required: true
-
-  - type: input
-    id: recommended_labels
-    attributes:
-      label: Recommended labels
-      description: 如 type:feature, area:scanner-input, risk:medium
-      placeholder: type:feature, area:xxx, risk:xxx
-    validations:
-      required: true
-
   - type: dropdown
+    id: role_label
+    attributes:
+      label: 角色标签
+      options:
+        - role:backend
+        - role:frontend
+        - role:architect
+        - role:fullstack
+    validations:
+      required: true
+  - type: checkboxes
     id: risk_labels
     attributes:
-      label: Risk labels
+      label: 风险标签
       options:
-        - risk:low
-        - risk:medium
-        - risk:high
-        - risk:security
-        - risk:data
-    validations:
-      required: true
-
-  - type: dropdown
-    id: human_decision
-    attributes:
-      label: Human decision required
-      description: 涉及 billing/auth/data/security 时应选择 Yes
-      options:
-        - "No"
-        - "Yes"
-    validations:
-      required: true
+        - label: risk:auth
+        - label: risk:billing
+        - label: risk:data
+        - label: risk:migration
+        - label: risk:security
