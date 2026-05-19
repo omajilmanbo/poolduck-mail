@@ -1,36 +1,62 @@
-# API Specification
+# API 草案（MVP）
 
-## Auth
+## 约定
 
-### POST /api/auth/login
-Login with email and password.
+- Base path: `/api`
+- Auth: `Authorization: Bearer <token>`
+- 所有业务接口默认在租户上下文中执行
 
-### POST /api/auth/logout
-Logout current user.
+## 1. 认证（Auth）
 
-### GET /api/me
-Return current user.
+### POST `/api/auth/login`
+- 入参：`email`, `password`
+- 出参：`access_token`, `expires_in`, `user`
 
-## License
+### POST `/api/auth/logout`
+- 说明：使当前 token/session 失效
 
-### GET /api/license/check
-Return current tenant subscription status.
+### GET `/api/auth/me`
+- 说明：获取当前登录用户信息
 
-## Mail
+## 2. License Check
 
-### POST /api/mail/jobs
-Create mail sending job.
+### GET `/api/license/check`
+- 说明：校验当前 tenant 订阅可用性
+- 出参：`status`, `plan`, `expired_at`, `grace_period`
 
-### GET /api/mail/jobs
-List mail jobs.
+## 3. Scan Events
 
-### GET /api/mail/jobs/{id}
-Get mail job detail.
+### POST `/api/scan-events`
+- 入参：`scan_code`, `scan_type`, `device_code`, `raw_payload`
+- 出参：`scan_event_id`, `mail_job_preview`
 
-## Admin
+### GET `/api/scan-events/{id}`
+- 说明：查询单条扫码记录
 
-### GET /api/admin/tenants
-List tenants.
+### GET `/api/scan-events`
+- 查询：按时间范围、device、状态筛选
 
-### PATCH /api/admin/tenants/{id}/subscription
-Update subscription status.
+## 4. Mail Jobs
+
+### POST `/api/mail-jobs`
+- 说明：手动创建邮件任务（受权限控制）
+
+### GET `/api/mail-jobs/{id}`
+- 说明：查询邮件任务状态
+
+### GET `/api/mail-jobs`
+- 查询：`status`, `created_from`, `created_to`
+
+### POST `/api/mail-jobs/{id}/retry`
+- 说明：重试失败邮件任务
+
+## 5. Admin Tenants（管理员）
+
+### GET `/api/admin/tenants`
+- 说明：查询租户列表（平台管理员）
+
+### GET `/api/admin/tenants/{id}`
+- 说明：查询租户详情
+
+### PATCH `/api/admin/tenants/{id}/status`
+- 说明：更新租户状态（active/suspended）

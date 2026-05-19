@@ -1,1 +1,21 @@
+# env
+.env
+.env.*
+!.env.example
 
+# logs
+*.log
+logs/
+
+# dependencies
+node_modules/
+
+# build
+build/
+dist/
+coverage/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/

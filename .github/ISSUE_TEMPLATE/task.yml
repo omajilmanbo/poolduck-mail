@@ -1,0 +1,40 @@
+name: Task
+about: 文档、准备、配置类任务
+labels: ["type:task"]
+body:
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 任务范围
+      placeholder: |
+        - 将要做
+        - 不做什么
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      placeholder: |
+        - [ ] 条件 1
+        - [ ] 条件 2
+    validations:
+      required: true
+  - type: dropdown
+    id: role_label
+    attributes:
+      label: 角色标签
+      options:
+        - role:backend
+        - role:frontend
+        - role:architect
+        - role:devops
+        - role:qa
+    validations:
+      required: true
