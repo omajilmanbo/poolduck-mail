@@ -25,7 +25,11 @@ When changing behavior, update the corresponding docs:
 
 Do not store secrets, customer data, or temporary chat logs in docs.
 For important decisions, create an ADR and wait for human approval.
+## ADR policy
 
+All ADR files under `docs/decisions/` must be created from `docs/decisions/ADR-TEMPLATE.md`.
+Do not create or update ADRs with a custom format.
+If an ADR does not match the template, update it before implementation.
 
 
 ## Working rules
