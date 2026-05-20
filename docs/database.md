@@ -28,12 +28,12 @@
 
 ## 3. subscriptions
 
-> 用法：订阅配置表（MVP 先按 tenant 统一订阅）；由 `root_admin` 管理。
+> 用法：订阅配置表，以 location 为计费与配额管理单位；由 `root_admin` 管理。
 
 - `id` (pk, uuid)
-- `tenant_id` (fk -> tenants.id, unique)
+- `location_id` (fk -> locations.id, unique)
 - `plan` (varchar)
-- `status` (varchar) - trial/active/expired/suspended
+- `status` (varchar) - trial/active/expired/canceled
 - `start_at` (timestamp)
 - `end_at` (timestamp)
 - `created_at` (timestamp)
@@ -135,7 +135,7 @@
 
 - `users (tenant_id, email)` unique
 - `users (tenant_id, role, status)`
-- `subscriptions (tenant_id)` unique
+- `subscriptions (location_id)` unique
 - `devices (tenant_id, device_code)` unique
 - `scan_events (tenant_id, received_at)`
 - `locations (tenant_id, location_code)` unique
