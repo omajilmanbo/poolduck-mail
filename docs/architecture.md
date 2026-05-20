@@ -109,13 +109,13 @@ flowchart TD
 MVP 阶段邮件正文由后端系统生成，不接收前端自定义正文。固定模板如下：
 
 ```text
-{tenant_name}，{office_name}からのお知らせ：{person_name}　さんは　{time_stamp}　に入室しました。
+{tenant_name}，{location_name}からのお知らせ：{person_name}　さんは　{time_stamp}　に入室しました。
 ```
 
 变量来源：
 
 - `{tenant_name}`：租户公司名
-- `{office_name}`：当前办公室/学校名
+- `{location_name}`：当前办公室/学校名
 - `{person_name}`：扫码编号对应人员姓名
 - `{time_stamp}`：入室时间，格式为 `yyyymmddhhmmss`
 
