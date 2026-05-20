@@ -4,6 +4,8 @@
 
 ## 1. tenants
 
+> 用法：租户主表，代表一个独立客户组织；用于多租户数据隔离与计费归属的顶层边界。
+
 - `id` (pk, uuid)
 - `name` (varchar)
 - `status` (varchar) - active/suspended
@@ -12,11 +14,13 @@
 
 ## 2. users
 
+> 用法：可登录系统的管理员账号表（仅后台管理用户，不等同于收件人）。管理员分两类：`root_admin`（可编辑订阅、增减 location）与 `manager`（仅可维护 `person_mappings`）。
+
 - `id` (pk, uuid)
 - `tenant_id` (fk -> tenants.id)
 - `email` (varchar, unique within tenant)
 - `password_hash` (varchar)
-- `role` (varchar) - admin/operator
+- `role` (varchar) - root_admin/manager
 - `status` (varchar)
 - `last_login_at` (timestamp, nullable)
 - `created_at` (timestamp)
@@ -24,8 +28,10 @@
 
 ## 3. subscriptions
 
+> 用法：订阅配置表，以 location 为计费与配额管理单位；由 `root_admin` 管理。
+
 - `id` (pk, uuid)
-- `tenant_id` (fk -> tenants.id, unique)
+- `location_id` (fk -> locations.id, unique)
 - `plan` (varchar)
 - `status` (varchar) - trial/active/expired/canceled
 - `start_at` (timestamp)
@@ -34,6 +40,8 @@
 - `updated_at` (timestamp)
 
 ## 4. devices
+
+> 用法：扫码设备注册表，记录租户下可上报扫码事件的终端设备。
 
 - `id` (pk, uuid)
 - `tenant_id` (fk -> tenants.id)
@@ -46,6 +54,8 @@
 
 ## 5. scan_events
 
+> 用法：扫码事件流水表，保存原始扫码输入与接收时间，用于追溯和后续邮件任务关联。
+
 - `id` (pk, uuid)
 - `tenant_id` (fk -> tenants.id)
 - `device_id` (fk -> devices.id, nullable)
@@ -56,7 +66,40 @@
 - `created_by_user_id` (fk -> users.id, nullable)
 - `created_at` (timestamp)
 
-## 6. mail_jobs
+## 6. locations（办公室/学校）
+
+> 用法：办公室/学校上下文表；用户在扫码前需先选择当前 location，后续查找与发送行为均在该上下文内完成。
+
+- `id` (pk, uuid)
+- `tenant_id` (fk -> tenants.id)
+- `location_code` (varchar) - 业务可读编码，如 OFFICE_A / SCHOOL_1
+- `name` (varchar) - 办公室/学校名称
+- `type` (varchar) - office/school
+- `status` (varchar) - active/inactive
+- `created_at` (timestamp)
+- `updated_at` (timestamp)
+
+> 说明：为满足“扫码前先切换办公室/校舍”，`locations` 作为租户内的上下文维度。命名（`locations` vs `offices`）待人工确认，当前采用兼容办公室/学校的 `locations`。
+
+## 7. person_mappings（扫码编号与人员邮箱映射）
+
+> 用法：非登录人员（收件人）映射表，维护 location 内的 `scan_code -> person_name/email`；由 `manager` 与 `root_admin` 维护。与 `users` 严格区分：`users` 是登录管理员，`person_mappings` 是业务通讯录映射。
+
+- `id` (pk, uuid)
+- `tenant_id` (fk -> tenants.id)
+- `location_id` (fk -> locations.id)
+- `scan_code` (varchar)
+- `person_name` (varchar)
+- `email` (varchar)
+- `status` (varchar) - active/inactive
+- `created_at` (timestamp)
+- `updated_at` (timestamp)
+
+> 查询约束：`scan_code` 查找必须同时带上 `tenant_id` 与当前 `location_id`（办公室/学校上下文），禁止仅按 `scan_code` 全局查找，避免跨租户或跨办公室/学校误匹配。
+
+## 8. mail_jobs
+
+> 用法：邮件发送任务表，记录从生成到发送完成/失败的投递状态与错误信息。
 
 - `id` (pk, uuid)
 - `tenant_id` (fk -> tenants.id)
@@ -73,7 +116,9 @@
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
 
-## 7. audit_logs
+## 9. audit_logs
+
+> 用法：审计日志表，记录管理员关键操作、资源对象与执行结果，满足合规与问题追踪。
 
 - `id` (pk, uuid)
 - `tenant_id` (fk -> tenants.id, nullable for system ops)
@@ -85,11 +130,16 @@
 - `metadata_json` (jsonb)
 - `created_at` (timestamp)
 
-## 8. 索引建议
+## 10. 索引建议
 
 - `users (tenant_id, email)` unique
-- `subscriptions (tenant_id)` unique
+- `users (tenant_id, role, status)`
+- `subscriptions (location_id)` unique
 - `devices (tenant_id, device_code)` unique
 - `scan_events (tenant_id, received_at)`
+- `locations (tenant_id, location_code)` unique
+- `locations (tenant_id, name)`
+- `person_mappings (tenant_id, location_id, scan_code)` unique
+- `person_mappings (tenant_id, location_id, status, updated_at)`
 - `mail_jobs (tenant_id, status, created_at)`
 - `audit_logs (tenant_id, created_at)`
