@@ -1,6 +1,6 @@
 # ADR-001：MVP 采用 Web SaaS
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-05-19
 
 ## Context
