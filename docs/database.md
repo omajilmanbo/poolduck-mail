@@ -99,13 +99,14 @@
 
 ## 8. mail_jobs
 
-> 用法：邮件发送任务表，记录从生成到发送完成/失败的投递状态与错误信息。
+> 用法：邮件发送任务表，记录从生成到发送完成/失败的投递状态与错误信息。MVP 仅保存系统生成后的最终 `subject`/`body`，不单独保存用户自定义正文。
 
 - `id` (pk, uuid)
 - `tenant_id` (fk -> tenants.id)
 - `scan_event_id` (fk -> scan_events.id, nullable)
 - `to_email` (varchar)
 - `subject` (varchar)
+- `body` (text)
 - `template_key` (varchar)
 - `status` (varchar) - queued/sent/failed
 - `retry_count` (int)

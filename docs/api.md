@@ -28,6 +28,7 @@
 
 ### POST `/api/scan-events`
 - 入参：`scan_code`, `scan_type`, `device_code`, `raw_payload`
+- 说明：MVP 不接收 `custom_message` 等自定义邮件正文参数；邮件正文由后端按固定模板生成
 - 出参：`scan_event_id`, `mail_job_preview`
 
 ### GET `/api/scan-events/{id}`
