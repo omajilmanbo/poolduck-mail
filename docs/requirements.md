@@ -104,13 +104,13 @@ MVP 页面不提供邮件正文自定义编辑区，也不提供扫码发送前�
 MVP 阶段邮件正文由系统按固定统一格式生成：
 
 ```text
-{tenant_name}，{office_name}からのお知らせ：{person_name}　さんは　{time_stamp}　に入室しました。
+{tenant_name}，{location_name}からのお知らせ：{person_name}　さんは　{time_stamp}　に入室しました。
 ```
 
 变量来源定义：
 
 - `{tenant_name}`：租户公司名
-- `{office_name}`：当前办公室/学校名
+- `{location_name}`：当前办公室/学校名
 - `{person_name}`：扫码编号对应人员姓名
 - `{time_stamp}`：入室时间，格式暂定为 `yyyymmddhhmmss`
 
@@ -180,7 +180,7 @@ A公司，B办事处からのお知らせ：C员工　さんは　20260520143000
 
 ### 4.3 邮件文本
 MVP 阶段：
-- 邮件正文固定为 `{tenant_name}，{office_name}からのお知らせ：{person_name}　さんは　{time_stamp}　に入室しました。`
+- 邮件正文固定为 `{tenant_name}，{location_name}からのお知らせ：{person_name}　さんは　{time_stamp}　に入室しました。`
 - 不允许前端传入自定义正文覆盖固定格式
 - 用户自定义邮件文本作为后续扩展候选，不进入当前 MVP
 
