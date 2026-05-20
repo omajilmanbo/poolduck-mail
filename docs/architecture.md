@@ -84,7 +84,7 @@ flowchart TD
     CC4 --> CC5[系统接收扫描结果]
     CC5 --> CC6{是否找到对应邮箱?}
     CC6 -- 是 --> CC7[创建扫码记录]
-    CC7 --> CC8[创建邮件发送任务：邮件正文 = {tenant_name}，{office_name}からのお知らせ：{person_name}　さんは　{time_stamp}　に入室しました。]
+    CC7 --> CC8[创建邮件发送任务]
     CC8 --> CC9[发送邮件给对应邮箱]
     CC9 --> CC10[记录发送结果]
     CC10 --> CC11[管理员查看历史记录/导出]
