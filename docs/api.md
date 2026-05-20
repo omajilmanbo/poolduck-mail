@@ -8,7 +8,7 @@
 - tenant 隔离：登录时接收并校验 `tenant_id`；登录成功后业务接口使用 token/session 中的 `tenant_id`，不接受业务接口显式传入 `tenant_id`
 - 订阅状态统一：`trial` / `active` / `expired` / `suspended`
 - 扫码邮件正文固定由后端生成，不接收 `custom_message` / `custom_text` / `mail_body` 等自定义正文字段
-- 固定邮件正文模板：`{tenant_name}，{office_name}からのお知らせ：{person_name}　さんは　{time_stamp}　に入室しました。`
+- 固定邮件正文模板：`{tenant_name}，{location_name}からのお知らせ：{person_name}　さんは　{time_stamp}　に入室しました。`
 
 ## 1. 认证（Auth）
 
@@ -32,25 +32,25 @@
 
 ## 3. 扫码邮件核心流程 API
 
-### GET `/api/offices`
-- 说明：获取当前 tenant 可用的办公室/校舍列表，用于扫码邮件页面切换上下文
+### GET `/api/locations`
+- 说明：获取当前 tenant 可用的location（办公室/校舍）列表，用于扫码邮件页面切换上下文
 - 权限：已登录用户（`root_admin` / `manager`）
 - 订阅要求：无（仅用于页面初始化）
-- 出参（示例字段）：`[{ office_id, office_name, is_active }]`
-- 错误：跨租户 office 不可见
+- 出参（示例字段）：`[{ location_id, location_name, is_active }]`
+- 错误：跨租户 location 不可见
 
-### GET `/api/offices/{office_id}/people`
-- 说明：获取当前办公室/校舍下人员一览与扫码编号映射
+### GET `/api/locations/{location_id}/people`
+- 说明：获取当前location（办公室/校舍）下人员一览与扫码编号映射
 - 权限：已登录用户（`root_admin` / `manager`）
 - 订阅要求：无（仅用于映射预加载）
 - 出参（示例字段）：`[{ person_id, person_name, scan_code, email_masked }]`
-- 错误：`office_id` 非法或不属于当前 tenant 时返回可识别错误
+- 错误：`location_id` 非法或不属于当前 tenant 时返回可识别错误
 
 ### POST `/api/scan-events`
-- 入参：`office_id`, `scan_code`
+- 入参：`location_id`, `scan_code`
 - 说明：
   - 创建扫码事件记录
-  - 后端在当前 tenant + office 上下文中查找扫码编号对应邮箱
+  - 后端在当前 tenant + location 上下文中查找扫码编号对应邮箱
   - 后端按固定模板生成最终邮件正文
   - 后端创建关联邮件任务（初始 `pending`）
   - 不接收任何自定义正文字段（`custom_message` / `custom_text` / `mail_body` 等）
@@ -58,7 +58,7 @@
 - 订阅要求：`trial` 或 `active`；`expired` / `suspended` 返回订阅无效错误
 - 出参（示例字段）：`scan_event_id`, `mail_job_id`, `mail_subject`, `mail_body`, `status`
 - 错误：
-  - `office_id` 非法或不属于当前 tenant
+  - `location_id` 非法或不属于当前 tenant
   - `scan_code` 未找到映射邮箱：返回可识别业务错误，并将扫码事件记录为异常状态（如 `unmapped`）以便后续排查
   - 订阅无效
 
@@ -84,8 +84,8 @@
 - 订阅要求：无（历史记录可查）
 
 ### GET `/api/scan-events`
-- 查询：`office_id`, `status`, `created_from`, `created_to`
-- 说明：按办公室/校舍与状态查询扫码记录
+- 查询：`location_id`, `status`, `created_from`, `created_to`
+- 说明：按location（办公室/校舍）与状态查询扫码记录
 - 权限：已登录用户（`root_admin` / `manager`）
 - 订阅要求：无（历史记录可查）
 
