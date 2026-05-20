@@ -13,6 +13,7 @@
 - 登录页、扫码录入页、任务状态页、管理页
 - 调用 `/api/*` 后端接口
 - 按角色展示可见功能（普通用户/管理员）
+- 登录页先输入 `tenant_id`，再输入用户名/密码
 
 ## 3. 后端层
 
@@ -28,12 +29,17 @@
 - 单库多租户（shared DB + tenant_id 隔离）
 - 所有业务核心表包含 `tenant_id`
 - 查询默认附带 tenant scope，防止越权读取
+- tenant scope 来源于认证后的登录用户上下文，禁止直接使用前端传入的 `tenant_id`
 
 ## 5. 认证与授权
 
 - MVP 使用账号密码登录
+- 登录入参包含 `tenant_id + username(email) + password`
+- 登录校验顺序：先校验 `tenant_id` 是否存在，再校验用户是否属于该 tenant 且密码正确
 - token 中包含 user_id / tenant_id / role
 - 基于 RBAC 执行接口级权限控制
+- 角色边界：`root_admin` 可维护用户账号、订阅、办公室/学校；`manager` 仅可维护人员一览与执行扫码流程
+- 登录成功后，tenant scope 以后端会话/token 中的 `tenant_id` 为准，业务接口不允许越权切换 tenant
 
 ## 6. 邮件服务集成
 
@@ -52,6 +58,8 @@
 - subscription 与 tenant 一对一（MVP）
 - 关键字段：plan、status、start_at、end_at
 - API 请求进入业务前先执行 license check
+- `status` 枚举统一为：`trial` / `active` / `expired` / `suspended`
+- 仅 `trial`、`active` 允许扫码与邮件发送；`expired`、`suspended` 必须在业务入口拒绝
 
 ## 9. 安全原则
 
