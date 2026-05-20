@@ -56,7 +56,7 @@
   - 不接收任何自定义正文字段（`custom_message` / `custom_text` / `mail_body` 等）
 - 权限：已登录用户（`root_admin` / `manager`）
 - 订阅要求：`trial` 或 `active`；`expired` / `suspended` 返回订阅无效错误
-- 出参（示例字段）：`scan_event_id`, `mail_job_id`, `mail_subject`, `mail_body`, `status`
+- 出参（示例字段）：`scan_event_id`, `mail_job_id`, `mail_subject`, `status`
 - 错误：
   - `location_id` 非法或不属于当前 tenant
   - `scan_code` 未找到映射邮箱：返回可识别业务错误，并将扫码事件记录为异常状态（如 `unmapped`）以便后续排查
