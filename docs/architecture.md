@@ -64,7 +64,8 @@
 
 ## 10. 核心业务流程（Mermaid）
 
-```mermaid
+```
+mermaid
 flowchart TD
     A[租户客户公司] --> B[管理员登录系统]
     B --> C[租户功能管理]
