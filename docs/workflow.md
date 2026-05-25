@@ -43,3 +43,12 @@
 - 默认 squash merge
 - 至少 1 名 reviewer 通过
 - 所有必需检查通过后方可合并
+
+## 7. CI 门禁（必需）
+
+- 所有 PR 会自动触发 GitHub Actions CI（`.github/workflows/ci.yml`）。
+- `main` 分支上的 push 也会触发同一套 CI。
+- 合并前必须通过以下检查：
+  - Backend：`npm ci && npm run build && npm test`（在 `backend/`）
+  - Frontend：`npm ci && npm test && npm run build`（在 `frontend/`）
+- 本地提交前建议先执行上述等价命令，避免 PR 红灯。
