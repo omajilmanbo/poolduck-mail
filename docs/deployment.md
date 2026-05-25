@@ -40,9 +40,19 @@
 5. 运行测试：
    - `npm test`
 
-### 4.2 前端
+### 4.2 前端（当前已可运行）
 
-- 前端脚手架待后续 Issue 完成（当前仓库仅初始化后端骨架）。
+1. 安装依赖：
+   - `cd frontend`
+   - `npm install`
+2. 启动开发服务：
+   - `npm run dev`
+3. 构建验证：
+   - `npm run build`
+4. 健康检查：
+   - `GET http://localhost:3000/healthz`
+5. 运行测试：
+   - `npm test`
 
 ## 5. Staging 部署
 
