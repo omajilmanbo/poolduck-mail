@@ -2,11 +2,11 @@
 
 ## 1. 总体架构
 
-- 前端：Web 应用（浏览器访问）
-- 后端：REST API 服务
-- 数据库：数据存储方案待技术栈 ADR 最终确认（可为关系型或 NoSQL）
-- 认证：基于 token/session 的认证与授权
-- 邮件服务：通过 SMTP 或第三方邮件 API 发送
+- 前端：Next.js（App Router）+ TypeScript + Tailwind CSS
+- 后端：NestJS（Node.js 20 LTS，REST API）
+- 数据库：PostgreSQL 16 + Prisma
+- 认证：JWT（access + refresh）+ RBAC
+- 邮件服务：MVP 使用 Sandbox/Mock Provider（不接入真实供应商）
 
 ## 2. 前端层
 
@@ -43,7 +43,8 @@
 
 ## 6. 邮件服务集成
 
-- 抽象邮件发送 provider 接口（便于替换 SMTP/第三方）
+- 抽象邮件发送 provider 接口（便于后续替换 SMTP/第三方）
+- MVP 默认启用 Sandbox/Mock provider，仅记录请求与回执，不实际投递
 - 保存发送请求与回执状态
 - 支持失败重试与死信标记（后续扩展）
 
