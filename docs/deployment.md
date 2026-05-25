@@ -8,9 +8,10 @@
 
 ## 2. 基础依赖
 
-- 应用运行时（待技术栈 ADR 确认）
-- PostgreSQL（建议）
-- 邮件服务配置（SMTP 或第三方 provider）
+- Node.js 20 LTS
+- npm 10+
+- PostgreSQL 16（后续数据库功能启用时）
+- MVP 阶段邮件 provider 使用 sandbox/mock（不接入真实邮件发送）
 
 ## 3. 环境变量
 
@@ -24,9 +25,24 @@
 
 ## 4. Local 部署
 
-- 复制 `.env.example` 为 `.env.local`
-- 启动数据库与依赖服务
-- 启动后端与前端开发服务
+### 4.1 后端（当前已可运行）
+
+1. 安装依赖：
+   - `cd backend`
+   - `npm install`
+2. 配置环境变量（可选）：
+   - 新建 `backend/.env`（或使用系统环境变量）
+   - 可配置 `APP_PORT`（默认 `3001`）
+3. 启动开发服务：
+   - `npm run start:dev`
+4. 健康检查：
+   - `GET http://localhost:3001/health`
+5. 运行测试：
+   - `npm test`
+
+### 4.2 前端
+
+- 前端脚手架待后续 Issue 完成（当前仓库仅初始化后端骨架）。
 
 ## 5. Staging 部署
 
