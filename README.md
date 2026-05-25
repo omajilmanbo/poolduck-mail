@@ -4,11 +4,11 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 
 ## 当前项目阶段
 
-当前处于 **MVP 实现前的技术定版阶段**：
+当前处于 **MVP 技术栈定版后的工程初始化阶段**：
 
 - 已完成产品范围、业务流程、租户隔离与订阅规则文档化。
 - 已通过 ADR-004 提出 MVP 技术栈（状态：`Proposed`，待人工批准）。
-- 本阶段 **不实现业务代码**，仅完成实现前的技术与文档对齐。
+- 当前已完成前后端基础工程骨架，后续进入功能实现迭代。
 
 ## MVP 技术栈摘要（以 ADR-004 为准）
 
@@ -24,10 +24,22 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 
 ## 本地开发入口（当前状态）
 
-当前仓库尚未初始化前后端代码目录。
+当前仓库已初始化后端工程骨架（NestJS + TypeScript）。
 
-- 工程初始化与脚手架落地：待后续 Issue（建议 #18 / #19）完成。
-- 初始化完成后，本节会补充：安装依赖、环境变量、启动前后端、测试命令。
+- 后端目录：`backend/`
+- 安装依赖：`cd backend && npm install`
+- 启动开发服务：`npm run start:dev`
+- 默认健康检查地址：`GET http://localhost:3001/health`
+- 运行测试：`npm test`
+
+> 如需自定义端口，可在 `backend/.env` 或环境变量中设置 `APP_PORT`。
+
+- 前端目录：`frontend/`
+- 安装依赖：`cd frontend && npm install`
+- 启动前端开发服务：`npm run dev`
+- 前端健康检查地址：`GET http://localhost:3000/healthz`
+- 前端构建：`npm run build`
+- 前端测试：`npm test`
 
 ## 文档导航
 
