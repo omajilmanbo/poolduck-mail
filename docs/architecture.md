@@ -2,11 +2,11 @@
 
 ## 1. 总体架构
 
-- 前端：Web 应用（浏览器访问）
-- 后端：REST API 服务
-- 数据库：数据存储方案待技术栈 ADR 最终确认（可为关系型或 NoSQL）
-- 认证：基于 token/session 的认证与授权
-- 邮件服务：通过 SMTP 或第三方邮件 API 发送
+- 前端：Cloudflare Pages / Workers Static Assets
+- 后端：Cloudflare Workers API
+- 数据库：Cloudflare D1
+- 异步任务：Cloudflare Queues
+- 邮件服务：Mail Provider Adapter（AWS SES / OCI Email Delivery / Gmail API），MVP 默认 Sandbox/Mock
 
 ## 2. 前端层
 
@@ -43,9 +43,10 @@
 
 ## 6. 邮件服务集成
 
-- 抽象邮件发送 provider 接口（便于替换 SMTP/第三方）
-- 保存发送请求与回执状态
-- 支持失败重试与死信标记（后续扩展）
+- 通过 Mail Provider Adapter 统一发信接口
+- 可接入 AWS SES / OCI Email Delivery / Gmail API
+- MVP 默认启用 Sandbox/Mock provider，仅记录请求与回执，不实际投递
+- 结合 Cloudflare Queues 执行异步发送、失败重试与死信扩展
 
 ## 7. 租户模型
 
