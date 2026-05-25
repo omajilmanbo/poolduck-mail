@@ -1,6 +1,6 @@
 # ADR-004：MVP 技术栈定版
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-05-25
 - 相关 Issue：#17
 
