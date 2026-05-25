@@ -24,10 +24,15 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 
 ## 本地开发入口（当前状态）
 
-当前仓库尚未初始化前后端代码目录。
+当前仓库已初始化后端工程骨架（NestJS + TypeScript）。
 
-- 工程初始化与脚手架落地：待后续 Issue（建议 #18 / #19）完成。
-- 初始化完成后，本节会补充：安装依赖、环境变量、启动前后端、测试命令。
+- 后端目录：`backend/`
+- 安装依赖：`cd backend && npm install`
+- 启动开发服务：`npm run start:dev`
+- 默认健康检查地址：`GET http://localhost:3001/health`
+- 运行测试：`npm test`
+
+> 如需自定义端口，可在 `backend/.env` 或环境变量中设置 `APP_PORT`。
 
 ## 文档导航
 
