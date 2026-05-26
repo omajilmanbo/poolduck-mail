@@ -33,6 +33,7 @@ If an ADR does not match the template, update it before implementation.
 
 
 ## Working rules
+- 随时更新README.md以及/docs下的文档。
 - 每次只实现当前 Issue 的 Scope。
 - 不允许实现 Out of scope 中的内容。
 - 不允许提交真实密钥、token、Gmail 凭据、OAuth refresh token。
@@ -42,6 +43,7 @@ If an ADR does not match the template, update it before implementation.
 - 如果需求不明确，先提出问题，不要自行决定业务规则。
 
 ## Review guidelines
+- 检查是否对文档更新有所遗漏，导致旧文本存留。
 - 检查是否存在跨租户访问风险。
 - 检查是否可能误发邮件。
 - 检查是否记录了 PII 或邮箱敏感信息。
