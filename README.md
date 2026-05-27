@@ -55,6 +55,7 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 - 环境参数表：`docs/inventory/environment-parameters.md`
 - Secrets 台账：`docs/inventory/secrets-inventory.md`
 - 外部服务台账：`docs/inventory/external-services.md`
+- 云资源参数表：`docs/inventory/cloud-resources-parameters.md`
 - 环境定义：`docs/environments.md`
 - 网络策略：`docs/network.md`
 - 部署说明：`docs/deployment.md`

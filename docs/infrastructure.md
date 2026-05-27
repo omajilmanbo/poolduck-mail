@@ -112,6 +112,7 @@ flowchart LR
 - `docs/inventory/environment-parameters.md`：环境变量参数表
 - `docs/inventory/secrets-inventory.md`：Secrets 名称与保存位置台账（不含真实值）
 - `docs/inventory/external-services.md`：外部服务依赖台账
+- `docs/inventory/cloud-resources-parameters.md`：云资源参数表（EC2/RDS/VPC/LB 等）
 
 当 Local / Staging / Production 的资源、域名、端口、环境变量或外部服务发生变化时，必须同步更新以上台账。
 
