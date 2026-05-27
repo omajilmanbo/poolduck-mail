@@ -58,6 +58,8 @@
 
 - subscription 与 tenant 一对一（MVP）
 - 关键字段：plan、status、start_at、end_at
+- 计费策略：MVP 采用“租户基础套餐 + location 数量扩展位”（不拆分 location 级订阅）
+- 追加 location 时采用同周期对齐：新增配额与当前 `end_at` 对齐，按剩余周期补差计费（proration）
 - API 请求进入业务前先执行 license check
 - `status` 枚举统一为：`trial` / `active` / `expired` / `suspended`
 - 仅 `trial`、`active` 允许扫码与邮件发送；`expired`、`suspended` 必须在业务入口拒绝
@@ -77,6 +79,7 @@ flowchart TD
     A[租户客户公司] --> B[管理员登录系统]
     B --> C[租户功能管理]
     C --> CA[维护用户账号订阅；新增或删除办公室/学校（需管理员权限）]
+    CA --> CA2[展示订阅数量与剩余订阅时间（租户功能管理页）]
     C --> CB[维护扫码编号与邮箱对应关系（人员一览）]
     C --> CC[扫码邮件（核心功能）]
     C --> CD[群发邮件]
@@ -86,7 +89,7 @@ flowchart TD
 
     CC --> CC1[切换办公室/校舍]
     CC1 --> CC2{订阅是否有效?}
-    CC2 -- 有效 --> CC3[扫码面板]
+    CC2 -- 有效 --> CC3[扫码面板（不展示剩余订阅时间）]
     CC2 -- 过期/暂停 --> CC12[限制扫码和邮件发送功能]    
 
     CC3 --> CC4[使用扫码枪扫描条码/二维码]

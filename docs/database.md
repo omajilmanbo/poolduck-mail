@@ -79,7 +79,7 @@
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
 
-> 说明：为满足“扫码前先切换办公室/校舍”，`locations` 作为租户内的上下文维度。命名（`locations` vs `offices`）待人工确认，当前采用兼容办公室/学校的 `locations`。
+> 说明：为满足“扫码前先切换办公室/校舍”，`locations` 作为租户内的唯一正式上下文命名。
 
 ## 7. person_mappings（扫码编号与人员邮箱映射）
 

@@ -59,12 +59,31 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 
 ## 推荐的 Issue 执行顺序
 
-1. **#17**：MVP 技术栈 ADR 定版与文档对齐（当前 Issue）。
-2. **#18**：前端工程初始化（Next.js + TypeScript + Tailwind）。
-3. **#19**：后端工程初始化（NestJS + Prisma + PostgreSQL）。
-4. 认证、租户上下文、订阅校验最小闭环。
-5. Sandbox 邮件任务链路与状态跟踪。
-6. 再进入真实邮件 provider 的评估与接入（非 MVP 首批）。
+1. **#17**：MVP 技术栈 ADR 定版与文档对齐（已完成）。
+2. **#18**：前端工程初始化（Next.js + TypeScript + Tailwind）（已完成）。
+3. **#19**：后端工程初始化（NestJS + Prisma + PostgreSQL）（已完成）。
+4. **#21**：Sandbox Mail Provider 与邮件任务最小闭环。
+5. **#22**：登录 API（`tenant_id` + email + password）。
+6. **#23**：订阅检查与门禁（`trial` / `active` / `expired` / `suspended`）。
+7. **#24**：租户 + location + scan_code 映射查询 API。
+8. **#25**：扫码事件与邮件任务联动 API。
+9. **#26**：发送/重试 API 与审计日志补全。
+
+### #21～#26 依赖关系
+
+- #21 为邮件任务执行基础，#25/#26 依赖 #21。
+- #22 为登录上下文基础，#23/#24/#25/#26 均依赖 #22。
+- #23 订阅门禁是 #25/#26 的前置门禁。
+- #24 提供映射查询能力，是 #25 的直接前置。
+- #25 完成扫码→任务创建闭环后，#26 才实现发送与重试。
+
+### 文档一致性 SSOT（实现前）
+
+- 角色：`root_admin` / `manager`。
+- 订阅状态：`trial` / `active` / `expired` / `suspended`。
+- 登录流程：`tenant_id` + email + password。
+- 邮件正文：后端固定模板生成，不支持自定义正文。
+
 
 ## 开发约束（当前阶段）
 
