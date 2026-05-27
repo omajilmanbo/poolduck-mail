@@ -25,11 +25,29 @@ When changing behavior, update the corresponding docs:
 
 Do not store secrets, customer data, or temporary chat logs in docs.
 For important decisions, create an ADR and wait for human approval.
-## ADR policy
+## ADR writing policy
 
 All ADR files under `docs/decisions/` must be created from `docs/decisions/ADR-TEMPLATE.md`.
 Do not create or update ADRs with a custom format.
 If an ADR does not match the template, update it before implementation.
+
+## ADR reading policy
+
+Before working on any task that affects architecture, authentication, authorization,
+tenant isolation, subscription gating, database schema, API design, or mail sending,
+the agent must inspect `docs/decisions/` and read all relevant ADR files.
+
+Do not guess ADR filenames.
+If an Issue mentions an ADR number such as ADR-003, search `docs/decisions/` for
+files beginning with that ADR number, for example `ADR-003-*`.
+
+Current key ADRs:
+- ADR-001: Web SaaS for MVP
+- ADR-003: Tenant context isolation and subscription gating
+- ADR-004: MVP technology stack
+
+If the relevant ADR is missing, not merged, or not `Accepted`, stop and ask for
+human confirmation before implementation.
 
 
 ## Working rules
