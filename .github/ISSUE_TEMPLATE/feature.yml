@@ -47,3 +47,14 @@ body:
         - label: risk:data
         - label: risk:migration
         - label: risk:security
+
+  - type: checkboxes
+    id: ssot_check
+    attributes:
+      label: SSOT 一致性检查
+      description: 如需求涉及以下基线，请在说明中同步引用相关文档（README/docs/api.md/docs/database.md/docs/requirements.md）
+      options:
+        - label: 角色仍为 root_admin / manager
+        - label: 订阅状态仍为 trial / active / expired / suspended
+        - label: 登录流程仍为 tenant_id + email + password
+        - label: 扫码邮件正文仍为后端固定模板（不接收 custom_message/custom_text/mail_body）
