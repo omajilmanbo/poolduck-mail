@@ -16,14 +16,14 @@
 ## 3. 用户与权限管理
 
 - 创建/禁用用户
-- 分配角色（admin/operator）
+- 分配角色（root_admin/manager）
 - 定期审查高权限账号
 
 ## 4. 订阅管理
 
-- 检查订阅状态（trial/active/expired/canceled）
+- 检查订阅状态（trial/active/expired/suspended）
 - 到期前通知业务负责人续订
-- 过期后按策略限制关键接口
+- 过期或暂停后按策略限制关键接口（禁止扫码提交、创建邮件任务、发送与重试）
 
 ## 5. 审计与合规
 

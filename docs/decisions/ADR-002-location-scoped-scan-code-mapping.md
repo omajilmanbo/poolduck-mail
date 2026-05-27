@@ -2,6 +2,7 @@
 
 - 状态：Accepted
 - 日期：2026-05-20
+- 相关 Issue：#2
 
 ## Context
 
@@ -15,19 +16,24 @@
 - `users` 明确为“可登录系统的管理员账号”，角色拆分为：
   - `root_admin`：可编辑订阅、增减 location。
   - `manager`：仅可编辑 `person_mappings`。
-- `subscriptions` 由“租户级”调整为“location 级”，外键改为 `location_id`（每个 location 一条订阅配置）。
+- `subscriptions` 保持“租户级”模型，外键保持 `tenant_id`（每个 tenant 一条订阅配置）。
+- 计费策略在 MVP 采用“租户基础套餐 + location 数量用于后续计费扩展”的方式：当前不引入 location 级订阅拆分，避免先期 migration 与权限复杂度。
+- 当订阅周期中追加 location 数量时，采用与租户订阅 `end_at` 同步到期（co-term）并按剩余周期补差计费，避免多到期日并行。
 
 ## Alternatives considered
 
 - 使用 `offices` 单一命名：语义清晰但无法直接覆盖学校场景。
 - 使用 `schools` 单一命名：同样不覆盖办公室场景。
 - 统一命名为 `locations`：可覆盖办公室/学校，保留 `type` 区分，兼容后续扩展。
+- 订阅改为 location 级：可直接按 location 定价，但会增加订阅聚合判断、门禁实现与迁移成本。
+- 保持租户级订阅并按 location 数量计费：实现成本更低，能满足 MVP 快速落地；后续若有精细化计费再通过新 ADR 升级。
 
 ## Consequences
 
 - 数据查询链路增加 location 上下文，前端与后端均需显式传递当前办公室/学校。
 - 同一扫码编号可在不同 location 下复用且互不冲突。
 - 管理与导入流程后续需要支持 location 维度。
+- 订阅门禁仍以 tenant 维度执行，避免在 MVP 阶段引入跨 location 的订阅一致性问题。
 
 ## Migration impact
 
@@ -43,3 +49,9 @@
 
 - 运维排障需增加 `tenant_id + location_id + scan_code` 三元组定位。
 - 测试需覆盖“同码不同 location 隔离”与越权访问拒绝场景。
+
+
+## Follow-up
+
+- 后续实现阶段需将本 ADR 要求映射到数据库迁移、API 契约与测试用例。
+- 如业务规则变化，需通过新 ADR 明确 supersede 关系。

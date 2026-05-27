@@ -10,7 +10,7 @@
 
 ### 2.1 单元测试
 - 认证逻辑（密码校验、token 解析）
-- 订阅状态判断（active/expired/grace）
+- 订阅状态判断（trial/active/expired/suspended）
 - 邮件任务状态流转
 
 ### 2.2 集成测试
@@ -30,7 +30,7 @@
 
 ### 2.5 订阅与计费相关测试（重点）
 - 订阅过期禁止关键业务接口
-- grace period 逻辑符合设计
+- `trial` / `active` 允许扫码与发信，`expired` / `suspended` 禁止扫码提交、创建邮件任务、发送与重试
 - license check 结果与订阅状态一致
 
 ## 3. 回归基线

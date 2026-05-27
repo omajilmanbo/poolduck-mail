@@ -12,9 +12,9 @@
 
 排查步骤：
 1. 查看 `mail_jobs` 中失败状态与错误信息
-2. 检查 SMTP/provider 凭据与连接性
+2. MVP 阶段优先检查 Sandbox/Mock provider 记录与返回错误
 3. 检查收件箱地址格式与域名策略
-4. 必要时触发重试接口
+4. 仅在非 MVP 阶段接入真实 provider 后，再排查 SMTP/provider 凭据与连接性
 
 ## 3. 订阅异常
 
@@ -22,7 +22,7 @@
 1. 查看 `subscriptions` 状态与有效期
 2. 调用 `/api/license/check` 验证返回
 3. 检查时区与过期判断逻辑
-4. 确认是否应进入 grace period
+4. 确认订阅状态是否属于 `trial` / `active` / `expired` / `suspended` 之一，并核对门禁动作
 
 ## 4. 租户隔离异常（高优先级）
 

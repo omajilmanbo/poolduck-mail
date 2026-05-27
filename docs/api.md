@@ -27,7 +27,7 @@
 
 ### GET `/api/license/check`
 - 说明：校验当前 tenant 订阅可用性
-- 出参：`status`, `plan`, `expired_at`, `grace_period`
+- 出参：`status`, `plan`, `expired_at`
 - 权限：已登录用户（`root_admin` / `manager`）
 
 ## 3. 扫码邮件核心流程 API
@@ -52,7 +52,7 @@
   - 创建扫码事件记录
   - 后端在当前 tenant + location 上下文中查找扫码编号对应邮箱
   - 后端按固定模板生成最终邮件正文
-  - 后端创建关联邮件任务（初始 `pending`）
+  - 后端创建关联邮件任务（初始 `queued`）
   - 不接收任何自定义正文字段（`custom_message` / `custom_text` / `mail_body` 等）
 - 权限：已登录用户（`root_admin` / `manager`）
 - 订阅要求：`trial` 或 `active`；`expired` / `suspended` 返回订阅无效错误
