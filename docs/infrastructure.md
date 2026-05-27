@@ -1,0 +1,105 @@
+# 基础设施总览（Local / Staging / Production）
+
+## 1. 目标
+
+在进入数据库、认证、扫码邮件实现前，先统一三套环境的基础设施蓝图，确保：
+
+- 环境隔离规则明确，避免跨环境误操作。
+- 前后端、数据库、邮件 provider、日志监控、Secrets 的部署位置统一。
+- 后续部署与配置类 Issue 有清晰拆分依据。
+
+## 2. 基础设施总览图
+
+```mermaid
+flowchart LR
+    subgraph Local[Local（开发机）]
+      LBrowser[Browser]
+      LFE[Frontend\nNext.js :3000]
+      LBE[Backend API\nNestJS :3001]
+      LDB[(PostgreSQL 16\nDocker Compose :5432)]
+      LMAIL[Sandbox/Mock Mail Provider]
+      LLOG[Local Logs]
+      LBrowser --> LFE --> LBE
+      LBE --> LDB
+      LBE --> LMAIL
+      LBE --> LLOG
+    end
+
+    subgraph Staging[Staging（预发布）]
+      SBrowser[Browser]
+      SFE[Frontend\nHTTPS]
+      SBE[Backend API\nHTTPS]
+      SDB[(PostgreSQL 16\nStaging 独立实例)]
+      SMAIL[Sandbox Mail Provider\nStaging 账号]
+      SOBS[Centralized Logs & Metrics]
+      SBrowser --> SFE --> SBE
+      SBE --> SDB
+      SBE --> SMAIL
+      SBE --> SOBS
+    end
+
+    subgraph Prod[Production（正式）]
+      PBrowser[Browser]
+      PFE[Frontend\nHTTPS + 正式域名]
+      PBE[Backend API\nHTTPS]
+      PDB[(PostgreSQL 16\nProduction 独立实例)]
+      PMAIL[Production Mail Provider\n（非 sandbox-only 配置）]
+      POBS[Centralized Logs/Monitoring/Alerting]
+      PBACKUP[(DB Backup)]
+      PBrowser --> PFE --> PBE
+      PBE --> PDB
+      PBE --> PMAIL
+      PBE --> POBS
+      PDB --> PBACKUP
+    end
+```
+
+## 3. 组件部署位置
+
+- Frontend：
+  - Local：开发机进程。
+  - Staging/Production：独立部署单元（可与后端分开发布）。
+- Backend API：
+  - Local：开发机进程。
+  - Staging/Production：独立部署单元，负责租户鉴权、订阅门禁、邮件任务。
+- PostgreSQL：
+  - Local：Docker Compose 本地容器。
+  - Staging：独立数据库实例，仅用于测试数据。
+  - Production：独立数据库实例，用于真实业务数据，包含备份策略。
+- Mail Provider：
+  - Local：mock/sandbox。
+  - Staging：sandbox（禁止真实客户投递）。
+  - Production：正式发送链路（不能使用 mock secret 或 sandbox-only 配置）。
+- 日志/监控：
+  - Local：控制台/本地日志。
+  - Staging/Production：集中式日志与指标，Production 需告警。
+- Secrets：
+  - 三环境独立存储，禁止复用。
+
+## 4. 隔离原则
+
+1. Staging 与 Production 必须：
+   - 独立数据库实例。
+   - 独立 Secrets。
+   - 独立环境变量集合。
+2. Staging 不使用真实客户数据。
+3. Production 不使用 mock secret 或 sandbox-only mail 配置。
+4. 禁止跨环境共享访问凭据（如同一 `DATABASE_URL` / `JWT_SECRET`）。
+
+## 5. 非范围声明（与 Issue #35 对齐）
+
+以下内容不在当前 Issue 实施范围内：
+
+- 创建 AWS/Vercel/RDS/ECS 等真实云资源。
+- 编写 Docker Compose 实现文件。
+- 建立 CI/CD 流水线实现。
+- 接入真实邮件供应商 SDK/API。
+
+## 6. 后续实现类 Issue 建议
+
+1. 新建：Local Docker Compose 编排（frontend/backend/postgres）。
+2. 新建：Staging/Production 环境变量与 secrets 管理规范落地。
+3. 新建：Production HTTPS 证书与域名接入流程。
+4. 新建：数据库备份与恢复演练流程。
+5. 新建：日志/指标/告警最小可观测链路。
+6. 新建：发布与回滚 Runbook（含 Staging gate）。
