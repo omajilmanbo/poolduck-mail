@@ -120,3 +120,6 @@ MVP 技术栈统一如下：
 - Issue #21：Sandbox Mail Provider 与邮件任务最小闭环。
 - 更新 `docs/testing.md`：补充与本 ADR 对齐的测试分层与命令约定。
 - 更新 `docs/deployment.md`：补充 Node/PostgreSQL 基础运行要求与 CI 约束。
+
+> 历史编号说明（2026-05-27）：本节 Issue 编号反映 ADR 编写当时的计划。
+> 当前执行顺序与编号映射以 `README.md` 的“推荐的 Issue 执行顺序”为准；若冲突，以 README 为当前实施基线。
