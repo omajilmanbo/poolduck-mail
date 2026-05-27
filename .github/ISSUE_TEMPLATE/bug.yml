@@ -21,6 +21,39 @@ body:
       label: 实际行为
     validations:
       required: true
+  - type: textarea
+    id: human_prerequisites
+    attributes:
+      label: 人工准备 / 外部前提（Human prerequisites）
+      description: 如问题重现或修复依赖特定权限、环境、Secrets、数据库、端口、域名或外部服务，请明确；若无请写“无”。
+      placeholder: |
+        - 人工需先准备：
+        - Agent 不负责：
+        - 无则填写：无
+    validations:
+      required: true
+  - type: textarea
+    id: agent_permissions_runtime
+    attributes:
+      label: Agent 权限与执行环境（Agent permissions / runtime）
+      description: 明确 Agent 调试和修复该缺陷所需权限与执行环境（仓库、网络、Docker、Actions、云平台等）。
+      placeholder: |
+        - 仓库写权限：需要 / 不需要
+        - 网络访问：需要 / 不需要
+        - Docker：需要 / 不需要
+        - 云平台权限：需要 / 不需要
+    validations:
+      required: true
+  - type: textarea
+    id: blocking_conditions
+    attributes:
+      label: 阻塞条件 / 停止规则（Blocking conditions）
+      description: 如缺少权限、环境、Secrets、云资源或人工确认，Agent 必须停止并报告，不得假装完成。
+      placeholder: |
+        - 缺少以下条件时必须停止：
+        - 停止后需报告给：
+    validations:
+      required: true
   - type: input
     id: version
     attributes:

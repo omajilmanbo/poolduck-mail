@@ -20,6 +20,9 @@
 ## 3. Issue 要求
 
 - 明确背景、范围、验收标准
+- 必填“人工准备 / 外部前提（Human prerequisites）”，写清账号、权限、环境、端口、域名、数据库、Secrets、外部服务；若无必须写“无”
+- 必填“Agent 权限与执行环境（Agent permissions / runtime）”，写清仓库写权限、网络、Docker、GitHub Actions、云平台等要求
+- 必填“阻塞条件 / 停止规则（Blocking conditions）”，缺少权限、环境、Secrets、云资源或人工确认时，Agent 必须停止并报告
 - 标注角色标签（如 `role:backend`）
 - 标注风险标签（如 `risk:auth`）
 - 涉及高风险（auth/billing/data/security）需人工审批
