@@ -50,6 +50,9 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 - API 草案：`docs/api.md`
 - 开发流程：`docs/workflow.md`
 - 测试策略：`docs/testing.md`
+- 基础设施总览：`docs/infrastructure.md`
+- 环境定义：`docs/environments.md`
+- 网络策略：`docs/network.md`
 - 部署说明：`docs/deployment.md`
 - 发布规范：`docs/release.md`
 - 运维手册：`docs/operation.md`
