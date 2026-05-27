@@ -43,7 +43,7 @@ flowchart LR
       PFE[Frontend\nHTTPS + 正式域名]
       PBE[Backend API\nHTTPS]
       PDB[(PostgreSQL 16\nProduction 独立实例)]
-      PMAIL[Production Mail Provider\n(非 sandbox-only 配置)]
+      PMAIL[Production Mail Provider\n (非 sandbox-only 配置)]
       POBS[Centralized Logs/Monitoring/Alerting]
       PBACKUP[(DB Backup)]
       PBrowser --> PFE --> PBE
