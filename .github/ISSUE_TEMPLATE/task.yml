@@ -1,5 +1,5 @@
 name: Task
-about: 文档、准备、配置类任务
+description: 文档、准备、配置类任务
 labels: ["type:task"]
 body:
   - type: textarea
