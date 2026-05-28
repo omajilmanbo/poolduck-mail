@@ -1,5 +1,5 @@
 name: Bug
-about: 缺陷反馈模板
+description: 缺陷反馈模板
 labels: ["type:bug"]
 body:
   - type: textarea
