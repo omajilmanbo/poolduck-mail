@@ -1,5 +1,5 @@
 name: Feature
-about: 新功能需求模板
+description: 新功能需求模板
 labels: ["type:feature"]
 body:
   - type: textarea
