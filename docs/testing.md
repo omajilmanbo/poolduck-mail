@@ -41,6 +41,15 @@
 - 订阅状态回归
 - 邮件发送成功/失败回归
 
+
+### 3.1 Local 容器 smoke test
+
+本地 Docker Compose 环境启动后，至少验证：
+
+- `GET http://localhost:3000/healthz` 返回 frontend `ok`。
+- `GET http://localhost:3001/health` 返回 backend `ok`。
+- `docker compose ps` 中 `frontend`、`backend`、`postgres` 均为 running/healthy（如 Docker CLI 可用）。
+
 ## 4. 质量门禁建议
 
 - 单元测试通过率 100%（新增/改动相关）

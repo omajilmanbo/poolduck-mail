@@ -57,10 +57,10 @@ flowchart LR
 ## 3. 组件部署位置
 
 - Frontend：
-  - Local：开发机进程。
+  - Local：Docker Compose 容器（推荐）或开发机进程。
   - Staging/Production：独立部署单元（可与后端分开发布）。
 - Backend API：
-  - Local：开发机进程。
+  - Local：Docker Compose 容器（推荐）或开发机进程。
   - Staging/Production：独立部署单元，负责租户鉴权、订阅门禁、邮件任务。
 - PostgreSQL：
   - Local：Docker Compose 本地容器。
@@ -86,25 +86,34 @@ flowchart LR
 3. Production 不使用 mock secret 或 sandbox-only mail 配置。
 4. 禁止跨环境共享访问凭据（如同一 `DATABASE_URL` / `JWT_SECRET`）。
 
-## 5. 非范围声明（与 Issue #35 对齐）
+## 5. Local Docker Compose 落地（Issue #36）
+
+Issue #36 已新增 Local Docker Compose 编排，覆盖：
+
+- Frontend：Next.js dev server，暴露 `localhost:3000`。
+- Backend API：NestJS dev server，暴露 `localhost:3001`。
+- PostgreSQL：PostgreSQL 16，本地开发端口 `localhost:5432`，数据保存在 `postgres_data` Docker volume。
+- 运行方式：在仓库根目录执行 `docker compose up --build`。
+
+Local Compose 仅用于本地开发与 smoke 验证；不得作为 Staging / Production 部署方案，也不得复用本地占位 secret。
+
+## 6. 非范围声明
 
 以下内容不在当前 Issue 实施范围内：
 
 - 创建 AWS/Vercel/RDS/ECS 等真实云资源。
-- 编写 Docker Compose 实现文件。
 - 建立 CI/CD 流水线实现。
 - 接入真实邮件供应商 SDK/API。
 
-## 6. 后续实现类 Issue 建议
+## 7. 后续实现类 Issue 建议
 
-1. 新建：Local Docker Compose 编排（frontend/backend/postgres）。
-2. 新建：Staging/Production 环境变量与 secrets 管理规范落地。
-3. 新建：Production HTTPS 证书与域名接入流程。
-4. 新建：数据库备份与恢复演练流程。
-5. 新建：日志/指标/告警最小可观测链路。
-6. 新建：发布与回滚 Runbook（含 Staging gate）。
+1. 新建：Staging/Production 环境变量与 secrets 管理规范落地。
+2. 新建：Production HTTPS 证书与域名接入流程。
+3. 新建：数据库备份与恢复演练流程。
+4. 新建：日志/指标/告警最小可观测链路。
+5. 新建：发布与回滚 Runbook（含 Staging gate）。
 
-## 7. 资源台账（实际参数）
+## 8. 资源台账（实际参数）
 
 `docs/infrastructure.md` 负责基础设施蓝图与隔离原则；实际落地资源与参数请统一维护在 `docs/inventory/`：
 

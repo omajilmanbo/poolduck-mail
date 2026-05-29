@@ -24,7 +24,28 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 
 ## 本地开发入口（当前状态）
 
-当前仓库已初始化后端工程骨架（NestJS + TypeScript）。
+当前仓库已初始化前后端工程骨架，并提供 Local Docker Compose 编排用于一次性启动前端、后端与 PostgreSQL。
+
+### Docker Compose（推荐用于 Issue #36 后的本地容器环境）
+
+- 首次启动 / 重新构建：`docker compose up --build`
+- 后台启动：`docker compose up -d --build`
+- 查看服务状态：`docker compose ps`
+- 查看日志：`docker compose logs -f backend frontend postgres`
+- 停止容器：`docker compose down`
+- 清理本地数据库与依赖缓存卷：`docker compose down -v`
+
+默认本地访问地址：
+
+- Frontend：`http://localhost:3000`
+- Frontend health check：`GET http://localhost:3000/healthz`
+- Backend API：`http://localhost:3001`
+- Backend health check：`GET http://localhost:3001/health`
+- PostgreSQL：`localhost:5432`（仅本地开发）
+
+> Docker Compose 使用 `.env.example` 中的本地占位值作为参考；不要把这些本地占位 secret 复用于 Staging / Production。
+
+### 手工进程启动
 
 - 后端目录：`backend/`
 - 安装依赖：`cd backend && npm install`

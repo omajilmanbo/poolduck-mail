@@ -15,9 +15,9 @@ MVP 服务间通信方向统一为：
 
 ### Local
 
-- Frontend：`http://localhost:3000`
-- Backend API：`http://localhost:3001`
-- PostgreSQL：`localhost:5432`（仅本地开发链路）
+- Frontend：`http://localhost:3000`（Compose service：`frontend:3000`）
+- Backend API：`http://localhost:3001`（Compose service：`backend:3001`）
+- PostgreSQL：`localhost:5432`（Compose service：`postgres:5432`，仅本地开发链路）
 
 ### Staging / Production（示例约定）
 
@@ -33,7 +33,8 @@ MVP 服务间通信方向统一为：
 
 ## 4. API Base URL 约定
 
-- Local 前端默认调用：`http://localhost:3001`
+- Local 前端默认调用：`http://localhost:3001`（浏览器访问）
+- Local 容器内服务间调用：`http://backend:3001`（仅 Compose 网络内部）
 - Staging 前端调用：`https://api.staging.<domain>`
 - Production 前端调用：`https://api.<domain>`
 

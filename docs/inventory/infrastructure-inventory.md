@@ -15,13 +15,13 @@
 
 | 资源类别 | 用途 | Local | Staging | Production | 关键参数/标识（非敏感） | 保存位置 | 负责人 | 备注 |
 |---|---|---|---|---|---|---|---|---|
-| Frontend Hosting | 前端页面托管 | Local process (`localhost:3000`) | TBD | TBD | URL / 域名 / 部署平台 | `docs/inventory/` | 人工指定 | 可先填占位符域名 |
-| Backend API Hosting | API 服务托管 | Local process (`localhost:3001`) | TBD | TBD | Base URL / Runtime / Region | `docs/inventory/` | 人工指定 | 与前端分离部署 |
-| PostgreSQL | 业务数据存储 | Docker Compose / PostgreSQL 16 / `5432` | 独立实例（TBD） | 独立实例（TBD） | engine/version/port/instance-id | `docs/inventory/` | 人工指定 | 禁止跨环境共用实例 |
+| Frontend Hosting | 前端页面托管 | Docker Compose service `frontend` / `localhost:3000` | TBD | TBD | URL / 域名 / 部署平台 | `docker-compose.yml`, `docs/inventory/` | 人工指定 | Local 可替代为手工进程 |
+| Backend API Hosting | API 服务托管 | Docker Compose service `backend` / `localhost:3001` | TBD | TBD | Base URL / Runtime / Region | `docker-compose.yml`, `docs/inventory/` | 人工指定 | 与前端分离部署 |
+| PostgreSQL | 业务数据存储 | Docker Compose service `postgres` / PostgreSQL 16 / `localhost:5432` / volume `postgres_data` | 独立实例（TBD） | 独立实例（TBD） | engine/version/port/instance-id | `docker-compose.yml`, `docs/inventory/` | 人工指定 | 禁止跨环境共用实例 |
 | Mail Provider | 邮件发送能力 | sandbox/mock provider | sandbox provider（独立账号） | TBD（正式链路） | provider name / account alias | `docs/inventory/` | 人工指定 | MVP 禁止在非生产发送真实客户邮件 |
 | Log & Monitoring | 日志、指标、告警 | 本地日志 | 集中日志与指标（TBD） | 集中日志、指标、告警（TBD） | service name / project id | `docs/inventory/` | 人工指定 | 生产环境需告警策略 |
 | Backup | 备份与恢复 | 可选（本地快照） | 备份策略（TBD） | 备份策略（TBD） | schedule / retention / storage | `docs/inventory/` | 人工指定 | 不记录真实存储凭据 |
-| Deployment Method | 发布方式 | 手工启动（dev） | CI/CD（TBD） | CI/CD（TBD） | workflow name / runner / approval | `docs/inventory/` | 人工指定 | 需与 `docs/workflow.md` 一致 |
+| Deployment Method | 发布方式 | Docker Compose（推荐）或手工启动（dev） | CI/CD（TBD） | CI/CD（TBD） | workflow name / runner / approval | `docker-compose.yml`, `docs/inventory/` | 人工指定 | 需与 `docs/workflow.md` 一致 |
 | DNS & TLS | 域名与证书 | N/A | TBD | TBD | domain / cert source / expiry owner | `docs/inventory/` | 人工指定 | 可先记录占位域名 |
 
 ## 3. 变更记录建议

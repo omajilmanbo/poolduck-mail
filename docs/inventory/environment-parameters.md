@@ -8,14 +8,19 @@
 
 | 变量名 | 用途 | Local | Staging | Production | 是否 Secret | 备注 |
 |---|---|---|---|---|---|---|
-| APP_ENV | 运行环境标识 | `development` | `staging` | `production` | No | 与部署环境一致 |
+| APP_ENV | 运行环境标识 | `local` | `staging` | `production` | No | 与部署环境一致 |
 | APP_PORT | Backend 监听端口 | `3001` | `TBD` | `TBD` | No | 仅记录端口，不含访问凭据 |
-| FRONTEND_PORT | Frontend 本地端口 | `3000` | `TBD` | `TBD` | No | 若非容器部署可保持 TBD |
-| API_BASE_URL | 前端访问 API 地址 | `http://localhost:3001` | `TBD` | `TBD` | No | 仅写 URL，不写 token |
-| DATABASE_URL | 数据库连接串 | `example://local-placeholder` | `Secret` | `Secret` | Yes | 不写真实值 |
-| JWT_SECRET | JWT 签名密钥 | `local-placeholder` | `Secret` | `Secret` | Yes | 不写真实值 |
-| REFRESH_TOKEN_SECRET | 刷新令牌签名密钥 | `local-placeholder` | `Secret` | `Secret` | Yes | 不写真实值 |
-| MAIL_PROVIDER | 邮件 provider 类型 | `sandbox` | `sandbox` | `TBD` | No | MVP 优先 sandbox/mock |
+| FRONTEND_PORT | Frontend 本地端口 | `3000` | `TBD` | `TBD` | No | Local Compose 暴露到宿主机 |
+| POSTGRES_PORT | PostgreSQL 本地端口 | `5432` | `TBD` | `TBD` | No | Local Compose 暴露到宿主机，仅本地使用 |
+| NEXT_PUBLIC_API_BASE_URL | 浏览器侧前端访问 API 地址 | `http://localhost:3001` | `TBD` | `TBD` | No | Next.js public env；仅写 URL，不写 token |
+| API_BASE_URL | 容器/服务端侧 API 地址 | `http://backend:3001` | `TBD` | `TBD` | No | Compose 网络内部使用 |
+| POSTGRES_DB | Local PostgreSQL 数据库名 | `poolduck_mail` | `Secret/Parameter` | `Secret/Parameter` | Yes | 不记录真实生产库名（如需保密） |
+| POSTGRES_USER | Local PostgreSQL 用户名 | `poolduck` | `Secret` | `Secret` | Yes | 不记录真实账号 |
+| POSTGRES_PASSWORD | Local PostgreSQL 密码 | `poolduck_local_password` | `Secret` | `Secret` | Yes | Local 占位值，不得复用 |
+| DATABASE_URL | 数据库连接串 | `postgresql://poolduck:...@localhost:5432/poolduck_mail` | `Secret` | `Secret` | Yes | 不写真实 Staging/Production 值 |
+| JWT_SECRET | JWT 签名密钥 | `local_dev_only_change_me` | `Secret` | `Secret` | Yes | Local 占位值，不得复用 |
+| REFRESH_TOKEN_SECRET | 刷新令牌签名密钥 | `local_refresh_dev_only_change_me` | `Secret` | `Secret` | Yes | Local 占位值，不得复用 |
+| MAIL_PROVIDER | 邮件 provider 类型 | `mock` | `sandbox` | `TBD` | No | MVP 优先 sandbox/mock |
 | MAIL_FROM_ADDRESS | 发件地址标识 | `no-reply@example.local` | `Secret/Placeholder` | `Secret/Placeholder` | Yes | 不写真实邮箱账号凭据 |
 | LOG_LEVEL | 日志级别 | `debug` | `info` | `info` | No | 按环境调整 |
 | CORS_ORIGIN | CORS 白名单 | `http://localhost:3000` | `TBD` | `TBD` | No | 多域名时用逗号分隔（示例） |
