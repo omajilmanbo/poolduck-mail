@@ -26,8 +26,28 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 
 当前仓库已初始化后端工程骨架（NestJS + TypeScript）。
 
+### 本地 Docker Compose
+
+运行前人工检查项：
+
+- 本机可执行 Docker / Docker Compose。
+- 默认端口未被占用：PostgreSQL `5432`、Backend `3001`、Frontend `3000`。
+- 如本机已有 PostgreSQL 占用 `5432`，先在本地 `.env` 中改用 `POSTGRES_PORT=5433` 等端口映射。
+- 不要在 `.env`、compose 文件或文档中写入真实数据库密码、真实客户数据、真实邮件凭据。
+
+启动本地 PostgreSQL 16：
+
+1. 复制环境变量示例：`copy .env.example .env`
+2. 启动数据库：`docker compose up -d postgres`
+3. 查看健康状态：`docker compose ps`
+4. 验证数据库连接：
+   - `docker compose exec postgres pg_isready -U poolduck_local -d poolduck_mail`
+
+`docker-compose.yml` 默认只启动 PostgreSQL。本阶段前后端仍按本地 Node.js 进程运行，后端使用 `.env.example` 中的 `DATABASE_URL` 连接本地数据库。
+
 - 后端目录：`backend/`
 - 安装依赖：`cd backend && npm install`
+- 数据库连接串：`DATABASE_URL=postgresql://poolduck_local:poolduck_local_password@localhost:5432/poolduck_mail`
 - 启动开发服务：`npm run start:dev`
 - 默认健康检查地址：`GET http://localhost:3001/health`
 - 运行测试：`npm test`
