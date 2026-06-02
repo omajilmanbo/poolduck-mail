@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars locally before manual apply. Do not commit terraform.tfvars.
+
+# Existing compartment display name: Mail_project_stg. Terraform needs the OCID, not the display name.
+compartment_ocid = "ocid1.compartment.oc1..example"
+
+# Must be the tenancy home region to keep Always Free eligibility.
+region = "us-ashburn-1"
+
+# Replace with the admin's fixed public IP/CIDR before apply.
+admin_ssh_cidr = "203.0.113.10/32"
+
+# Public key only. Never store private keys in the repository.
+ssh_public_key = "ssh-ed25519 AAAA... poolduck-staging-admin"
+
+# Defaults target an Always Free A1 Flex instance. If capacity is unavailable, switch manually and re-plan.
+instance_shape     = "VM.Standard.A1.Flex"
+instance_ocpus     = 1
+instance_memory_gb = 6

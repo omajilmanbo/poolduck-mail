@@ -116,3 +116,20 @@ flowchart LR
 
 当 Local / Staging / Production 的资源、域名、端口、环境变量或外部服务发生变化时，必须同步更新以上台账。
 
+
+## 8. OCI Always Free Staging IaC（Issue #48）
+
+Issue #48 的 Staging 基础设施资源准备采用 Terraform，代码位于 `infrastructure/oci-staging/`，目标为人工已创建的 OCI compartment `Mail_project_stg`。
+
+本阶段只生成 IaC 并等待人工确认后实施，不在 PR 中执行 `terraform apply`，也不提交任何真实 OCI 凭据、数据库密码、JWT secret 或邮件服务 token。
+
+当前 Staging IaC 范围：
+
+- OCI VCN / Public Subnet / Internet Gateway / Route Table，用于 Staging 网络隔离与公网 smoke test 入口。
+- Web/API NSG，仅开放 SSH、HTTP、HTTPS；SSH 来源必须在人工实施前收窄为管理员固定 IP/CIDR。
+- DB NSG，仅允许 Staging 子网访问 PostgreSQL `5432`，禁止公网直接访问数据库端口。
+- Always Free Compute，默认使用 `VM.Standard.A1.Flex` 单机承载 MVP Staging 的 Frontend、Backend 与 PostgreSQL 16 容器。
+- Object Storage Bucket，用于非真实 Staging 数据备份和运维产物归档，并配置生命周期清理。
+- Cloud-init，仅安装 Docker、创建目录和占位配置，不自动部署应用、不写入真实 secrets。
+
+人工实施前必须确认 OCI home region、Always Free 配额、`Mail_project_stg` compartment OCID、管理员 SSH CIDR 与 SSH 公钥。

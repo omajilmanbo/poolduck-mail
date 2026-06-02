@@ -144,3 +144,9 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 - 当前已进入实现准备阶段：按“推荐的 Issue 执行顺序”推进，优先完成 #37/#21 等基础任务。
 - 不提交 secrets / token / 真实客户数据。
 - 新功能开发前先确认 ADR、Issue、人工准备项与测试计划。
+
+## OCI Always Free Staging IaC（Issue #48）
+
+已在 `infrastructure/oci-staging/` 增加 Terraform 代码，用于在人工已创建的 OCI compartment `Mail_project_stg` 中准备 Staging 基础设施资源。该 IaC 默认创建 VCN/Subnet/IGW/Route Table、Web/API NSG、DB NSG、Always Free Compute、Object Storage 备份 bucket 与 cloud-init 引导配置。
+
+该代码仅供人工审核后实施：执行前必须确认 OCI home region、compartment OCID、Always Free 配额、管理员 SSH CIDR 与 SSH 公钥；仓库不得提交 `terraform.tfvars`、Terraform state、真实密钥、数据库密码、JWT secret 或邮件 token。

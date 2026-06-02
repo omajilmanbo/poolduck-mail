@@ -112,3 +112,23 @@
 - 执行数据库 migration（先备份）
 - 配置监控告警（登录失败率、邮件失败率）
 - 逐步发布或低峰发布
+
+## 7. OCI Always Free Staging IaC 实施入口（Issue #48）
+
+Staging 基础设施准备代码位于 `infrastructure/oci-staging/`。该目录只提供 Terraform 计划与人工实施入口，默认不自动部署应用。
+
+人工实施步骤：
+
+1. 进入 IaC 目录：`cd infrastructure/oci-staging`
+2. 复制变量示例：`cp terraform.tfvars.example terraform.tfvars`
+3. 人工填写 `terraform.tfvars`：`compartment_ocid`、`region`、`admin_ssh_cidr`、`ssh_public_key`。
+4. 初始化与检查：`terraform init && terraform fmt -check && terraform validate`
+5. 生成计划：`terraform plan -out=tfplan`
+6. 人工审核计划确认无 Production 资源、无真实 secret、无公网数据库端口后，才允许执行：`terraform apply tfplan`
+
+实施约束：
+
+- `region` 必须由人工确认是 OCI tenancy home region，以保持 Always Free 资源资格。
+- `admin_ssh_cidr` 禁止使用 `0.0.0.0/0`。
+- Staging 邮件 provider 仍必须使用 mock/sandbox，不得接入真实客户投递。
+- `terraform.tfvars`、`tfplan`、Terraform state 文件不得提交到仓库。

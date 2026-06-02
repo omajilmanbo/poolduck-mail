@@ -1,0 +1,58 @@
+#cloud-config
+# OCI staging bootstrap for ${resource_prefix}; installs Docker only and creates placeholder directories.
+package_update: true
+package_upgrade: false
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - ufw
+  - docker.io
+  - docker-compose-plugin
+
+users:
+  - default
+  - name: poolduck
+    groups: [sudo, docker]
+    shell: /bin/bash
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+
+write_files:
+  # Placeholder environment file documents required keys without storing secrets.
+  - path: /opt/poolduck-mail/staging.env.example
+    owner: poolduck:poolduck
+    permissions: "0640"
+    content: |
+      APP_ENV=staging
+      APP_PORT=3001
+      FRONTEND_BASE_URL=https://staging.example.invalid
+      API_BASE_URL=https://api.staging.example.invalid
+      DATABASE_URL=REPLACE_WITH_SECRET_FROM_APPROVED_SECRET_STORE
+      JWT_SECRET=REPLACE_WITH_SECRET_FROM_APPROVED_SECRET_STORE
+      REFRESH_TOKEN_SECRET=REPLACE_WITH_SECRET_FROM_APPROVED_SECRET_STORE
+      MAIL_PROVIDER=mock
+      MAIL_PROVIDER_API_KEY=REPLACE_WITH_SANDBOX_SECRET_FROM_APPROVED_SECRET_STORE
+      MAIL_FROM_ADDRESS=staging@example.invalid
+      TENANT_CONTEXT_ENFORCED=true
+      LOG_LEVEL=info
+  # Operational note reminding humans that real deployment is a separate manual step.
+  - path: /opt/poolduck-mail/README-OCI-STAGING.txt
+    owner: poolduck:poolduck
+    permissions: "0644"
+    content: |
+      This host is provisioned by Terraform for Poolduck Mail staging.
+      Do not place real secrets in Git or in world-readable files.
+      MVP mail provider must remain mock/sandbox until a later approved issue changes it.
+      PostgreSQL must not be exposed publicly; keep 5432 private to staging network only.
+
+runcmd:
+  # Enable Docker for future manual deployment of frontend/backend/PostgreSQL containers.
+  - systemctl enable --now docker
+  # Create application directories without cloning or starting application code automatically.
+  - mkdir -p /opt/poolduck-mail/{app,data/postgres,backups,logs}
+  - chown -R poolduck:poolduck /opt/poolduck-mail
+  # Host firewall defense-in-depth; OCI NSG remains the primary network control.
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable
