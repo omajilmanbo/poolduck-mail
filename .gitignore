@@ -20,3 +20,10 @@ coverage/
 .vscode/
 .idea/
 frontend/.next
+
+# Terraform local state and secret variable files
+**/.terraform/
+**/terraform.tfstate
+**/terraform.tfstate.*
+**/terraform.tfvars
+**/tfplan

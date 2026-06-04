@@ -50,6 +50,11 @@ If the relevant ADR is missing, not merged, or not `Accepted`, stop and ask for
 human confirmation before implementation.
 
 
+
+## README update policy
+
+README.md should remain a concise project entry point. When an Issue changes project status, setup, or execution order, update the existing relevant README sections instead of appending a new Issue-specific section by default. Prefer adjusting areas such as "当前项目阶段", "本地开发入口", "文档导航", or "推荐的 Issue 执行顺序". Only add a new README section when it is a stable long-term entry point that would otherwise be hard to discover, and avoid duplicating detailed content already covered under `docs/`.
+
 ## Working rules
 - 随时更新README.md以及/docs下的文档。
 - 每次只实现当前 Issue 的 Scope。
