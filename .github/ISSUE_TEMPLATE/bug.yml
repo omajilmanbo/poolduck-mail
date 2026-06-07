@@ -1,70 +1,70 @@
 name: Bug
-description: 缺陷反馈模板
+description: Defect feedback template
 labels: ["type:bug"]
 body:
   - type: textarea
     id: steps
     attributes:
-      label: 重现步骤
-      description: 按顺序列出可稳定复现问题的步骤
+      label: steps to reproduce
+      description: List the steps in order to reproduce the problem stably
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: 预期行为
+      label: expected behavior
     validations:
       required: true
   - type: textarea
     id: actual
     attributes:
-      label: 实际行为
+      label: actual behavior
     validations:
       required: true
   - type: textarea
     id: human_prerequisites
     attributes:
-      label: 人工准备 / 外部前提（Human prerequisites）
-      description: 如问题重现或修复依赖特定权限、环境、Secrets、数据库、端口、域名或外部服务，请明确；若无请写“无”。
+      label: Human prerequisites / external prerequisites
+      description: If the problem reproduction or fix depends on specific permissions, environment, Secrets, databases, ports, domain names or external services, please specify; if not, please write "None".
       placeholder: |
-        - 人工需先准备：
-        - Agent 不负责：
-        - 无则填写：无
+        - Labor needs to be prepared first:
+        - Agent is not responsible for:
+        - If none, fill in: none
     validations:
       required: true
   - type: textarea
     id: agent_permissions_runtime
     attributes:
-      label: Agent 权限与执行环境（Agent permissions / runtime）
-      description: 明确 Agent 调试和修复该缺陷所需权限与执行环境（仓库、网络、Docker、Actions、云平台等）。
+      label: Agent permissions and execution environment (Agent permissions / runtime)
+      description: Clarify the permissions and execution environment (repository, network, Docker, Actions, cloud platform, etc.) required for the Agent to debug and fix the bug.
       placeholder: |
-        - 仓库写权限：需要 / 不需要
-        - 网络访问：需要 / 不需要
-        - Docker：需要 / 不需要
-        - 云平台权限：需要 / 不需要
+        - Repository write permission: required / not required
+        - Internet access: required / not required
+        - Docker: required / not required
+        - Cloud platform permissions: required / not required
     validations:
       required: true
   - type: textarea
     id: blocking_conditions
     attributes:
-      label: 阻塞条件 / 停止规则（Blocking conditions）
-      description: 如缺少权限、环境、Secrets、云资源或人工确认，Agent 必须停止并报告，不得假装完成。
+      label: blocking conditions / stopping rules (Blocking conditions)
+      description: In the absence of permissions, environments, Secrets, cloud resources, or manual confirmation, the Agent must stop and report, and must not pretend to be complete.
       placeholder: |
-        - 缺少以下条件时必须停止：
-        - 停止后需报告给：
+        - Must stop when the following conditions are missing:
+        - After stopping, report to:
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: 版本信息
-      placeholder: 例如 v0.1.0 / commit sha / 环境
+      label: version information
+      placeholder: e.g. v0.1.0/commit sha/environment
     validations:
       required: true
   - type: textarea
     id: impact
     attributes:
-      label: 影响范围
-      description: 受影响租户、用户角色、接口或页面
+      label: scope of influence
+      description: Affected tenant, user role, interface or page
     validations:
       required: true

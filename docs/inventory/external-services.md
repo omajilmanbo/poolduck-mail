@@ -1,22 +1,22 @@
-# External Services Inventory（外部服务台账）
+# External Services Inventory (external service ledger)
 
-> 目的：记录系统依赖的外部服务、用途、环境覆盖与管理责任。
+> Purpose: Record the external services, usage, environment coverage and management responsibilities that the system depends on.
 
-## 1. 服务台账
+## 1. Service ledger
 
-| 服务类别 | 服务名称（可占位） | 用途 | Local | Staging | Production | 配置/凭据保存位置 | 负责人 | 备注 |
+| Service category | Service name (can occupy space) | Purpose | Local | Staging | Production | Configuration/credential saving location | Person in charge | Remarks |
 |---|---|---|---|---|---|---|---|---|
-| CI/CD | GitHub Actions | 构建、测试、发布流程 | Yes | Yes | Yes | Repo workflow + Secrets | 人工指定 | 与 `docs/workflow.md` 对齐 |
-| Database | PostgreSQL | 业务数据存储 | Yes（本地） | Yes（独立实例） | Yes（独立实例） | Infra config + Secrets | 人工指定 | 版本建议 16 |
-| Mail Provider | Sandbox/Mock（MVP） | 邮件任务验证 | Yes | Yes | TBD | Secret Manager / Config | 人工指定 | 生产 provider 待决策 |
-| DNS | TBD | 域名解析 | No | TBD | TBD | DNS 控制台 | 人工指定 | 未定平台先填 TBD |
-| TLS Certificate | TBD | HTTPS 证书 | No | TBD | TBD | 证书服务控制台 | 人工指定 | 证书续期责任需明确 |
-| Hosting Platform | TBD | 前后端托管 | Local machine | TBD | TBD | 平台控制台 + IaC（如有） | 人工指定 | 可使用脱敏项目名 |
-| Monitoring/Logging | TBD | 日志、指标、告警 | Local logs | TBD | TBD | 平台配置 + Secrets | 人工指定 | 生产需告警通道 |
-| Backup Storage | TBD | 备份文件存储 | Optional | TBD | TBD | 存储控制台 + Secrets | 人工指定 | 不记录真实存储 key |
+| CI/CD | GitHub Actions | Build, test, release process | Yes | Yes | Yes | Repo workflow + Secrets | Manually specified | Aligned with `docs/workflow.md` |
+| Database | PostgreSQL | Business data storage | Yes (local) | Yes (independent instance) | Yes (independent instance) | Infra config + Secrets | Manually specified | Version recommendation 16 |
+| Mail Provider | Sandbox/Mock (MVP) | Mail task verification | Yes | Yes | TBD | Secret Manager / Config | Manually specified | Production provider to be decided |
+| DNS | TBD | Domain name resolution | No | TBD | TBD | DNS console | Manually specified | Fill in TBD first if the platform is not determined |
+| TLS Certificate | TBD | HTTPS Certificate | No | TBD | TBD | Certificate Service Console | Manually specified | Certificate renewal responsibilities need to be clear |
+| Hosting Platform | TBD | Front-end and back-end hosting | Local machine | TBD | TBD | Platform console + IaC (if any) | Manually specified | Can use desensitized project name |
+| Monitoring/Logging | TBD | Logs, indicators, alarms | Local logs | TBD | TBD | Platform configuration + Secrets | Manual specification | Alarm channels required for production |
+| Backup Storage | TBD | Backup file storage | Optional | TBD | TBD | Storage console + Secrets | Manually specified | Do not record the real storage key |
 
-## 2. 维护规则
+## 2. Maintenance rules
 
-- 外部服务新增、替换、下线时，必须同步更新本台账。
-- 若服务影响生产稳定性，需在 PR 中说明风险与回滚方案。
-- 对外服务账号建议最小权限分配，并记录 owner 与交接人。
+- When external services are added, replaced, or taken offline, this ledger must be updated simultaneously.
+- If the service affects production stability, the risks and rollback plan must be explained in the PR.
+- It is recommended to assign minimum permissions to external service accounts, and record the owner and transferee.

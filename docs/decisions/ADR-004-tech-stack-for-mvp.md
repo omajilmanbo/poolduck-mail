@@ -1,125 +1,125 @@
-# ADR-004：MVP 技术栈定版
+# ADR-004: Final version of MVP technology stack
 
-- 状态：Accepted
-- 日期：2026-05-25
-- 相关 Issue：#17
+- Status: Accepted
+- Date: 2026-05-25
+- Related Issue: #17
 
 ## Context
 
-在 ADR-001/002/003 已确认产品形态、扫码邮箱映射策略与租户隔离/订阅规则后，项目即将进入实现阶段。
-当前文档对技术实现仍存在“可选项”（例如数据库类型、认证落地方式、邮件发送接入方式），如果不先定版，后续实现 Issue 可能出现以下问题：
+After ADR-001/002/003 has confirmed the product form, scan-code mailbox mapping strategy and tenant isolation/subscription rules, the project is about to enter the implementation stage.
+The current document still has "optional options" for technical implementation (such as database type, authentication implementation method, email sending and access method). If the version is not finalized first, the following problems may occur in the subsequent implementation of Issue:
 
-- agent 或开发者各自选择不同框架，导致目录结构和编码风格不一致；
-- 测试框架与 CI 管线难以统一，PR 可验证性下降；
-- 在 MVP 阶段误接入真实邮件服务，增加误发与泄露风险；
-- 租户隔离、权限、订阅校验等安全关键点缺少统一落地约束。
+- Agents or developers each choose different frameworks, resulting in inconsistent directory structures and coding styles;
+- It is difficult to unify the test framework and CI pipeline, and the verifiability of PR decreases;
+- Mistakenly accessing the real email service during the MVP stage, increasing the risk of mis-sending and leakage;
+- Key security points such as tenant isolation, permissions, and subscription verification lack unified implementation constraints.
 
-约束条件：
+Constraints:
 
-- 目前仅推进 MVP，优先可交付与低运维复杂度；
-- 需保持与既有架构文档、数据库/API 草案一致；
-- 邮件能力必须优先 sandbox/mock provider，真实供应商接入后置；
-- 本阶段只做技术栈定版与文档对齐，不实现业务代码。
+- Currently only MVP is promoted, with priority given to deliverability and low operation and maintenance complexity;
+- Need to remain consistent with existing architecture documents and database/API drafts;
+- Email capabilities must give priority to the sandbox/mock provider, and the real provider will be connected later;
+- At this stage, only the technology stack is finalized and documents are aligned, and business code is not implemented.
 
 ## Decision
 
-MVP 技术栈统一如下：
+The MVP technology stack is unified as follows:
 
-1. 前端
-   - 框架：Next.js（App Router）+ TypeScript
-   - UI：Tailwind CSS + Headless UI（或 Radix UI，按组件可用性择一）
-   - 状态与数据请求：React Query（TanStack Query）
-   - 表单与校验：React Hook Form + Zod
+1. Front-end
+   - Framework: Next.js (App Router) + TypeScript
+   - UI: Tailwind CSS + Headless UI (or Radix UI, choose one based on component availability)
+   - Status and data request: React Query (TanStack Query)
+   - Form and validation: React Hook Form + Zod
 
-2. 后端
-   - 运行时与语言：Node.js 20 LTS + TypeScript
-   - API：NestJS（REST）
-   - 数据校验：class-validator + class-transformer（输入边界）
-   - 鉴权：JWT（access token）+ 刷新 token 轮换策略（MVP 可先用短周期 access + 服务端可撤销 refresh）
+2. Backend
+   - Runtime and language: Node.js 20 LTS + TypeScript
+   - API:NestJS(REST)
+   - Data verification: class-validator + class-transformer (input boundary)
+   - Authentication: JWT (access token) + refresh token rotation strategy (MVP can use short-period access first + server can revoke refresh)
 
-3. 数据库
+3. Database
    - PostgreSQL 16
-   - ORM：Prisma
-   - 多租户策略：单库多租户（shared DB + tenant_id），并在 repository/service 层强制 tenant scope
+   - ORM:Prisma
+   - Multi-tenant strategy: single database multi-tenant (shared DB + tenant_id), and enforce tenant scope at the repository/service layer
 
-4. 认证与授权
-   - 登录方式：tenant_id + username(email) + password
-   - 密码存储：Argon2id 哈希
-   - 权限模型：RBAC（root_admin / manager）
+4. Authentication and Authorization
+   - Login method: tenant_id + username(email) + password
+   - Password storage: Argon2id hash
+   - Permission model: RBAC (root_admin/manager)
 
-5. 邮件 provider
-   - MVP 默认 provider：Sandbox/Mock Mail Provider（仅记录发送请求与结果，不发真实邮件）
-   - Provider 抽象接口在后端保留，真实 SMTP/第三方 API 接入作为后续 Issue
+5. Email provider
+   - MVP default provider: Sandbox/Mock Mail Provider (only records sending requests and results, no real emails are sent)
+   - Provider abstract interface is retained in the backend, and real SMTP/third-party API access is provided as a follow-up issue
 
-6. 测试框架
-   - 前端：Vitest + Testing Library
-   - 后端：Jest + Supertest
-   - E2E（关键链路）：Playwright（登录→扫码→任务状态）
+6. Testing framework
+   - Front-end: Vitest + Testing Library
+   - Backend: Jest + Supertest
+   - E2E (key link): Playwright (log in → scan QR code → task status)
 
-7. CI 基础方案
-   - 平台：GitHub Actions
-   - 最小流水线：
+7. CI basic solution
+   - Platform: GitHub Actions
+   - Minimum pipeline:
      - lint
      - typecheck
      - unit/integration tests
-     - docs link / markdown 基础校验（可选）
-   - 合并门禁：主分支需通过 CI，PR 必填测试结果
+     - docs link / markdown basic validation (optional)
+   - Merge access control: the main branch must pass CI, and PR must fill in the test results
 
 ## Alternatives considered
 
-1. 全栈使用 Python（FastAPI + Jinja/前后端同仓轻前端）
-   - 优点：后端开发效率高，生态成熟。
-   - 未选择原因：当前团队与既有文档更偏向 Web SaaS 分层前后端，且前端交互页需求明确，使用 Next.js + NestJS 更利于职责分离与后续扩展。
+1. Use Python for the whole stack (FastAPI + Jinja/front-end and back-end in the same repository and light front-end)
+   - Advantages: high back-end development efficiency and mature ecosystem.
+   - Reason for not selecting: The current team and existing documents prefer Web SaaS layered front-end and back-end, and the front-end interactive page needs are clear. Using Next.js + NestJS is more conducive to separation of responsibilities and subsequent expansion.
 
-2. 后端使用 Go（Gin/Fiber）
-   - 优点：性能高、二进制部署简单。
-   - 未选择原因：MVP 阶段开发效率与脚手架完备性优先，TypeScript 全栈可减少上下文切换成本，测试与 DTO 校验体系更统一。
+2. The backend uses Go (Gin/Fiber)
+   - Advantages: high performance, simple binary deployment.
+   - Reason for not selecting: Priority is given to development efficiency and scaffolding completeness in the MVP stage. TypeScript full stack can reduce context switching costs, and the testing and DTO verification system is more unified.
 
-3. 邮件直接接入真实第三方（SendGrid/SES 等）
-   - 优点：可直接验证真实投递链路。
-   - 未选择原因：MVP 安全风险更高，且违反“优先 sandbox/mock provider”的阶段要求。
+3. Email is directly connected to the real third party (SendGrid/SES, etc.)
+   - Advantages: The real delivery link can be directly verified.
+   - Reason for not selecting: MVP has higher security risks and violates the "prioritize sandbox/mock provider" phase requirements.
 
 ## Consequences
 
-正面影响：
+Positive impact:
 
-- 后续实现 Issue 的目录结构、依赖选择、测试与 CI 标准统一；
-- 租户隔离/订阅校验等安全关键路径可在统一技术框架下落地；
-- 通过 sandbox provider 降低误发邮件风险，便于本地和 CI 稳定测试。
+- Subsequently, the directory structure, dependency selection, testing and CI standards of Issue will be unified;
+- Security critical paths such as tenant isolation/subscription verification can be implemented under a unified technical framework;
+- Reduce the risk of sending emails by mistake through the sandbox provider, which facilitates local and CI stable testing.
 
-负面影响：
+Negative effects:
 
-- 技术选型灵活性下降，后续若切换栈会产生迁移成本；
-- Next.js + NestJS + Prisma 对新成员有学习曲线；
-- 需要在早期投入 CI 与测试基建工作，短期内增加文档与工程配置负担。
+- The flexibility of technology selection is reduced, and subsequent migration costs will be incurred if the stack is switched;
+- Next.js + NestJS + Prisma has a learning curve for new members;
+- It is necessary to invest in CI and test infrastructure work in the early stage, which will increase the burden of documentation and engineering configuration in the short term.
 
 ## Migration impact
 
-- 对现有代码：当前仓库尚未初始化业务代码，无代码迁移成本。
-- 对现有文档：需同步更新 `docs/architecture.md` 与 `README.md` 的技术栈描述。
-- 对后续实现：Issue #18/#19 等实现任务必须遵循本 ADR，不得自行替换核心框架。
+- For existing code: The current repository has not yet initialized the business code, and there is no code migration cost.
+- For existing documents: the technology stack descriptions of `docs/architecture.md` and `README.md` need to be updated simultaneously.
+- For subsequent implementation: Issue #18/#19 and other implementation tasks must comply with this ADR and must not replace the core framework on their own.
 
 ## Security impact
 
-- 认证：采用 Argon2id + JWT，配合 token 生命周期与刷新策略，降低凭据泄露风险。
-- 多租户：通过 tenant scope 强制约束查询，减少跨租户访问风险。
-- 邮件：MVP 强制 sandbox/mock provider，避免真实误发与 PII 外泄。
-- 审计：继续沿用既有架构要求，记录登录失败、权限拒绝、发送失败等关键事件。
+- Authentication: Using Argon2id + JWT, combined with token life cycle and refresh strategy, to reduce the risk of credential leakage.
+- Multi-tenancy: enforce query constraints through tenant scope to reduce cross-tenant access risks.
+- Email: MVP mandates sandbox/mock provider to avoid real mis-sending and PII leakage.
+- Audit: Continue to use the existing architectural requirements and record key events such as login failures, permission denials, and delivery failures.
 
 ## Operational impact
 
-- 部署：需提供 Node.js 20 与 PostgreSQL 16 运行环境。
-- CI：需建立 GitHub Actions 基础流水线并维护依赖缓存。
-- 运维：MVP 不涉及真实邮件通道运维，但需保留 provider 抽象以便后续平滑接入。
+- Deployment: Node.js 20 and PostgreSQL 16 operating environments are required.
+- CI: Need to establish GitHub Actions basic pipeline and maintain dependency cache.
+- Operation and maintenance: MVP does not involve actual mail channel operation and maintenance, but the provider abstraction needs to be retained for smooth subsequent access.
 
 ## Follow-up
 
-- Issue #18：初始化前端工程骨架（Next.js + TypeScript + Tailwind）。
-- Issue #19：初始化后端工程骨架（NestJS + Prisma + PostgreSQL 连接配置）。
-- Issue #20：认证与租户上下文中间件最小实现（遵循 ADR-003）。
-- Issue #21：Sandbox Mail Provider 与邮件任务最小闭环。
-- 更新 `docs/testing.md`：补充与本 ADR 对齐的测试分层与命令约定。
-- 更新 `docs/deployment.md`：补充 Node/PostgreSQL 基础运行要求与 CI 约束。
+- Issue #18: Initializing the front-end project skeleton (Next.js + TypeScript + Tailwind).
+- Issue #19: Initializing the backend project skeleton (NestJS + Prisma + PostgreSQL connection configuration).
+- Issue #20: Minimal implementation of authentication and tenant context middleware (following ADR-003).
+- Issue #21: Sandbox Mail Provider and minimal closed loop of email tasks.
+- Updated `docs/testing.md`: Added test layering and command conventions that align with this ADR.
+- Updated `docs/deployment.md`: Added Node/PostgreSQL basic running requirements and CI constraints.
 
-> 历史编号说明（2026-05-27）：本节 Issue 编号反映 ADR 编写当时的计划。
-> 当前执行顺序与编号映射以 `README.md` 的“推荐的 Issue 执行顺序”为准；若冲突，以 README 为当前实施基线。
+> Historical numbering description (2026-05-27): The Issue number in this section reflects the plan at the time when the ADR was written.
+> The current execution order and number mapping shall be subject to the "Recommended Issue Execution Order" of `README.md`; if there is a conflict, the README shall be the current implementation baseline.

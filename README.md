@@ -1,146 +1,146 @@
-# Poolduck Mail（暂定名）
+# Poolduck Mail (tentative name)
 
-Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持客户使用扫码枪扫描条码/二维码后，系统自动识别目标邮箱并触发邮件发送。
+Poolduck Mail is a Web SaaS project for enterprise customers. Its goal is to let customers scan barcodes/QR codes with a barcode scanner so the system can automatically identify the recipient email address and trigger email delivery.
 
-## 当前项目阶段
+## Current project stage
 
-当前处于 **本地开发环境完成后的功能实现准备阶段**：
+Currently in the **Function implementation preparation stage after the local development environment is completed**:
 
-- 已完成产品范围、业务流程、租户隔离与订阅规则文档化。
-- 已通过 ADR-004 确认 MVP 技术栈（状态：`Accepted`）。
-- 已完成前后端基础工程骨架。
-- 已完成 Local Docker Compose 开发环境，当前本地 PostgreSQL 16 可通过 Docker Compose 启动。
-- 后续将先补齐 Staging 部署流程、数据库迁移基础、认证与租户上下文，再进入扫码邮件核心闭环。
+- Documentation of product scope, business processes, tenant isolation and subscription rules has been completed.
+- MVP stack confirmed via ADR-004 (status: `Accepted`).
+- The front-end and back-end basic engineering skeleton has been completed.
+- The Local Docker Compose development environment has been completed, and the current local PostgreSQL 16 can be started through Docker Compose.
+- In the follow-up, we will first complete the Staging deployment process, database migration basics, authentication and tenant context, and then enter the core scan-to-email workflow.
 
-## MVP 技术栈摘要（以 ADR-004 为准）
+## MVP technology stack summary (subject to ADR-004)
 
-- 前端：Next.js（App Router）+ TypeScript + Tailwind CSS
-- 后端：NestJS（Node.js 20 LTS，REST API）
-- 数据库：PostgreSQL 16 + Prisma
-- 认证与授权：JWT（access/refresh）+ RBAC（root_admin / manager）
-- 邮件发送：MVP 使用 Sandbox/Mock provider（不接入真实邮件服务）
-- 测试：Vitest / Testing Library（前端）、Jest / Supertest（后端）、Playwright（E2E）
-- CI：GitHub Actions（lint、typecheck、tests 为最小门禁）
+- Front-end: Next.js (App Router) + TypeScript + Tailwind CSS
+- Backend: NestJS (Node.js 20 LTS, REST API)
+- Database: PostgreSQL 16 + Prisma
+- Authentication and authorization: JWT (access/refresh) + RBAC (root_admin/manager)
+- Email sending: MVP uses Sandbox/Mock provider (not connected to real email service)
+- Testing: Vitest / Testing Library (front-end), Jest / Supertest (back-end), Playwright (E2E)
+- CI: GitHub Actions (lint, typecheck, tests are the minimum CI gates)
 
-> 说明：后续实现 Issue 必须遵循 `docs/decisions/ADR-004-tech-stack-for-mvp.md`，未经人工批准不得自行更换核心技术栈。
+> Note: Subsequent implementation of Issue must follow `docs/decisions/ADR-004-tech-stack-for-mvp.md`, and the core technology stack cannot be replaced without manual approval.
 
-## 本地开发入口（当前状态）
+## Local development entrance (current status)
 
-当前仓库已初始化前后端工程骨架，并已完成 Local Docker Compose 开发环境。
+The current repository has initialized the front-end and back-end engineering skeleton and completed the Local Docker Compose development environment.
 
-### 本地 Docker Compose
+### Local Docker Compose
 
-运行前人工检查项：
+Manual inspection items before running:
 
-- 本机可执行 Docker / Docker Compose。
-- 默认端口未被占用：PostgreSQL `5432`、Backend `3001`、Frontend `3000`。
-- 如本机已有 PostgreSQL 占用 `5432`，先在本地 `.env` 中改用 `POSTGRES_PORT=5433` 等端口映射。
-- 不要在 `.env`、compose 文件或文档中写入真实数据库密码、真实客户数据、真实邮件凭据。
+- Docker / Docker Compose can be executed natively.
+- The default ports are not occupied: PostgreSQL `5432`, Backend `3001`, Frontend `3000`.
+- If PostgreSQL already occupies `5432` on this machine, first use port mapping such as `POSTGRES_PORT=5433` in the local `.env`.
+- Do not write real database passwords, real customer data, real email credentials in `.env`, compose files or documents.
 
-启动本地 PostgreSQL 16：
+Start local PostgreSQL 16:
 
-1. 复制环境变量示例：
+1. Example of copying environment variables:
    - Windows: `copy .env.example .env`
    - macOS/Linux: `cp .env.example .env`
-2. 启动数据库：`docker compose up -d postgres`
-3. 查看健康状态：`docker compose ps`
-4. 验证数据库连接：
+2. Start the database: `docker compose up -d postgres`
+3. Check the health status: `docker compose ps`
+4. Verify database connection:
    - `docker compose exec postgres pg_isready -U poolduck_local -d poolduck_mail`
 
-`docker-compose.yml` 默认只启动 PostgreSQL。本阶段前后端仍按本地 Node.js 进程运行，后端使用 `.env.example` 中的 `DATABASE_URL` 连接本地数据库。
+`docker-compose.yml` only starts PostgreSQL by default. At this stage, the front and back ends are still running as local Node.js processes, and the back end uses `DATABASE_URL` in `.env.example` to connect to the local database.
 
-- 后端目录：`backend/`
-- 安装依赖：`cd backend && npm install`
-- 数据库连接串：`DATABASE_URL=postgresql://poolduck_local:poolduck_local_password@localhost:5432/poolduck_mail`
-- 启动开发服务：`npm run start:dev`
-- 默认健康检查地址：`GET http://localhost:3001/health`
-- 运行测试：`npm test`
+- Backend directory: `backend/`
+- Install dependencies: `cd backend && npm install`
+- Database connection string: `DATABASE_URL=postgresql://poolduck_local:poolduck_local_password@localhost:5432/poolduck_mail`
+- Start the development service: `npm run start:dev`
+- Default health check address: `GET http://localhost:3001/health`
+- Run the test: `npm test`
 
-> 如需自定义端口，可在 `backend/.env` 或环境变量中设置 `APP_PORT`。
+> If you need to customize the port, you can set `APP_PORT` in `backend/.env` or environment variables.
 
-- 前端目录：`frontend/`
-- 安装依赖：`cd frontend && npm install`
-- 启动前端开发服务：`npm run dev`
-- 前端健康检查地址：`GET http://localhost:3000/healthz`
-- 前端构建：`npm run build`
-- 前端测试：`npm test`
+- Frontend directory: `frontend/`
+- Install dependencies: `cd frontend && npm install`
+- Start the front-end development service: `npm run dev`
+- Front-end health check address: `GET http://localhost:3000/healthz`
+- Front-end build: `npm run build`
+- Front-end testing: `npm test`
 
-## 文档导航
+## Document Navigation
 
-- 产品说明：`docs/product.md`
-- 需求说明：`docs/requirements.md`
-- 架构设计：`docs/architecture.md`
-- 数据库设计：`docs/database.md`
-- API 草案：`docs/api.md`
-- 开发流程：`docs/workflow.md`
-- 测试策略：`docs/testing.md`
-- 基础设施总览：`docs/infrastructure.md`
-- 基础设施资源台账：`docs/inventory/infrastructure-inventory.md`
-- 环境参数表：`docs/inventory/environment-parameters.md`
-- Secrets 台账：`docs/inventory/secrets-inventory.md`
-- 外部服务台账：`docs/inventory/external-services.md`
-- 云资源参数表：`docs/inventory/cloud-resources-parameters.md`
-- 环境定义：`docs/environments.md`
-- 网络策略：`docs/network.md`
-- 部署说明：`docs/deployment.md`
-- 发布规范：`docs/release.md`
-- 运维手册：`docs/operation.md`
-- 用户手册：`docs/user-guide.md`
-- 管理员手册：`docs/admin-guide.md`
-- ADR 列表：`docs/decisions/`
+- Product description: `docs/product.md`
+- Requirements description: `docs/requirements.md`
+- Architecture design: `docs/architecture.md`
+- Database design: `docs/database.md`
+- API draft: `docs/api.md`
+- Development process: `docs/workflow.md`
+- Testing strategy: `docs/testing.md`
+- Infrastructure overview: `docs/infrastructure.md`
+- Infrastructure resource ledger: `docs/inventory/infrastructure-inventory.md`
+- Environment parameter table: `docs/inventory/environment-parameters.md`
+- Secrets ledger: `docs/inventory/secrets-inventory.md`
+- External services ledger: `docs/inventory/external-services.md`
+- Cloud resource parameter table: `docs/inventory/cloud-resources-parameters.md`
+- Environment definition: `docs/environments.md`
+- Network policy: `docs/network.md`
+- Deployment instructions: `docs/deployment.md`
+- Release specifications: `docs/release.md`
+- Operation and maintenance manual: `docs/operation.md`
+- User manual: `docs/user-guide.md`
+- Administrator's Guide: `docs/admin-guide.md`
+- ADR list: `docs/decisions/`
 
-## 推荐的 Issue 执行顺序
+## Recommended Issue execution order
 
-### 已完成 / 基线任务
+### Completed/Baseline tasks
 
-- **#17**：MVP 技术栈 ADR 定版与文档对齐。
-- **#18**：前端工程初始化。
-- **#19**：后端工程初始化。
-- **#20**：建立 CI 基础工作流。
-- **#31**：审查当前阶段成果与文档一致性。
-- **#35**：设计 Local/Staging/Production 基础设施架构。
-- **#41**：更新 Issue 模板，强制填写人工准备与外部前提。
-- **#43**：新增基础设施资源台账与环境参数表。
-- **#36**：创建 Local Docker Compose 开发环境。
+- **#17**: MVP technology stack ADR finalization and documentation alignment.
+- **#18**: Front-end project initialization.
+- **#19**: Backend project initialization.
+- **#20**: Establish a basic CI workflow.
+- **#31**: Review the consistency of the current stage results and documentation.
+- **#35**: Design Local/Staging/Production infrastructure architecture.
+- **#41**: Update the Issue template to make manual preparation and external prerequisites mandatory.
+- **#43**: Added infrastructure resource ledger and environment parameter table.
+- **#36**: Create a Local Docker Compose development environment.
 
-### 当前后续执行顺序
+### Current subsequent execution sequence
 
-1. **#37**：设计 Staging 部署流程与环境变量。
-2. **#21**：实现数据库迁移基础与初始模型。
-3. **#38**：设计 PostgreSQL 备份与恢复策略。
-4. **#39**：设计日志、监控与告警策略。
-5. **#22**：实现租户登录与用户认证 API。
-6. **#33**：认证与租户上下文中间件最小实现。
-7. **#23**：实现订阅状态检查与扫码发送限制基础。
-8. **#24**：实现 location 与人员映射只读 API。
-9. **#25**：实现扫码事件创建与固定邮件任务生成 API。
-10. **#26**：实现邮件 sandbox provider 与发送触发 API。
+1. **#37**: Design the Staging deployment process and environment variables.
+2. **#21**: Implement database migration basis and initial model.
+3. **#38**: Design a PostgreSQL backup and recovery strategy.
+4. **#39**: Design logging, monitoring and alerting strategies.
+5. **#22**: Implement tenant login and user authentication API.
+6. **#33**: Minimal implementation of authentication and tenant context middleware.
+7. **#23**: Implement subscription status check and scan code sending restriction basis.
+8. **#24**: Implement location and person mapping read-only API.
+9. **#25**: Implement the QR code scanning event creation and fixed email task generation API.
+10. **#26**: Implement email sandbox provider and send trigger API.
 
-### 业务实现依赖关系（按当前执行计划）
+### Business implementation dependencies (according to current execution plan)
 
-- #37 先补齐 Staging 部署流程与环境变量边界，避免后续实现后再倒补部署规则。
-- #21 提供数据库基础模型，是 #22/#23/#24/#25/#26 的数据前置。
-- #38 补齐 PostgreSQL 备份与恢复策略，确保后续 migration 与生产化路径有基线。
-- #39 补齐日志、监控与告警策略，为登录、订阅门禁、扫码异常、邮件发送失败等实现提供日志基线。
-- #22 与 #33 共同形成认证与 tenant scope 闭环；#23/#24/#25/#26 依赖该闭环。
-- #23 提供订阅门禁规则，是 #25/#26 的前置门禁。
-- #24 提供 location + 人员映射只读能力，是 #25 的直接前置。
-- #25 完成扫码事件与固定邮件任务生成后，#26 才执行发送触发。
+- #37 Complete the Staging deployment process and environment variable boundaries first to avoid backfilling the deployment rules after subsequent implementation.
+- #21 provides the database basic model, which is the data precursor of #22/#23/#24/#25/#26.
+- #38 Complete the PostgreSQL backup and recovery strategy to ensure a baseline for subsequent migration and production paths.
+- #39 Complete the log, monitoring and alarm strategies to provide a log baseline for login, subscription gating, QR code scanning exception, email sending failure, etc.
+- #22 and #33 together form a closed loop of authentication and tenant scope; #23/#24/#25/#26 rely on this closed loop.
+- #23 provides subscription gate rules and is a front-end gate for #25/#26.
+- #24 provides location + person mapping read-only capabilities, which is the direct predecessor of #25.
+- #25 After completing the generation of scan code events and fixed email tasks, #26 execute the sending trigger.
 
-> 说明：Issue 优先级按实施依赖排序，不按编号大小排序。
+> Note: Issue priority is sorted by implementation dependency, not by number size.
 
-> 说明（2026-05-27 对齐）：本仓库后续实现编号以本 README 的“推荐的 Issue 执行顺序”为准。
-> ADR-004 中 Follow-up 的旧编号仅用于历史追溯，不作为当前排期依据。
+> Note (aligned on 2026-05-27): The subsequent implementation number of this repository shall be subject to the "Recommended Issue Execution Order" of this README.
+> The old follow-up number in ADR-004 is only used for historical tracing and is not used as the basis for current scheduling.
 
-### 文档一致性 SSOT（实现前）
+### Documentation Consistency SSOT (before implementation)
 
-- 角色：`root_admin` / `manager`。
-- 订阅状态：`trial` / `active` / `expired` / `suspended`。
-- 登录流程：`tenant_id` + email + password。
-- 邮件正文：后端固定模板生成，不支持自定义正文。
+- Role: `root_admin` / `manager`.
+- Subscription status: `trial` / `active` / `expired` / `suspended`.
+- Login process: `tenant_id` + email + password.
+- Email body: The back-end fixed template is generated, and custom body is not supported.
 
-## 开发约束（当前阶段）
+## Development constraints (current stage)
 
-- 当前已进入实现准备阶段：按“推荐的 Issue 执行顺序”推进，优先完成 #37/#21 等基础任务。
-- 不提交 secrets / token / 真实客户数据。
-- 新功能开发前先确认 ADR、Issue、人工准备项与测试计划。
+- It has now entered the implementation preparation stage: proceed according to the "recommended issue execution order", giving priority to completing basic tasks such as #37/#21.
+- Do not submit secrets/tokens/real customer data.
+- Confirm ADR, Issue, manual preparation items and test plan before developing new functions.

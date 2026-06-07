@@ -1,26 +1,26 @@
-# 用户操作手册（初版）
+# User Manual (First Edition)
 
-## 1. 登录
+## 1. Login
 
-1. 打开系统登录页
-2. 输入 `tenant_id`
-3. 输入企业账号邮箱与密码
-4. 登录成功后进入扫码工作台
+1. Open the system login page
+2. Enter `tenant_id`
+3. Enter your business account email and password
+4. After successful login, enter the QR code scanning workbench.
 
-## 2. 扫码录入
+## 2. Scan the QR code to enter
 
-1. 连接扫码枪
-2. 在扫码输入框触发扫码
-3. 系统显示识别结果与提交反馈（不支持自定义邮件正文预览）
-4. 提交后可在任务列表查看状态
+1. Connect the code scanner
+2. Trigger code scanning in the code scanning input box
+3. The system displays the recognition results and submits feedback (custom email text preview is not supported)
+4. After submission, you can check the status in the task list
 
-## 3. 查看邮件任务
+## 3. View email tasks
 
-- 可按状态筛选：queued/sent/failed
-- 失败任务可申请重试（若权限允许）
+- Filter by status: queued/sent/failed
+- Failed tasks can apply for retry (if permissions allow)
 
-## 4. 常见问题
+## 4. FAQ
 
-- 登录失败：联系管理员重置密码
-- 扫码无响应：检查设备输入焦点与连接
-- 邮件未送达：查看任务状态并联系管理员
+- Login failed: Contact the administrator to reset the password
+- No response when scanning QR code: Check the device input focus and connection
+- Email not delivered: check task status and contact administrator

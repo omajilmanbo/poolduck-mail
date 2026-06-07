@@ -1,37 +1,37 @@
-# 产品定义（MVP）
+# Product definition (MVP)
 
-## 1. 目标客户
+## 1. Target customers
 
-- 中小型企业运营团队（有批量通知或凭据投递需求）
-- 客服/仓储/门店场景（使用扫码枪进行快速录入）
-- 需要按租户隔离数据的多组织客户
+- Small and medium-sized enterprise operations team (with batch notification or voucher delivery requirements)
+- Customer service/warehousing/store scenarios (use a code scanner for quick entry)
+- Multi-organization customers who need to isolate data by tenant
 
-## 2. 业务问题（Problem）
+## 2. Business problem (Problem)
 
-- 客户需要一个 Web SaaS，用于集中管理业务数据、邮件通知、客户账号和订阅权限。
-- 当前流程中，扫码后的邮箱匹配与邮件发送流程缺乏统一系统承载。
-- 需要在多租户场景下保证权限边界、订阅状态控制与操作可追踪性。
+- Customers need a Web SaaS for centralized management of business data, email notifications, customer accounts and subscription permissions.
+- In the current process, the email matching and email sending process after scanning the QR code lacks a unified system.
+- It is necessary to ensure permission boundaries, subscription status control and operation traceability in multi-tenant scenarios.
 
-## 3. MVP 目标
+## 3. MVP Goal
 
-- 提供 Web SaaS 基础能力，支持登录、租户管理、订阅校验
-- 接收扫码事件并依据规则生成邮件任务
-- 提供邮件任务状态追踪与基础审计
-- 在功能最小化前提下验证核心业务闭环
+- Provide basic capabilities of Web SaaS, supporting login, tenant management, and subscription verification
+- Receive QR code scanning events and generate email tasks based on rules
+- Provide email task status tracking and basic auditing
+- Verify the core business closed loop under the premise of minimizing functions
 
-## 4. MVP 范围（In Scope）
+## 4. MVP scope (In Scope)
 
-- 租户（tenant）与用户（user）模型
-- 登录认证（基础账号密码或后续可扩展 SSO）
-- 订阅状态检查（license check）
-- 扫码事件采集 API
-- 邮件任务生成与发送接口草案
-- 基础后台管理能力（租户查询、订阅状态查看）
+- Tenant and user models
+- Login authentication (basic account password or later expandable SSO)
+- Subscription status check (license check)
+- Scan code event collection API
+-Draft of email task generation and sending interface
+- Basic backend management capabilities (tenant query, subscription status viewing)
 
-## 5. MVP 不做（Out of Scope）
+## 5. MVP does not do (Out of Scope)
 
-- 桌面客户端与本地离线模式
-- 复杂工作流编排与自定义脚本
-- 全量 BI 报表系统
-- 多区域容灾与企业级高级合规（SOC2/ISO 认证执行）
-- 大规模第三方市场插件体系
+- Desktop client and local offline mode
+- Complex workflow orchestration and custom scripts
+- Full BI reporting system
+- Multi-region disaster recovery and enterprise-level advanced compliance (SOC2/ISO certification implementation)
+- Large-scale third-party market plug-in system

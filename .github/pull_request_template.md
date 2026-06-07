@@ -1,36 +1,36 @@
-## 变更内容
+## Change content
 
-- 
+-
 
-## 相关 Issue
+## Related Issues
 
 - Refs #
 
-## 测试说明
+## Test description
 
-- [ ] 已执行必要测试（请列出命令和结果）
-- [ ] 涉及高风险模块时已补充失败场景测试
+- [ ] Necessary tests performed (please list commands and results)
+- [ ] Supplemented failure scenario testing when involving high-risk modules
 
-## 文档更新
+## Documentation update
 
-- [ ] 无需文档更新
-- [ ] 已更新对应文档（请列出）
+- [ ] No documentation update required
+- [ ] Corresponding documents have been updated (please list them)
 
-## 风险点
+## Risk points
 
-- 
+-
 
-## 外部前提与执行边界确认
+## External premise and execution boundary confirmation
 
-- [ ] 已确认本 PR 所需外部配置（环境变量/端口/域名/第三方服务）
-- [ ] 已确认所需权限（仓库/GitHub Actions/云平台/数据库）
-- [ ] 未创建或写入真实 Secrets、云凭据或客户数据
-- [ ] 已确认数据库、Docker、网络等执行环境前提
-- [ ] 如前提缺失，已在 Issue/PR 中明确阻塞并停止继续假装完成
+- [ ] Confirmed the external configuration required for this PR (environment variables/ports/domain names/third-party services)
+- [ ] Confirmed required permissions (repository/GitHub Actions/cloud platform/database)
+- [ ] No real Secrets, cloud credentials, or customer data are created or written
+- [ ] Execution environment prerequisites such as database, Docker, and network have been confirmed
+- [ ] If the prerequisite is missing, it has been explicitly blocked in the Issue/PR and stopped pretending to be completed.
 
 ## Checklist
 
-- [ ] 未提交 secrets/token/真实客户数据
-- [ ] 未包含无关重构
-- [ ] 与需求范围一致（本 PR 不实现额外业务功能）
-- [ ] SSOT 基线一致性已检查（角色/订阅状态/登录流程/固定邮件正文）
+- [ ] Secrets/token/real customer data not submitted
+- [ ] No extraneous refactorings included
+- [ ] Consistent with the scope of requirements (this PR does not implement additional business functions)
+- [ ] SSOT baseline consistency checked (roles/subscription status/login flow/fixed message body)

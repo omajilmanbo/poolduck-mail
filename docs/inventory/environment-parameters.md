@@ -1,32 +1,32 @@
-# Environment Parameters（环境参数表）
+# Environment Parameters (environment parameter table)
 
-> 目的：集中记录环境变量参数定义及环境差异。
+> Purpose: Centrally record environment variable parameter definitions and environment differences.
 >
-> 安全要求：**不写入真实 secret 值**。如为敏感参数，只记录“Secret / Placeholder / 示例值”。
+> Security requirements: **Do not write the real secret value**. If it is a sensitive parameter, only "Secret/Placeholder/Example value" is recorded.
 
-## 1. 参数表
+## 1. Parameter list
 
-| 变量名 | 用途 | Local | Staging | Production | 是否 Secret | 备注 |
+| Variable name | Purpose | Local | Staging | Production | Whether Secret | Remarks |
 |---|---|---|---|---|---|---|
-| APP_ENV | 运行环境标识 | `local` | `staging` | `production` | No | 与部署环境一致 |
-| APP_PORT | Backend 监听端口 | `3001` | `TBD` | `TBD` | No | 仅记录端口，不含访问凭据 |
-| FRONTEND_PORT | Frontend 本地端口 | `3000` | `TBD` | `TBD` | No | 若非容器部署可保持 TBD |
-| API_BASE_URL | 前端访问 API 地址 | `http://localhost:3001` | `TBD` | `TBD` | No | 仅写 URL，不写 token |
-| POSTGRES_DB | Local PostgreSQL 数据库名 | `poolduck_mail` | `TBD` | `TBD` | No | 与 `docker-compose.yml` 默认值一致 |
-| POSTGRES_USER | Local PostgreSQL 用户名 | `poolduck_local` | `Secret/Placeholder` | `Secret/Placeholder` | Yes | Local 为示例值，不用于真实环境 |
-| POSTGRES_PASSWORD | Local PostgreSQL 密码 | `poolduck_local_password` | `Secret` | `Secret` | Yes | Local 为示例值，不用于真实环境 |
-| POSTGRES_PORT | Local PostgreSQL 本机端口 | `5432` | `TBD` | `TBD` | No | 如本机端口冲突可改为 `5433` |
-| DATABASE_URL | 数据库连接串 | `postgresql://poolduck_local:poolduck_local_password@localhost:5432/poolduck_mail` | `Secret` | `Secret` | Yes | Local 为 compose 示例值；不写真实环境值 |
-| JWT_SECRET | JWT 签名密钥 | `local-placeholder` | `Secret` | `Secret` | Yes | 不写真实值 |
-| REFRESH_TOKEN_SECRET | 刷新令牌签名密钥 | `local-placeholder` | `Secret` | `Secret` | Yes | 不写真实值 |
-| MAIL_PROVIDER | 邮件 provider 类型 | `mock` | `sandbox` | `TBD` | No | MVP 优先 sandbox/mock |
-| MAIL_FROM_ADDRESS | 发件地址标识 | `no-reply@example.local` | `Secret/Placeholder` | `Secret/Placeholder` | Yes | 不写真实邮箱账号凭据 |
-| LOG_LEVEL | 日志级别 | `debug` | `info` | `info` | No | 按环境调整 |
-| CORS_ORIGIN | CORS 白名单 | `http://localhost:3000` | `TBD` | `TBD` | No | 多域名时用逗号分隔（示例） |
-| TENANT_CONTEXT_ENFORCED | 租户上下文强制开关 | `true` | `true` | `true` | No | 避免跨租户访问 |
+| APP_ENV | Running environment identification | `local` | `staging` | `production` | No | Consistent with the deployment environment |
+| APP_PORT | Backend listening port | `3001` | `TBD` | `TBD` | No | Only record port, without access credentials |
+| FRONTEND_PORT | Frontend local port | `3000` | `TBD` | `TBD` | No | TBD can be maintained if non-container deployment |
+| API_BASE_URL | Front-end access API address | `http://localhost:3001` | `TBD` | `TBD` | No | Only write the URL, not the token |
+| POSTGRES_DB | Local PostgreSQL database name | `poolduck_mail` | `TBD` | `TBD` | No | Consistent with `docker-compose.yml` default value |
+| POSTGRES_USER | Local PostgreSQL username | `poolduck_local` | `Secret/Placeholder` | `Secret/Placeholder` | Yes | Local is an example value and will not be used in a real environment |
+| POSTGRES_PASSWORD | Local PostgreSQL password | `poolduck_local_password` | `Secret` | `Secret` | Yes | Local is an example value and will not be used in a real environment |
+| POSTGRES_PORT | Local PostgreSQL native port | `5432` | `TBD` | `TBD` | No | If there is a local port conflict, it can be changed to `5433` |
+| DATABASE_URL | Database connection string | `postgresql://poolduck_local:poolduck_local_password@localhost:5432/poolduck_mail` | `Secret` | `Secret` | Yes | Local is a compose example value; do not write the real environment value |
+| JWT_SECRET | JWT signing key | `local-placeholder` | `Secret` | `Secret` | Yes | Do not write real value |
+| REFRESH_TOKEN_SECRET | Refresh token signing key | `local-placeholder` | `Secret` | `Secret` | Yes | Do not write real value |
+| MAIL_PROVIDER | Mail provider type | `mock` | `sandbox` | `TBD` | No | MVP preferred sandbox/mock |
+| MAIL_FROM_ADDRESS | Sending address identification | `no-reply@example.local` | `Secret/Placeholder` | `Secret/Placeholder` | Yes | Do not write real email account credentials |
+| LOG_LEVEL | Log level | `debug` | `info` | `info` | No | Adjust according to environment |
+| CORS_ORIGIN | CORS whitelist | `http://localhost:3000` | `TBD` | `TBD` | No | Separate multiple domain names with commas (example) |
+| TENANT_CONTEXT_ENFORCED | Tenant context force switch | `true` | `true` | `true` | No | Avoid cross-tenant access |
 
-## 2. 维护规则
+## 2. Maintenance rules
 
-- 新增环境变量时，必须同步更新本表。
-- 参数含义变化、默认值变化、是否 Secret 变化时，必须同步更新本表。
-- 环境变量删除时，需标注移除日期并从部署配置中清理。
+- When adding environment variables, this table must be updated simultaneously.
+- When the parameter meaning changes, the default value changes, or whether the Secret changes, this table must be updated simultaneously.
+- When environment variables are deleted, the removal date must be marked and cleared from the deployment configuration.

@@ -1,31 +1,31 @@
-# 发布规范
+# Release specifications
 
-## 1. 版本号规则
+## 1. Version number rules
 
-采用 SemVer：`MAJOR.MINOR.PATCH`
-- MAJOR：不兼容变更
-- MINOR：向后兼容的新功能
-- PATCH：向后兼容的问题修复
+Using SemVer: `MAJOR.MINOR.PATCH`
+- MAJOR: incompatible changes
+- MINOR: new backwards compatible features
+- PATCH: backward compatibility issue fixed
 
-## 2. 发布前检查
+## 2. Pre-release inspection
 
-- 关联 Issue/PR 完整
-- 必需 CI 全通过
-- 测试回归完成（见 `docs/testing.md`）
-- 文档更新完成
-- 高风险改动有人审阅并确认
+- Associated Issue/PR complete
+- All CI passes required
+- Test regression completed (see `docs/testing.md`)
+- Document update completed
+- High-risk changes are reviewed and confirmed by someone
 
-## 3. 发布步骤（建议）
+## 3. Publishing steps (recommended)
 
-1. 从主分支创建 release tag
-2. 执行部署流水线
-3. 执行 smoke test
-4. 观察监控与日志
+1. Create release tag from master branch
+2. Execute the deployment pipeline
+3. Execute smoke test
+4. Observation monitoring and logs
 
-## 4. 回滚步骤
+## 4. Rollback steps
 
-1. 确认故障影响范围
-2. 回滚应用版本到上一个稳定 tag
-3. 若涉及 migration，按预案执行回滚/修复
-4. 复测核心路径（登录、订阅校验、扫码、发信）
-5. 记录事故复盘与改进项
+1. Confirm the scope of impact of the fault
+2. Roll back the application version to the previous stable tag
+3. If migration is involved, perform rollback/repair according to plan
+4. Retest the core path (login, subscription verification, code scanning, sending emails)
+5. Record accident review and improvement items

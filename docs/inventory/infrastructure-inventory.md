@@ -1,35 +1,35 @@
-# Infrastructure Inventory（资源台账）
+# Infrastructure Inventory (resource ledger)
 
-> 目的：记录 **实际使用** 的基础设施资源与关键参数归属，供 Local / Staging / Production 执行与审计。
+> Purpose: Record the **actually used** infrastructure resources and key parameter ownership for Local/Staging/Production execution and auditing.
 >
-> 安全要求：本台账仅记录资源名称、用途、环境、参数名、保存位置、负责人；**禁止记录真实密码、token、API key、refresh token、生产数据库连接串**。
+> Security requirements: This ledger only records the resource name, purpose, environment, parameter name, storage location, and person in charge; **It is prohibited to record real passwords, tokens, API keys, refresh tokens, and production database connection strings**.
 
-## 1. 使用说明
+## 1. Instructions for use
 
-- 本文件用于补充 `docs/infrastructure.md` 的蓝图设计，聚焦“最终落地参数”。
-- 若当前环境尚未确定平台或资源，统一填写 `TBD`。
-- 如真实资源名称不宜公开，允许使用脱敏名称或占位符（例如 `stg-db-01`、`prod-mail-provider`）。
-- 任何基础设施变更（新增、下线、替换、迁移）必须同步更新本台账。
+- This document is used to supplement the blueprint design of `docs/infrastructure.md`, focusing on the "final implementation parameters".
+- If the platform or resources have not yet been determined in the current environment, fill in `TBD` uniformly.
+- If the real resource name should not be made public, it is allowed to use masked names or placeholders (e.g. `stg-db-01`, `prod-mail-provider`).
+- Any infrastructure changes (new addition, offline, replacement, migration) must be updated simultaneously in this ledger.
 
-## 2. 资源台账（按环境）
+## 2. Resource ledger (according to environment)
 
-| 资源类别 | 用途 | Local | Staging | Production | 关键参数/标识（非敏感） | 保存位置 | 负责人 | 备注 |
+| Resource category | Purpose | Local | Staging | Production | Key parameters/identifiers (non-sensitive) | Save location | Person in charge | Remarks |
 |---|---|---|---|---|---|---|---|---|
-| Frontend Hosting | 前端页面托管 | Local process (`localhost:3000`) | TBD | TBD | URL / 域名 / 部署平台 | `docs/inventory/` | 人工指定 | 可先填占位符域名 |
-| Backend API Hosting | API 服务托管 | Local process (`localhost:3001`) | TBD | TBD | Base URL / Runtime / Region | `docs/inventory/` | 人工指定 | 与前端分离部署 |
-| PostgreSQL | 业务数据存储 | Docker Compose / PostgreSQL 16 / `5432` | 独立实例（TBD） | 独立实例（TBD） | engine/version/port/instance-id | `docs/inventory/` | 人工指定 | 禁止跨环境共用实例 |
-| Mail Provider | 邮件发送能力 | sandbox/mock provider | sandbox provider（独立账号） | TBD（正式链路） | provider name / account alias | `docs/inventory/` | 人工指定 | MVP 禁止在非生产发送真实客户邮件 |
-| Log & Monitoring | 日志、指标、告警 | 本地日志 | 集中日志与指标（TBD） | 集中日志、指标、告警（TBD） | service name / project id | `docs/inventory/` | 人工指定 | 生产环境需告警策略 |
-| Backup | 备份与恢复 | 可选（本地快照） | 备份策略（TBD） | 备份策略（TBD） | schedule / retention / storage | `docs/inventory/` | 人工指定 | 不记录真实存储凭据 |
-| Deployment Method | 发布方式 | 手工启动（dev） | CI/CD（TBD） | CI/CD（TBD） | workflow name / runner / approval | `docs/inventory/` | 人工指定 | 需与 `docs/workflow.md` 一致 |
-| DNS & TLS | 域名与证书 | N/A | TBD | TBD | domain / cert source / expiry owner | `docs/inventory/` | 人工指定 | 可先记录占位域名 |
+| Frontend Hosting | Front-end page hosting | Local process (`localhost:3000`) | TBD | TBD | URL / domain name / deployment platform | `docs/inventory/` | Manually specified | You can fill in the placeholder domain name first |
+| Backend API Hosting | API service hosting | Local process (`localhost:3001`) | TBD | TBD | Base URL / Runtime / Region | `docs/inventory/` | Manually specified | Deployed separately from the front end |
+| PostgreSQL | Business data storage | Docker Compose / PostgreSQL 16 / `5432` | Standalone instance (TBD) | Standalone instance (TBD) | engine/version/port/instance-id | `docs/inventory/` | Manually specified | Prohibited sharing of instances across environments |
+| Mail Provider | Email sending capability | sandbox/mock provider | sandbox provider (independent account) | TBD (formal link) | provider name / account alias | `docs/inventory/` | Manually specified | MVP prohibits sending real customer emails outside of production |
+| Log & Monitoring | Logs, indicators, alarms | Local logs | Centralized logs and indicators (TBD) | Centralized logs, indicators, and alarms (TBD) | service name / project id | `docs/inventory/` | Manually specified | Alarm strategy required for production environment |
+| Backup | Backup and recovery | Optional (local snapshot) | Backup policy (TBD) | Backup policy (TBD) | schedule / retention / storage | `docs/inventory/` | Manually specified | Do not log real storage credentials |
+| Deployment Method | Release method | Manual startup (dev) | CI/CD (TBD) | CI/CD (TBD) | workflow name / runner / approval | `docs/inventory/` | Manually specified | Need to be consistent with `docs/workflow.md` |
+| DNS & TLS | Domain name and certificate | N/A | TBD | TBD | domain / cert source / expiry owner | `docs/inventory/` | Manually specified | You can record the placeholder domain name first |
 
-## 3. 变更记录建议
+## 3. Change record suggestions
 
-建议每次变更补充以下信息（可在 PR 描述或变更日志中）：
+It is recommended to add the following information for each change (can be in the PR description or change log):
 
-- 变更日期
-- 影响环境（Local/Staging/Production）
-- 变更资源类别
-- 风险说明与回滚点
-- 对应 Issue/PR 链接
+- Change date
+- Impact on the environment (Local/Staging/Production)
+- Change resource category
+- Risk description and rollback points
+- Corresponding to Issue/PR link

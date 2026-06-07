@@ -51,18 +51,18 @@ human confirmation before implementation.
 
 
 ## Working rules
-- 随时更新README.md以及/docs下的文档。
-- 每次只实现当前 Issue 的 Scope。
-- 不允许实现 Out of scope 中的内容。
-- 不允许提交真实密钥、token、Gmail 凭据、OAuth refresh token。
-- 邮件发送功能在 MVP 阶段必须优先使用 sandbox/mock provider。
-- 涉及 tenantId、权限、邮件目标地址的代码必须补充异常测试。
-- PR 必须说明测试命令和测试结果。
-- 如果需求不明确，先提出问题，不要自行决定业务规则。
+- Update README.md and documents under /docs at any time.
+- Only the Scope of the current Issue is implemented each time.
+- Implementing content in Out of scope is not allowed.
+- Submission of real keys, tokens, Gmail credentials, and OAuth refresh tokens is not allowed.
+- The email sending function must use the sandbox/mock provider first during the MVP stage.
+- Code involving tenantId, permissions, and email destination addresses must be supplemented with exception testing.
+- The PR must describe the test command and test results.
+- If the requirements are not clear, ask questions first and do not decide the business rules on your own.
 
 ## Review guidelines
-- 检查是否对文档更新有所遗漏，导致旧文本存留。
-- 检查是否存在跨租户访问风险。
-- 检查是否可能误发邮件。
-- 检查是否记录了 PII 或邮箱敏感信息。
-- 检查是否扩大了 Issue 范围。
+- Check whether any omissions in document updates have resulted in the persistence of old text.
+- Check for cross-tenant access risks.
+- Check for possible mis-sent emails.
+- Check whether PII or sensitive email information is logged.
+- Check whether the Issue scope has been expanded.

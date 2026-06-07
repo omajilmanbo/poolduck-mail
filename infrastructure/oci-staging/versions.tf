@@ -1,4 +1,4 @@
-# Terraform CLI 与 OCI Provider 版本锁定，避免人工实施时因 Provider 破坏性变更导致计划漂移。
+# Terraform CLI is locked with the OCI Provider version to avoid plan drift caused by destructive changes to the Provider during manual implementation.
 terraform {
   required_version = ">= 1.6.0"
 
@@ -10,7 +10,7 @@ terraform {
   }
 }
 
-# OCI Provider 使用变量传入区域；认证推荐由人工在实施机器配置 OCI CLI profile 或环境变量，仓库不保存密钥。
+# OCI Provider uses variables to set the region; authentication is recommended to be manually configured on the implementation machine, and the OCI CLI profile or environment variables are not saved in the repository.
 provider "oci" {
   region = var.region
 }

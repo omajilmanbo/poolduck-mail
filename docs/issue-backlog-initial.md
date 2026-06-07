@@ -1,96 +1,96 @@
-# 第一批 Issue（可直接开工）
+# The first batch of Issues (can be started directly)
 
-> 说明：以下任务均按 1–8 小时粒度设计，可作为项目启动批次。
+> Note: The following tasks are designed with 1–8 hour granularity and can be used as project startup batches.
 
-## Issue 1 — 扫码输入页基础能力
+## Issue 1 — Basic capabilities of scanning QR code input page
 
-- **Title**: `[Feature] 扫码输入页与基础校验`
-- **Background**: 需要一个最小可用输入页接收扫码枪输入，触发后续路由。
+- **Title**: `[Feature] Scan code input page and basic verification`
+- **Background**: A minimum available input page is required to receive input from the code scanner and trigger subsequent routing.
 - **Scope**:
-  - 提供输入框与提交动作
-  - 仅支持长度与字符集基础校验
-  - 错误提示展示
+  - Provide input boxes and submission actions
+  - Only supports basic verification of length and character set
+  - Error message display
 - **Out of scope**:
-  - 邮件实际发送
-  - 多步骤工作流
+  - The email is actually sent
+  - Multi-step workflow
 - **Acceptance criteria**:
-  - 合法扫码内容可提交
-  - 非法内容被拦截并提示
-  - 页面在桌面浏览器可用
+  - Legally scanned QR code content can be submitted
+  - Illegal content is blocked and prompted
+  - Page available in desktop browsers
 - **Test requirements**:
-  - normal/error/permission/tenant/boundary/regression/manual 全覆盖
+  - normal/error/permission/tenant/boundary/regression/manual full coverage
 - **Recommended labels**:
   - `type:feature`, `area:scanner-input`, `risk:low`
 - **Risk labels**: `risk:low`
 - **Human decision required**: `No`
 
-## Issue 2 — 扫码结果到邮箱映射规则（内存版）
+## Issue 2 — Mapping rules from QR code scanning results to mailbox (memory version)
 
-- **Title**: `[Feature] 扫码结果邮箱映射服务`
-- **Background**: 需要将扫码结果映射到目标邮箱，形成最小闭环。
+- **Title**: `[Feature] QR code scanning result email mapping service`
+- **Background**: The scan code results need to be mapped to the target mailbox to form a minimum closed loop.
 - **Scope**:
-  - 建立内存映射表
-  - 命中与未命中处理
+  - Create memory mapping table
+  - Hit and miss handling
 - **Out of scope**:
-  - 数据库持久化
-  - 后台管理界面
+  - Database persistence
+  -Backend management interface
 - **Acceptance criteria**:
-  - 命中时返回唯一邮箱
-  - 未命中返回可识别错误
+  - Return unique mailbox on hit
+  - Misses return an identifiable error
 - **Test requirements**:
-  - normal/error/permission/tenant/boundary/regression/manual 全覆盖
+  - normal/error/permission/tenant/boundary/regression/manual full coverage
 - **Recommended labels**:
   - `type:feature`, `area:mail-routing`, `risk:medium`
 - **Risk labels**: `risk:medium`
 - **Human decision required**: `No`
 
-## Issue 3 — 邮件发送服务抽象与沙箱实现
+## Issue 3 — Email sending service abstraction and sandbox implementation
 
-- **Title**: `[Feature] 邮件发送接口与沙箱发件实现`
-- **Background**: 先接入可测试的发件实现，为生产发件商接入做准备。
+- **Title**: `[Feature] Email sending interface and sandbox sending implementation`
+- **Background**: First connect to the testable sending implementation to prepare for the production sender to connect.
 - **Scope**:
-  - 定义邮件发送接口
-  - 提供沙箱 provider（记录发件请求）
-  - 失败重试上限（固定次数）
+  - Define email sending interface
+  - Provide a sandbox provider (record sending requests)
+  - Upper limit of failed retries (fixed number of times)
 - **Out of scope**:
-  - 第三方供应商真实 API
-  - 队列系统
+  - Real API from third party providers
+  - Queue system
 - **Acceptance criteria**:
-  - 可调用统一接口发信
-  - 失败时有明确错误与日志
+  - Can call unified interface to send messages
+  - Clear errors and logs in case of failure
 - **Test requirements**:
-  - normal/error/permission/tenant/boundary/regression/manual 全覆盖
+  - normal/error/permission/tenant/boundary/regression/manual full coverage
 - **Recommended labels**:
   - `type:feature`, `area:email-delivery`, `risk:medium`
 - **Risk labels**: `risk:medium`
 - **Human decision required**: `No`
 
-## Issue 4 — 多租户隔离中间件雏形
+## Issue 4 — Prototype of multi-tenant isolation middleware
 
-- **Title**: `[Feature] 基于租户ID的请求隔离中间件`
-- **Background**: SaaS 必须保证租户隔离，避免跨租户访问。
+- **Title**: `[Feature] Request isolation middleware based on tenant ID`
+- **Background**: SaaS must ensure tenant isolation to avoid cross-tenant access.
 - **Scope**:
-  - 请求中解析 tenantId
-  - tenantId 缺失/非法拦截
-  - 将 tenant 上下文注入业务层
+  - Parse tenantId in request
+  - tenantId missing/illegal interception
+  - Inject tenant context into business layer
 - **Out of scope**:
-  - 完整 RBAC 权限系统
-  - 计费与套餐策略
+  - Complete RBAC permission system
+  - Billing and package strategies
 - **Acceptance criteria**:
-  - 缺失 tenantId 请求被拒绝
-  - tenant 上下文可用于后续服务
+  - Request rejected with missing tenantId
+  - tenant context can be used for subsequent services
 - **Test requirements**:
-  - normal/error/permission/tenant/boundary/regression/manual 全覆盖
+  - normal/error/permission/tenant/boundary/regression/manual full coverage
 - **Recommended labels**:
   - `type:feature`, `area:tenant`, `risk:security`
 - **Risk labels**: `risk:security`
-- **Human decision required**: `Yes`（安全策略阈值需人工确认）
+- **Human decision required**: `Yes` (security policy threshold requires manual confirmation)
 
-## 建议执行顺序
+## Recommended execution order
 
 1. Issue 1
 2. Issue 2
 3. Issue 3
 4. Issue 4
 
-达到“可以开始第一个 Issue”的标准：Issue 1 已具备明确范围、验收与测试规则，可立即创建并进入开发。
+Meet the "ready to start the first issue" standard: Issue 1 has clear scope, acceptance and testing rules, and can be created and entered into development immediately.

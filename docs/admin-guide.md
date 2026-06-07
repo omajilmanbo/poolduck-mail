@@ -1,32 +1,32 @@
-# 管理员操作手册（初版）
+# Administrator Operation Manual (First Edition)
 
-## 1. 管理员职责
+## 1. Administrator Responsibilities
 
-- 管理租户基础信息
-- 管理用户账号与角色
-- 查看订阅状态与到期时间
-- 处理关键告警（登录失败、发信失败、越权尝试）
+- Manage basic tenant information
+- Manage user accounts and roles
+- Check subscription status and expiry date
+- Handle key alarms (login failure, email failure, unauthorized attempt)
 
-## 2. 租户管理
+## 2. Tenant management
 
-- 查看租户列表与状态
-- 对违规或欠费租户执行 suspended 操作
-- 恢复租户前确认订阅状态正常
+- View tenant list and status
+- Execute suspended operations on non-compliant or non-paying tenants
+- Confirm that the subscription status is normal before restoring the tenant
 
-## 3. 用户与权限管理
+## 3. User and permission management
 
-- 创建/禁用用户
-- 分配角色（root_admin/manager）
-- 定期审查高权限账号
+- Create/disable users
+- Assign roles (root_admin/manager)
+- Regularly review high-privilege accounts
 
-## 4. 订阅管理
+## 4. Subscription management
 
-- 检查订阅状态（trial/active/expired/suspended）
-- 到期前通知业务负责人续订
-- 过期或暂停后按策略限制关键接口（禁止扫码提交、创建邮件任务、发送与重试）
+- Check subscription status (trial/active/expired/suspended)
+- Notify the business person in charge of renewal before expiration
+- Restrict key interfaces according to policies after expiration or suspension (forbidden to scan QR code to submit, create email tasks, send and retry)
 
-## 5. 审计与合规
+## 5. Audit and Compliance
 
-- 定期导出审计日志
-- 关注 denied/fail 事件峰值
-- 发生安全事件时保全日志并升级处理
+- Export audit logs regularly
+- Pay attention to the peak number of denied/fail events
+- Preserve logs and upgrade processing when security incidents occur

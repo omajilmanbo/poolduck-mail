@@ -1,58 +1,58 @@
-# 研发流程（GitHub Flow）
+# R&D process (GitHub Flow)
 
-## 1. 标准链路
+## 1. Standard link
 
-1. 创建/认领 GitHub Issue
-2. 从主分支拉取并创建分支
-3. 开发与自测
-4. 提交 PR（使用模板）
-5. 触发 CI 检查
+1. Create/claim a GitHub Issue
+2. Pull and create a branch from the master branch
+3. Development and self-testing
+4. Submit a PR (using a template)
+5. Trigger CI checks
 6. Code Review
-7. 合并到主分支
+7. Merge into master branch
 
-## 2. 分支命名建议
+## 2. Branch naming suggestions
 
-- `feature/*`：功能开发
-- `fix/*`：缺陷修复
-- `setup/*`：初始化与规范建设
-- `docs/*`：纯文档更新
+- `feature/*`: function development
+- `fix/*`: bug fixes
+- `setup/*`: initialization and specification construction
+- `docs/*`: pure documentation update
 
-## 3. Issue 要求
+## 3. Issue requirements
 
-- 明确背景、范围、验收标准
-- 必填“人工准备 / 外部前提（Human prerequisites）”，写清账号、权限、环境、端口、域名、数据库、Secrets、外部服务；若无必须写“无”
-- 必填“Agent 权限与执行环境（Agent permissions / runtime）”，写清仓库写权限、网络、Docker、GitHub Actions、云平台等要求
-- 必填“阻塞条件 / 停止规则（Blocking conditions）”，缺少权限、环境、Secrets、云资源或人工确认时，Agent 必须停止并报告
-- 标注角色标签（如 `role:backend`）
-- 标注风险标签（如 `risk:auth`）
-- 涉及高风险（auth/billing/data/security）需人工审批
+- Clarify the background, scope and acceptance criteria
+- "Human prerequisites" is required, and clearly indicate the accounts, permissions, environment, port, domain name, database, Secrets, and external services; if not, you must write "None"
+- "Agent permissions and execution environment (Agent permissions / runtime)" is required, and clearly indicate the requirements for repository write permissions, network, Docker, GitHub Actions, cloud platform, etc.
+- "Blocking conditions/stop rules (Blocking conditions)" are required. When permissions, environment, Secrets, cloud resources or manual confirmation are missing, the Agent must stop and report
+- Label the role (such as `role:backend`)
+- Mark risk tags (such as `risk:auth`)
+- Involving high risks (auth/billing/data/security) requires manual approval
 
-## 4. PR 要求
+## 4. PR requirements
 
-- 关联 Issue（`Closes #id` 或 `Refs #id`）
-- 填写变更内容、测试、风险、文档更新
-- 不允许混入无关重构
-- 业务行为变更必须同步更新 docs
-- 基础设施、环境变量、Secrets、外部服务发生变更时，必须同步更新 `docs/inventory/` 下对应台账文档
+- Associated Issue (`Closes #id` or `Refs #id`)
+- Fill in the change content, testing, risks, and document updates
+- Mixing in unrelated refactorings is not allowed
+- Business behavior changes must be updated simultaneously with docs
+- When infrastructure, environment variables, Secrets, and external services change, the corresponding ledger documents under `docs/inventory/` must be updated simultaneously.
 
-## 5. CI 建议检查项
+## 5. CI recommended check items
 
 - lint
 - unit test
-- integration test（按需）
-- migration check（若存在数据库变更）
+- integration test (on demand)
+- migration check (if there are database changes)
 
-## 6. 合并策略
+## 6. Merge strategy
 
-- 默认 squash merge
-- 至少 1 名 reviewer 通过
-- 所有必需检查通过后方可合并
+- Default squash merge
+- Passed by at least 1 reviewer
+- Merger can only be done after passing all required checks
 
-## 7. CI 门禁（必需）
+## 7. CI access control (required)
 
-- 所有 PR 会自动触发 GitHub Actions CI（`.github/workflows/ci.yml`）。
-- `main` 分支上的 push 也会触发同一套 CI。
-- 合并前必须通过以下检查：
-  - Backend：`npm ci && npm run build && npm test`（在 `backend/`）
-  - Frontend：`npm ci && npm test && npm run build`（在 `frontend/`）
-- 本地提交前建议先执行上述等价命令，避免 PR 红灯。
+- All PRs will automatically trigger GitHub Actions CI (`.github/workflows/ci.yml`).
+- Push on the `main` branch will also trigger the same set of CI.
+- The following checks must be passed before merging:
+  - Backend: `npm ci && npm run build && npm test` (in `backend/`)
+  - Frontend: `npm ci && npm test && npm run build` (in `frontend/`)
+- It is recommended to execute the above equivalent commands before submitting locally to avoid PR red lights.

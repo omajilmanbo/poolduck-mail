@@ -1,79 +1,79 @@
-# ADR-003：租户上下文隔离与订阅门禁规则
+# ADR-003: Tenant context isolation and subscription access rules
 
-- 状态：Accepted
-- 日期：2026-05-20
-- 相关 Issue：#6
+- Status: Accepted
+- Date: 2026-05-20
+- Related Issue: #6
 
 ## Context
 
-为什么需要做这个决定？
-- Issue #6 当前阶段目标是先明确多租户、角色权限、订阅约束的基础规则，而不是直接实现中间件或 RBAC 代码。
+Why does this decision need to be made?
+- Issue #6 The current goal is to first clarify the basic rules of multi-tenancy, role permissions, and subscription constraints, rather than directly implementing middleware or RBAC code.
 
-当前遇到了什么问题？
-- 文档中对 `tenant_id` 来源、管理员权限边界、订阅状态命名存在不一致。
-- 登录流程是否需要先输入 `tenant_id` 未统一，可能导致实现偏差。
-- 业务接口的订阅门禁条件未完全显式化，存在误发邮件风险。
+What problems are you currently experiencing?
+- There are inconsistencies in the naming of `tenant_id` sources, administrator permission boundaries, and subscription status in the document.
+- Whether the login process requires entering `tenant_id` first is not unified, which may lead to implementation deviation.
+- The subscription access control conditions of the business interface are not fully explicit, and there is a risk of sending emails by mistake.
 
-有哪些业务或技术约束？
-- 本次仅允许文档澄清，不实现认证中间件、RBAC 代码、订阅检查 API。
-- 需要满足业务流：客户输入 `tenant_id` → 输入管理员用户名密码 → 进入业务界面。
-- 需要降低跨租户访问风险，并确保订阅无效时禁止扫码与邮件发送。
+What business or technical constraints are there?
+- This time only document clarification is allowed, authentication middleware, RBAC code, and subscription check API are not implemented.
+- The business flow needs to be met: the customer enters `tenant_id` → enters the administrator username and password → enters the business interface.
+- It is necessary to reduce the risk of cross-tenant access and ensure that QR code scanning and email sending are prohibited when the subscription is invalid.
 
 ## Decision
 
-最终选择什么方案？
-1. 登录接口显式接收 `tenant_id`，后端先校验 tenant 是否存在，再校验用户是否属于该 tenant 且密码正确。
-2. 登录成功后，业务接口仅使用 token/session 中的 `tenant_id` 作为租户上下文，不接受业务接口再显式传入 `tenant_id`。
-3. MVP 角色边界：
-   - `root_admin`：可维护用户账号、订阅、办公室/学校，并可执行管理员接口。
-   - `manager`：仅可维护人员一览并执行扫码流程，不可维护订阅与办公室/学校。
-4. 订阅状态统一为：`trial` / `active` / `expired` / `suspended`。
-5. 功能门禁：仅 `trial`、`active` 允许扫码与邮件发送；`expired`、`suspended` 禁止扫码提交、邮件创建与重试。
+Which option was chosen in the end?
+1. The login interface explicitly receives `tenant_id`, and the backend first verifies whether the tenant exists, and then verifies whether the user belongs to the tenant and the password is correct.
+2. After successful login, the business interface only uses the `tenant_id` in token/session as the tenant context, and does not accept the explicit passing of `tenant_id` from the business interface.
+3. MVP role boundaries:
+   - `root_admin`: can maintain user accounts, subscriptions, offices/schools, and execute the administrator interface.
+   - `manager`: Only maintenance personnel can view and execute the QR code scanning process. Subscriptions and offices/schools cannot be maintained.
+4. The subscription status is unified as: `trial` / `active` / `expired` / `suspended`.
+5. Function access control: only `trial` and `active` allow scanning QR codes and sending emails; `expired` and `suspended` prohibit scanning QR codes to submit, creating emails and retrying.
 
 ## Alternatives considered
 
-考虑过哪些替代方案？为什么没选？
-- 方案 A：登录阶段不输入 `tenant_id`，仅通过用户名查租户。  
-  未选原因：不满足当前业务提出的“先输入 tenant_id 再登录”流程要求。
-- 方案 B：业务接口继续允许前端传 `tenant_id`。  
-  未选原因：容易引入跨租户越权风险。
-- 方案 C：订阅状态继续使用 `canceled`。  
-  未选原因：与当前“暂停（suspended）”语义不一致，且与本次统一目标冲突。
+What alternatives were considered? Why didn't you choose?
+- Solution A: Do not enter `tenant_id` during the login phase, and only check the tenant by user name.
+  Reason for not being selected: The "enter tenant_id first and then log in" process requirements proposed by the current business are not met.
+- Option B: The business interface continues to allow the front end to pass `tenant_id`.
+  Reason for not selected: It is easy to introduce the risk of cross-tenant overreach.
+- Option C: Subscription status continues to use `canceled`.
+  Reason for not being selected: It is inconsistent with the current "suspended" semantics and conflicts with this unified goal.
 
 ## Consequences
 
-这个决定带来的正面和负面影响。
-- 正面：
-  - 统一登录与租户隔离规则，降低跨租户访问风险。
-  - 统一订阅状态与门禁条件，降低误发邮件风险。
-  - 需求、架构、API、数据库文档术语一致，减少后续实现偏差。
-- 负面：
-  - 登录体验增加一步（先输入 `tenant_id`）。
-  - 后续实现阶段需要补充更明确的错误码与国际化提示文案。
+The positive and negative consequences of this decision.
+- Front:
+  - Unify login and tenant isolation rules to reduce cross-tenant access risks.
+  - Unify subscription status and access control conditions to reduce the risk of accidentally sending emails.
+  - The terminology of requirements, architecture, API, and database documents are consistent to reduce subsequent implementation deviations.
+- Negative:
+  - Add one step to the login experience (enter `tenant_id` first).
+  - More clear error codes and international prompt copy need to be added in the subsequent implementation phase.
 
 ## Migration impact
 
-是否影响现有数据、代码、部署？
-- 当前仅文档更新，不修改运行时代码或部署流程。
-- 若历史实现或数据使用 `canceled`，后续需要在实现阶段评估迁移为 `suspended` 的映射策略。
+Does it affect existing data, code, and deployment?
+- Currently only the documentation is updated, no changes to the runtime code or deployment process.
+- If the historical implementation or data uses `canceled`, the mapping strategy for migrating to `suspended` needs to be evaluated during the implementation phase.
 
 ## Security impact
 
-是否影响权限、认证、租户隔离、数据安全？
-- 强化租户隔离：登录时校验 tenant 存在性与用户归属，登录后禁止业务接口通过客户端参数切换 tenant。
-- 强化权限边界：明确 `root_admin` 与 `manager` 可执行范围。
-- 强化订阅门禁：订阅无效时阻断扫码与邮件发送关键链路。
+Does it affect permissions, authentication, tenant isolation, and data security?
+- Strengthen tenant isolation: verify tenant existence and user ownership when logging in, and prohibit business interfaces from switching tenants through client parameters after logging in.
+- Strengthen permission boundaries: clarify the executable scope of `root_admin` and `manager`.
+- Strengthen subscription access control: block key links for QR code scanning and email sending when the subscription is invalid.
 
 ## Operational impact
 
-是否影响部署、监控、备份、故障处理？
-- 部署与备份流程无直接变化。
-- 监控可新增登录失败分类（tenant 不存在/用户不属于 tenant/密码错误）与订阅门禁拒绝事件统计。
-- 客服与运维可按统一订阅状态（`trial`/`active`/`expired`/`suspended`）进行排障说明。
+Will it affect deployment, monitoring, backup, and troubleshooting?
+- No direct changes to deployment and backup processes.
+- Monitoring can add login failure categories (tenant does not exist/user does not belong to tenant/password is incorrect) and subscription access rejection event statistics.
+- Customer service and operation and maintenance can provide troubleshooting instructions based on the unified subscription status (`trial`/`active`/`expired`/`suspended`).
 
 ## Follow-up
 
-后续需要创建哪些 Issue 或补充哪些文档？
-- 新建实现类 Issue：登录校验顺序与错误码落地（tenant 不存在、用户不属于 tenant、密码错误）。
-- 新建测试类 Issue：覆盖管理员/普通用户、有效/过期/暂停订阅、跨租户访问异常场景。
-- 补充文档：在 `docs/api.md` 增加标准错误码与错误响应示例（后续实现阶段）。
+What issues need to be created or what documents need to be supplemented in the future?
+- New implementation class Issue: login verification sequence and error code implementation (tenant does not exist, user does not belong to tenant, password is wrong).
+- Create a new test category Issue: covering administrators/ordinary users, valid/expired/suspended subscriptions, and cross-tenant access exception scenarios.
+- Supplementary documentation: Add standard error codes and error response examples to `docs/api.md` (subsequent implementation phase).

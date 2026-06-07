@@ -1,7 +1,7 @@
 # Infrastructure
 
-本目录存放 Poolduck Mail 的基础设施即代码（IaC）。当前仅包含 Issue #48 的 OCI Always Free Staging 资源准备代码：
+This directory stores Poolduck Mail's Infrastructure as Code (IaC). Currently only the OCI Always Free Staging resource preparation code for Issue #48 is included:
 
-- `oci-staging/`：面向已存在 OCI compartment `Mail_project_stg` 的 Terraform 配置。
+- `oci-staging/`: Terraform configuration for existing OCI compartment `Mail_project_stg`.
 
-所有 IaC 文件只允许保存非敏感参数、占位值与资源定义；真实密钥、token、数据库密码、OAuth refresh token、客户数据不得提交到仓库。
+All IaC files are only allowed to save non-sensitive parameters, placeholder values and resource definitions; real keys, tokens, database passwords, OAuth refresh tokens, and customer data must not be submitted to the repository.

@@ -1,52 +1,52 @@
-# OCI Always Free Staging IaC（Issue #48）
+# OCI Always Free Staging IaC(Issue #48)
 
-本目录为 Poolduck Mail 的 OCI Always Free Staging 基础设施准备清单提供 Terraform IaC。目标 compartment 已由人工创建，显示名称为 `Mail_project_stg`；Terraform 实施时必须提供该 compartment 的 OCID。
+This catalog provides Terraform IaC for Poolduck Mail's OCI Always Free Staging infrastructure readiness checklist. The target compartment has been manually created with the display name `Mail_project_stg`; the Terraform implementation must provide the OCID of this compartment.
 
-## 资源范围
+## Resource scope
 
-Terraform 将准备以下 Staging 资源：
+Terraform will prepare the following Staging resources:
 
-- Staging VCN、Public Subnet、Internet Gateway、Route Table。
-- Web/API NSG：开放 SSH、HTTP、HTTPS；SSH 必须收窄到管理员固定 IP。
-- DB NSG：PostgreSQL `5432` 仅允许 Staging 子网访问，禁止公网访问。
-- Always Free Compute：默认 `VM.Standard.A1.Flex`，用于 MVP Staging 单机承载 Frontend / Backend / PostgreSQL 16 容器。
-- Object Storage Bucket：用于 Staging 非真实数据备份与运维产物归档，并配置生命周期自动清理。
-- Cloud-init：只安装 Docker、创建目录和占位配置，不写入真实 secrets，不自动启动应用。
+- Staging VCN,Public Subnet,Internet Gateway,Route Table.
+- Web/API NSG: Open SSH, HTTP, HTTPS; SSH must be narrowed to the administrator fixed IP.
+- DB NSG: PostgreSQL `5432` only allows access to the Staging subnet and prohibits public network access.
+- Always Free Compute: Default `VM.Standard.A1.Flex`, used for MVP Staging stand-alone hosting of Frontend / Backend / PostgreSQL 16 containers.
+- Object Storage Bucket: used for staging non-real data backup and operation and maintenance product archiving, and configure life cycle automatic cleanup.
+- Cloud-init: only installs Docker, creates directories and placeholder configurations, does not write real secrets, and does not automatically start applications.
 
-## Always Free 人工确认项
+## Always Free manual confirmation items
 
-执行 `terraform apply` 前必须由人工确认：
+It must be manually confirmed before executing `terraform apply`:
 
-1. `region` 是 OCI tenancy home region；Oracle 文档说明 Always Free compute / Autonomous Database 等资源需在 home region 创建。
-2. `Mail_project_stg` compartment 的 OCID 正确。
-3. A1 Flex 免费池仍有可用 OCPU/内存；若容量不足，可人工改为 `VM.Standard.E2.1.Micro` 后重新评估 Node.js + PostgreSQL 资源占用。
-4. `admin_ssh_cidr` 已替换为管理员固定公网 IP/CIDR，禁止使用 `0.0.0.0/0`。
-5. `ssh_public_key` 只包含公钥；私钥、API key、数据库密码、JWT secret、邮件 token 不得提交到仓库。
-6. Object Storage 使用量和 Block Volume 使用量没有超出当前账户 Always Free 额度。
+1. `region` is the OCI tenancy home region; Oracle documentation states that resources such as Always Free compute / Autonomous Database need to be created in the home region.
+2. The OCID of `Mail_project_stg` compartment is correct.
+3. The A1 Flex free pool still has available OCPU/memory; if the capacity is insufficient, you can manually change it to `VM.Standard.E2.1.Micro` and then re-evaluate the resource usage of Node.js + PostgreSQL.
+4. `admin_ssh_cidr` has been replaced by the administrator's fixed public IP/CIDR, and the use of `0.0.0.0/0` is prohibited.
+5. `ssh_public_key` only contains public keys; private keys, API keys, database passwords, JWT secrets, and email tokens must not be submitted to the repository.
+6. Object Storage usage and Block Volume usage do not exceed the current account Always Free quota.
 
-## 手工实施流程
+## Manual implementation process
 
 ```bash
 cd infrastructure/oci-staging
 cp terraform.tfvars.example terraform.tfvars
-# 编辑 terraform.tfvars：填写真实 compartment OCID、region、SSH 公钥、管理员 CIDR。
+# Edit terraform.tfvars: fill in the real compartment OCID, region, SSH public key, and administrator CIDR.
 terraform init
 terraform fmt -check
 terraform validate
 terraform plan -out=tfplan
-# 人工审核 plan 后才允许执行：
+# The plan is allowed to be executed only after manual review:
 terraform apply tfplan
 ```
 
-## 非范围声明
+## Non-scope declaration
 
-- 本 IaC 不创建 Production 资源。
-- 本 IaC 不接入真实邮件服务；MVP Staging 仍使用 mock/sandbox provider。
-- 本 IaC 不写入或生成任何真实 secret。
-- 本 IaC 不自动部署 Poolduck Mail 应用镜像；应用发布流程由后续 Issue 单独定义。
-- 本 IaC 不创建 OCI Autonomous Database，因为当前 ADR-004 已确定 MVP 数据库为 PostgreSQL 16。
+- This IaC does not create Production resources.
+- This IaC does not connect to the real mail service; MVP Staging still uses the mock/sandbox provider.
+- This IaC does not write or generate any real secrets.
+- This IaC does not automatically deploy the Poolduck Mail application image; the application release process is defined separately by subsequent Issues.
+- This IaC does not create an OCI Autonomous Database as current ADR-004 has determined that the MVP database is PostgreSQL 16.
 
-## 参考
+## Reference
 
-- OCI Always Free 官方文档：`https://docs.oracle.com/iaas/Content/FreeTier/resourceref.htm`
-- Terraform OCI Provider：`https://registry.terraform.io/providers/oracle/oci/latest`
+- OCI Always Free official documentation: `https://docs.oracle.com/iaas/Content/FreeTier/resourceref.htm`
+- Terraform OCI Provider:`https://registry.terraform.io/providers/oracle/oci/latest`

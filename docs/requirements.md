@@ -1,221 +1,221 @@
-# 功能需求初稿
+# First draft of functional requirements
 
-## 1. 系统定位
+## 1. System positioning
 
-本系统是一个面向租户客户公司的 Web SaaS。
-客户通过扫码枪扫描条码/二维码，系统根据扫码结果找到对应邮箱并发送邮件。
-系统支持多租户，并允许每个租户维护自己的用户、订阅、办公室/学校、扫码编号与邮箱对应关系。
-
----
-
-## 2. 一级功能模块
-
-### 2.1 租户功能管理
-
-租户管理员登录系统后，可以进入租户功能管理页面，管理本租户的基础数据和功能模块。
-
-包含以下子模块：
-
-- 维护用户账号订阅
-- 新增或删除办公室/学校
-- 维护扫码编号与邮箱对应关系（人员一览）
-- 扫码邮件（核心功能）
-- 群发邮件
+This system is a Web SaaS for tenant customer companies.
+The customer scans the barcode/QR code with a code scanner, and the system finds the corresponding mailbox based on the scan result and sends the email.
+The system supports multi-tenancy and allows each tenant to maintain its own correspondence between users, subscriptions, offices/schools, scan code numbers and mailboxes.
 
 ---
 
-## 3. 各模块需求
+## 2. First-level function module
 
-### 3.1 维护用户账号订阅 / 办公室学校
+### 2.1 Tenant function management
 
-管理员（`root_admin`）可以：
+After the tenant administrator logs in to the system, he can enter the tenant function management page to manage the basic data and functional modules of this tenant.
 
-- 新增、编辑、删除用户账号
-- 设置用户角色（`root_admin` / `manager`）
-- 查看和调整租户订阅状态
-- 新增或删除办公室/学校
+Contains the following submodules:
 
-该功能需要管理员权限。
+- Maintain user account subscriptions
+- Add or delete offices/schools
+- Maintain the corresponding relationship between the scan code number and the email address (personnel list)
+- Scan QR codes to send emails (core function)
+- Bulk email
 
-在“租户功能管理”页面需要展示订阅概览：
-- 当前租户已开通订阅数量（MVP 先展示套餐允许的 location 数量与已使用数量）
-- 当前租户订阅剩余有效时间（基于 `end_at` 计算）
-- 当剩余时间 <= 30 天时，在该页面提示续订提醒
+---
 
-普通用户（`manager`）限制：
+## 3. Requirements for each module
 
-- 不可维护用户账号
-- 不可调整订阅状态
-- 不可新增/删除办公室或学校
-- 仅可维护人员一览（扫码编号与邮箱映射）
+### 3.1 Maintain user account subscription / office school
 
-详细规则待后续补充。
+Administrators (`root_admin`) can:
+
+- Add, edit and delete user accounts
+- Set user roles (`root_admin` / `manager`)
+- View and adjust tenant subscription status
+- Add or delete offices/schools
+
+This feature requires administrator rights.
+
+The subscription overview needs to be displayed on the "Tenant Function Management" page:
+- The number of subscriptions opened by the current tenant (MVP first displays the number of locations allowed in the package and the number used)
+- The remaining validity time of the current tenant subscription (calculated based on `end_at`)
+- When the remaining time <= 30 days, a renewal reminder will be prompted on this page
+
+Ordinary user (`manager`) restrictions:
+
+- User accounts cannot be maintained
+- Subscription status cannot be adjusted
+- Cannot add/delete offices or schools
+- Only maintenance personnel can be listed (scan code and email mapping)
+
+Detailed rules will be added later.
 
 ---
 
 
 
-#### 3.1.1 location 数量追加与同周期对齐（MVP 计费规则）
+#### 3.1.1 Location quantity addition and same period alignment (MVP billing rules)
 
-当租户初始订阅了 3 个 location，后续在订阅周期未结束前再追加 7 个 location 时，采用以下规则：
+When a tenant initially subscribes to 3 locations and subsequently adds 7 more locations before the subscription period ends, the following rules apply:
 
-- 订阅主体仍为 tenant 级单条订阅（不拆分为 location 级多条订阅）。
-- 新增的 7 个 location 不创建独立到期日，统一与当前租户订阅 `end_at` 对齐（co-term）。
-- 追加数量按“剩余周期”计算补差费用（proration），计费完成后立即提升可用 location 配额。
-- 若未完成补差费用确认（如支付失败/待确认），新增 location 保持不可启用状态，不影响已开通且仍在有效期内的前 3 个 location。
-- 到达当前 `end_at` 后，续订时按“总启用数量（示例为 10 个）”进入下一周期。
+- The subscription subject is still a single subscription at the tenant level (not split into multiple subscriptions at the location level).
+- The newly added 7 locations do not create independent expiration dates and are uniformly aligned with the current tenant subscription `end_at` (co-term).
+- The additional quantity will be calculated according to the "remaining period" and the available location quota will be increased immediately after the billing is completed.
+- If the supplementary fee confirmation is not completed (such as payment failure/pending confirmation), the newly added location will remain unactivated and will not affect the first 3 locations that have been activated and are still valid.
+- After reaching the current `end_at`, press the "Total enabled quantity (example is 10)" to enter the next cycle when renewing.
 
-该策略目标：避免一个 tenant 同时维护多组不同到期日，降低门禁与运维复杂度。
+The goal of this strategy is to prevent one tenant from maintaining multiple sets of different expiration dates at the same time and reduce the complexity of access control and operation and maintenance.
 
-### 3.2 维护扫码编号与邮箱对应关系（人员一览）
+### 3.2 Maintain the corresponding relationship between the scan code number and the email address (personnel list)
 
-管理员可以维护人员一览数据，至少包含：
+Administrators can maintain personnel overview data, which at least includes:
 
-- 扫码编号
-- 姓名
-- 所属办公室/学校
-- 对应邮箱地址
-- 状态（启用/停用）
+- Scan the code
+- Name
+-Affiliated office/school
+- Corresponding email address
+- Status (enabled/deactivated)
 
-详细规则待后续补充。
+Detailed rules will be added later.
 
 ---
 
-### 3.3 扫码邮件（核心功能）
+### 3.3 Scan QR code to send emails (core function)
 
-扫码邮件是 MVP 的核心功能。
+Scanning QR codes for emails is the core function of MVP.
 
-#### 3.3.1 前置条件
+#### 3.3.1 Preconditions
 
-- 用户已登录系统
-- 用户已选择办公室/校舍
-- 当前租户订阅状态为有效
-- 扫码编号与邮箱对应关系已维护
+- The user has logged into the system
+- The user has selected an office/school building
+- The current tenant subscription status is valid
+- The corresponding relationship between QR code scanning number and email address has been maintained
 
-#### 3.3.2 订阅限制
+#### 3.3.2 Subscription Limitations
 
-统一订阅状态集合：`trial` / `active` / `expired` / `suspended`。
+Unified subscription status collection: `trial` / `active` / `expired` / `suspended`.
 
-当租户订阅状态为：
+When the tenant subscription status is:
 
-- `trial` 或 `active`：允许扫码和发送邮件
-- `expired` 或 `suspended`：禁止扫码提交与邮件发送（包括手动创建/重试邮件任务）
+- `trial` or `active`: allow scanning QR codes and sending emails
+- `expired` or `suspended`: prohibit scanning QR code submission and email sending (including manual creation/retry of email tasks)
 
-#### 3.3.3 页面显示（UI/UX）
+#### 3.3.3 Page display (UI/UX)
 
-进入扫码邮件页面后，系统必须展示以下信息区块：
+After entering the scan code email page, the system must display the following information block:
 
-- 办公室/校舍切换控件（必选，未选择时禁用扫码提交）
-- 扫码输入区域（接收扫码枪条码/二维码）
-- 发送交互按钮预留位（当前支持扫码枪输入后自动发送，或回车触发发送，无需人工点击）
-- 最近扫码/邮件发送结果列表（含成功/失败状态）
-- 异常提示区（用于展示未找到邮箱、发送失败、订阅不可用等错误）
+- Office/school building switching control (required, scan code submission is disabled when not selected)
+- Scan code input area (receives code scanner barcode/QR code)
+- Reserved space for send interaction button (currently supports automatic sending after scanning code gun input, or pressing enter to trigger sending, no manual click required)
+- List of recent QR code scanning/email sending results (including success/failure status)
+- Exception prompt area (used to display errors such as mailbox not found, sending failed, subscription unavailable, etc.)
 
-订阅状态展示规则：
-- 扫码发送页面不显示“剩余订阅时间”提示
-- 订阅状态为 `expired` / `suspended` 时，页面必须显示限制提示并禁用发送能力
-- 续订提醒与订阅数量展示统一放在“租户功能管理”页面
+Subscription status display rules:
+- The "remaining subscription time" prompt is not displayed on the scan code sending page.
+- When the subscription status is `expired` / `suspended`, the page must display a limit prompt and disable the sending ability
+- Renewal reminders and subscription quantity display are unified on the "Tenant Function Management" page
 
-MVP 页面不提供邮件正文自定义编辑区，也不提供扫码发送前的正文预览。
+The MVP page does not provide a custom editing area for the email body, nor does it provide a text preview before scanning the QR code to send.
 
-#### 3.3.4 邮件正文规则
+#### 3.3.4 Email body rules
 
-MVP 阶段邮件正文由系统按固定统一格式生成：
+The email body of the MVP stage is generated by the system in a fixed and unified format:
 
 ```text
-{tenant_name}，{location_name}からのお知らせ：{person_name}　さんは　{time_stamp}　に入室しました。
+Notice from {tenant_name}, {location_name}: {person_name} completed the action at {time_stamp}.
 ```
 
-变量来源定义：
+Variable source definition:
 
-- `{tenant_name}`：租户公司名
-- `{location_name}`：当前办公室/学校名
-- `{person_name}`：扫码编号对应人员姓名
-- `{time_stamp}`：入室时间，格式暂定为 `yyyymmddhhmmss`
+- `{tenant_name}`: tenant company name
+- `{location_name}`: current office/school name
+- `{person_name}`: The name of the person corresponding to the scanned code number
+- `{time_stamp}`: room entry time, the format is tentatively `yyyymmddhhmmss`
 
-示例：
+Example:
 
 ```text
-A公司，B办事处からのお知らせ：C员工　さんは　20260520143000　に入室しました。
+Company A, office B is aware of the situation: employee C: Employee 20260520143000 Entering the room.
 ```
 
-说明：用户自定义邮件文本不属于当前 MVP 范围，作为后续扩展候选保留。
+Note: User-defined email text does not belong to the current MVP scope and is reserved as a candidate for subsequent expansion.
 
-#### 3.3.5 扫码流程（页面操作顺序）
-1. 用户进入扫码邮件页面
-2. 用户选择或切换办公室/校舍
-3. 系统检查当前租户订阅状态
-4. 若订阅为 `trial` / `active`，启用扫码输入
-5. 用户使用扫码枪扫描条码/二维码
-6. 系统接收扫描结果并查找对应邮箱
-7. 系统生成固定格式邮件正文（后端内部处理）
-8. 系统触发发送并回写发送结果
+#### 3.3.5 QR code scanning process (page operation sequence)
+1. The user enters the scan code email page
+2. User selects or switches office/school building
+3. The system checks the current tenant subscription status
+4. If the subscription is `trial` / `active`, enable scanning QR code input
+5. The user uses a barcode scanner to scan the barcode/QR code
+6. The system receives the scan results and finds the corresponding email address
+7. The system generates a fixed format email body (backend internal processing)
+8. The system triggers sending and writes back the sending result
 
-#### 3.3.6 找到对应邮箱时
-1. 创建扫码记录
-2. 创建邮件发送任务
-3. 系统按固定统一格式生成邮件正文
-4. 系统向对应邮箱发送邮件
-5. 记录邮件发送结果
-6. 管理员可以查看历史记录并导出
+#### 3.3.6 When the corresponding mailbox is found
+1. Create QR code scanning records
+2. Create an email sending task
+3. The system generates the email body in a fixed and unified format.
+4. The system sends the email to the corresponding mailbox
+5. Record email sending results
+6. Administrators can view and export history records
 
-#### 3.3.7 未找到对应邮箱时
-1. 系统提示“未找到对应邮箱”，并保持在当前页面
-2. 不创建邮件发送任务、不触发发送
-3. 记录异常扫码事件
-4. 管理员后续确认并补充人员信息
+#### 3.3.7 When the corresponding email is not found
+1. The system prompts "Corresponding email address not found" and remains on the current page.
+2. Do not create email sending tasks and do not trigger sending
+3. Record abnormal code scanning events
+4. The administrator will subsequently confirm and add personnel information
 
-#### 3.3.8 邮件发送失败时
-1. 系统在异常提示区展示“邮件发送失败”及可识别失败原因
-2. 最近扫码/发送结果列表标记该次任务为失败
-3. 保留扫码与任务记录，用于后续管理员重试或排障
+#### 3.3.8 When email delivery fails
+1. The system displays "Failed to send email" in the exception prompt area and identifies the cause of the failure.
+2. The recent scan/send result list marks the task as failed.
+3. Keep scan code and task records for subsequent administrator retries or troubleshooting
 
-#### 3.3.9 订阅过期/暂停时页面限制
-1. 当订阅状态为 `expired` 或 `suspended`，页面仍可访问但必须显示限制提示
-2. 禁用扫码输入与提交动作
-3. 禁止创建邮件任务与发送动作
-4. 引导用户联系管理员处理订阅状态
+#### 3.3.9 Page limit when subscription expires/suspended
+1. When the subscription status is `expired` or `suspended`, the page can still be accessed but a restriction prompt must be displayed
+2. Disable QR code input and submission actions
+3. Prohibit the creation of email tasks and sending actions
+4. Guide the user to contact the administrator to handle the subscription status
 
-### 3.4 群发邮件
-群发邮件模块存在于功能结构中，但详细规则待后续补充。
-
----
-
-## 4. 当前已确定的业务规则
-
-### 4.1 多租户
-- 每个客户公司是一个租户
-- 每个租户有独立的数据范围
-- 用户只能访问所属租户的数据
-- 登录流程采用三步：输入 `tenant_id` → 输入用户名/密码 → 进入业务界面
-- 若 `tenant_id` 不存在，提示“tenant不存在”
-- 若用户存在但不属于该 `tenant_id`，登录失败
-- 后端必须校验 `tenant_id` 存在性与用户归属关系；登录成功后业务接口仍以后端会话中的 tenant 上下文进行隔离
-
-### 4.2 办公室/学校维度
-- 一个租户可以有多个办公室/学校
-- 扫码邮件操作前，需要先切换当前办公室/校舍
-- 邮件内容中需要体现办公室/学校名
-
-### 4.3 邮件文本
-MVP 阶段：
-- 邮件正文固定为 `{tenant_name}，{location_name}からのお知らせ：{person_name}　さんは　{time_stamp}　に入室しました。`
-- 不允许前端传入自定义正文覆盖固定格式
-- 用户自定义邮件文本作为后续扩展候选，不进入当前 MVP
-
-### 4.4 异常处理
-- 若扫码结果找不到对应邮箱，不发送邮件
-- 需要记录异常扫码事件
-- 管理员需要能够后续确认和修正人员信息
+### 3.4 Mass mailing
+The mass email module exists in the functional structure, but detailed rules will be added later.
 
 ---
 
-## 5. 当前待补充模块
+## 4. Currently determined business rules
 
-以下模块暂时保留结构，不展开详细需求：
-- 用户账号与订阅维护详细规则
-- 办公室/学校管理详细规则
-- 人员一览维护详细规则
-- 群发邮件详细规则
+### 4.1 Multi-tenancy
+- Each client company is a tenant
+- Each tenant has independent data scope
+- Users can only access data of their own tenants
+- The login process uses three steps: enter `tenant_id` → enter username/password → enter the business interface
+- If `tenant_id` does not exist, it will prompt "tenant does not exist"
+- If the user exists but does not belong to the `tenant_id`, login fails
+- The backend must verify the existence of `tenant_id` and the user ownership relationship; after successful login, the business interface is still isolated from the tenant context in the backend session
+
+### 4.2 Office/School Dimension
+- One tenant can have multiple offices/schools
+- Before scanning the email, you need to switch to the current office/school building.
+- The name of the office/school must be included in the email content
+
+### 4.3 Email text
+MVP stage:
+- The text of the email is fixed to `Notice from {tenant_name}, {location_name}: {person_name} completed the action at {time_stamp}. `
+- Do not allow the front-end to pass in custom text to overwrite the fixed format
+- User-defined email text is used as a candidate for subsequent expansion and does not enter the current MVP
+
+### 4.4 Exception handling
+- If the corresponding email cannot be found as a result of scanning the QR code, the email will not be sent.
+- Need to record abnormal code scanning events
+- Administrators need to be able to subsequently confirm and correct personnel information
+
+---
+
+## 5. Modules currently to be added
+
+The structure of the following modules is temporarily retained and detailed requirements are not expanded:
+- Detailed rules for user account and subscription maintenance
+- Detailed rules for office/school management
+- Detailed rules for personnel maintenance at a glance
+- Detailed rules for mass mailing
 
 ---

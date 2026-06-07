@@ -1,40 +1,40 @@
-# ADR-XXX：决策标题
+# ADR-XXX: Decision title
 
-- 状态：Proposed / Accepted / Rejected / Superseded
-- 日期：YYYY-MM-DD
-- 相关 Issue：#x, #y
+- Status: Proposed/Accepted/Rejected/Superseded
+- Date: YYYY-MM-DD
+- Related Issues: #x, #y
 
 ## Context
 
-为什么需要做这个决定？
-当前遇到了什么问题？
-有哪些业务或技术约束？
+Why does this decision need to be made?
+What problems are you currently experiencing?
+What business or technical constraints are there?
 
 
 ## Decision
 
-最终选择什么方案？
+Which option was chosen in the end?
 
 ## Alternatives considered
 
-考虑过哪些替代方案？为什么没选？
+What alternatives were considered? Why didn't you choose?
 
 ## Consequences
 
-这个决定带来的正面和负面影响。
+The positive and negative consequences of this decision.
 
 ## Migration impact
 
-是否影响现有数据、代码、部署？
+Does it affect existing data, code, and deployment?
 
 ## Security impact
 
-是否影响权限、认证、租户隔离、数据安全？
+Does it affect permissions, authentication, tenant isolation, and data security?
 
 ## Operational impact
 
-是否影响部署、监控、备份、故障处理？
+Will it affect deployment, monitoring, backup, and troubleshooting?
 
 ## Follow-up
 
-后续需要创建哪些 Issue 或补充哪些文档？
+What issues need to be created or what documents need to be supplemented in the future?

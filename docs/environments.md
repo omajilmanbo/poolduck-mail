@@ -1,44 +1,44 @@
-# 环境定义与差异（Local / Staging / Production）
+# Environment definition and difference (Local/Staging/Production)
 
-## 1. 环境用途
+## 1. Environmental use
 
-- Local：开发者本地开发与调试。
-- Staging：预发布验证，验证功能、配置与发布流程。
-- Production：正式对外服务。
+- Local: Developers develop and debug locally.
+- Staging: Pre-release verification, verifying functions, configuration and release process.
+- Production: formal external service.
 
-## 2. 环境差异矩阵
+## 2. Environmental difference matrix
 
-| 维度 | Local | Staging | Production |
+| Dimensions | Local | Staging | Production |
 |---|---|---|---|
-| 用户对象 | 开发者 | 内部测试/验收 | 真实客户 |
-| 数据类型 | 本地测试数据 | 非真实客户数据 | 真实业务数据 |
-| 数据库 | 本地 PostgreSQL（Compose） | 独立 Staging DB | 独立 Production DB |
-| Mail Provider | Mock/Sandbox | Sandbox（独立账号） | 正式 Provider（非 sandbox-only） |
-| 域名与协议 | localhost（HTTP） | staging 域名（HTTPS） | 正式域名（HTTPS） |
-| Secrets | 本地 `.env` | Staging secrets store | Production secrets store |
-| 日志监控 | 本地日志 | 集中日志+基础监控 | 集中日志+监控+告警 |
-| 变更风险 | 低 | 中 | 高 |
+| User objects | Developers | Internal testing/acceptance | Real customers |
+| Data type | Local test data | Non-real customer data | Real business data |
+| Database | Local PostgreSQL (Compose) | Standalone Staging DB | Standalone Production DB |
+| Mail Provider | Mock/Sandbox | Sandbox (independent account) | Official Provider (not sandbox-only) |
+| Domain name and protocol | localhost (HTTP) | staging domain name (HTTPS) | formal domain name (HTTPS) |
+| Secrets | local `.env` | Staging secrets store | Production secrets store |
+| Log monitoring | Local log | Centralized log + basic monitoring | Centralized log + monitoring + alarm |
+| Change risk | Low | Medium | High |
 
-## 3. 强制隔离规则
+## 3. Mandatory isolation rules
 
-1. Staging 与 Production 必须使用独立数据库，不允许共享实例/Schema。
-2. Staging 与 Production 必须使用独立 secrets，不允许同名同值复用。
-3. Staging 与 Production 必须使用独立环境变量集合（至少 `DATABASE_URL`、`JWT_SECRET`、`MAIL_*` 分离）。
-4. Staging 禁止导入真实客户 PII 数据。
-5. Production 禁止启用 mock provider 或 sandbox-only secret。
+1. Staging and Production must use independent databases, and sharing instances/Schema is not allowed.
+2. Staging and Production must use independent secrets, and reuse of secrets with the same name and value is not allowed.
+3. Staging and Production must use independent sets of environment variables (at least `DATABASE_URL`, `JWT_SECRET`, `MAIL_*` are separated).
+4. Staging prohibits the import of real customer PII data.
+5. Production prohibits enabling mock provider or sandbox-only secret.
 
-## 4. 配置基线建议
+## 4. Configuration baseline recommendations
 
-- `APP_ENV`：`local` / `staging` / `production`。
-- `APP_PORT`：按部署平台分配。
-- `DATABASE_URL`：环境独立。
-- `JWT_SECRET`：环境独立、定期轮换。
-- `MAIL_PROVIDER`：Local/Staging 允许 sandbox/mock；Production 指向正式通道。
-- `FRONTEND_BASE_URL`、`API_BASE_URL`：按环境域名区分。
+- `APP_ENV`:`local` / `staging` / `production`.
+- `APP_PORT`: allocated by deployment platform.
+- `DATABASE_URL`: environment independent.
+- `JWT_SECRET`: environment independent, regular rotation.
+- `MAIL_PROVIDER`: Local/Staging allows sandbox/mock; Production points to the official channel.
+- `FRONTEND_BASE_URL`, `API_BASE_URL`: distinguished by environment domain name.
 
-## 5. 验收检查清单（文档级）
+## 5. Acceptance Checklist (Document Level)
 
-- [ ] Local/Staging/Production 用途明确。
-- [ ] Staging/Production DB 与 Secrets 隔离写清楚。
-- [ ] Production 非 sandbox-only 约束明确。
-- [ ] 环境变量最小集合已定义。
+- [ ] Local/Staging/Production has a clear purpose.
+- [ ] Staging/Production DB and Secrets are separated and written clearly.
+- [ ] Production non-sandbox-only constraints are explicit.
+- [ ] Minimum set of environment variables defined.

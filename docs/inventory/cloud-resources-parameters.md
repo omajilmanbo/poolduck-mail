@@ -1,26 +1,26 @@
-# Cloud Resources Parameters（云资源参数表）
+# Cloud Resources Parameters (cloud resource parameter table)
 
-> 目的：记录云平台基础设施资源（如 EC2/RDS/VPC/LB 等）的**非敏感参数**与责任归属。
+> Purpose: Record the **non-sensitive parameters** and responsibility of cloud platform infrastructure resources (such as EC2/RDS/VPC/LB, etc.).
 >
-> 安全要求：仅记录资源名称、类型、用途、环境、规格与标识；**不记录访问密钥、密码、token、私钥、真实连接串**。
+> Security requirements: Only record resource name, type, purpose, environment, specifications and identification; **Do not record access keys, passwords, tokens, private keys, and real connection strings**.
 
-## 1. 资源参数台账
+## 1. Resource parameter ledger
 
-| 云资源类型 | 资源名称（可脱敏） | 用途 | Local | Staging | Production | 关键参数（非敏感） | 参数示例 | 保存位置 | 负责人 | 备注 |
+| Cloud resource type | Resource name (can be desensitized) | Purpose | Local | Staging | Production | Key parameters (non-sensitive) | Parameter examples | Save location | Person in charge | Remarks |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Compute（OCI VM） | `poolduck-mail-stg-app-01` | 承载 Staging Frontend / Backend API / PostgreSQL 16 容器 | N/A | Terraform：`infrastructure/oci-staging/`（待人工 apply） | TBD | shape / region / subnet / NSG | `VM.Standard.A1.Flex` / `home region` / `poolduck-mail-stg-public-subnet` / `web-nsg,db-nsg` | `docs/inventory/` + IaC | 人工指定 | Issue #48；默认 Always Free，需人工确认配额 |
-| Container Service（ECS/K8s） | `tbd-api-cluster` | 容器编排与扩缩容 | N/A | TBD | TBD | cluster/service name / task cpu&memory / desired count | `api-service` / `512cpu-1024mb` / `2` | `docs/inventory/` + IaC | 人工指定 | 与 EC2 方案二选一或混合 |
-| Load Balancer（ALB/NLB） | `tbd-public-alb` | 对外流量接入 | N/A | TBD | TBD | listener port / target group / health check path | `443` / `tg-api` / `/health` | `docs/inventory/` + IaC | 人工指定 | 仅记录规则，不记录证书私钥 |
-| Database（PostgreSQL） | `poolduck-mail-stg-postgres` | Staging 结构化数据存储 | Local PostgreSQL | Terraform 主机内 PostgreSQL 16 容器（待人工部署） | TBD | engine/version/network exposure/backup target | `PostgreSQL 16` / `5432 private only` / `Object Storage bucket` | `docs/inventory/` + IaC | 人工指定 | 不使用 Autonomous Database，因 ADR-004 指定 PostgreSQL 16 |
-| Network（OCI VCN/Subnet） | `poolduck-mail-stg-vcn` | Staging 网络隔离 | N/A | Terraform：`infrastructure/oci-staging/`（待人工 apply） | TBD | vcn cidr / subnet cidr / route policy | `10.48.0.0/16` / `10.48.10.0/24` / IGW default route | `docs/inventory/` + IaC | 人工指定 | Production 不得复用 |
-| Security（OCI NSG） | `poolduck-mail-stg-web-nsg` / `poolduck-mail-stg-db-nsg` | Staging 入站/出站访问控制 | Local firewall | Terraform：`infrastructure/oci-staging/`（待人工 apply） | TBD | ingress/egress rule summary | `22 admin CIDR` / `80,443 public` / `5432 staging subnet only` | `docs/inventory/` + IaC | 人工指定 | SSH CIDR 实施前必须收窄 |
-| Storage（OCI Object Storage） | `poolduck-mail-stg-backups` | Staging 备份与日志归档 | Optional | Terraform：`infrastructure/oci-staging/`（待人工 apply） | TBD | bucket/region/lifecycle/retention | `NoPublicAccess` / `home region` / `DELETE after 30d` | `docs/inventory/` + IaC | 人工指定 | access key 不写入本文档；不得保存 PII |
-| DNS（Route53/Cloud DNS） | `tbd-zone` | 域名解析 | N/A | TBD | TBD | hosted zone / record type / ttl | `api.stg.example.com` / `A` / `60` | DNS 控制台 + `docs/inventory/` | 人工指定 | 域名未定可用占位 |
-| TLS Certificate（ACM/CA） | `tbd-cert-api` | HTTPS 证书 | N/A | TBD | TBD | cert provider / domains / expiry owner | `ACM` / `*.example.com` | 证书控制台 + `docs/inventory/` | 人工指定 | 私钥与签发凭据不落库 |
-| Observability（CloudWatch/3rd） | `tbd-monitoring` | 监控、告警、日志聚合 | Local logs | TBD | TBD | log group / metrics / alert channel | `api-prod-log` / `5xx alarm` | 监控平台 + `docs/inventory/` | 人工指定 | webhook/token 仅存 Secrets |
+| Compute (OCI VM) | `poolduck-mail-stg-app-01` | Hosting Staging Frontend / Backend API / PostgreSQL 16 container | N/A | Terraform: `infrastructure/oci-staging/` (to be manually applied) | TBD | shape / region / subnet / NSG | `VM.Standard.A1.Flex` / `home region` / `poolduck-mail-stg-public-subnet` / `web-nsg,db-nsg` | `docs/inventory/` + IaC | Manually specified | Issue #48; Default is Always Free, manual quota confirmation is required |
+| Container Service (ECS/K8s) | `tbd-api-cluster` | Container orchestration and scaling | N/A | TBD | TBD | cluster/service name / task cpu&memory / desired count | `api-service` / `512cpu-1024mb` / `2` | `docs/inventory/` + IaC | Manually specified | With EC2 Choose one of two options or mix |
+| Load Balancer (ALB/NLB) | `tbd-public-alb` | External traffic access | N/A | TBD | TBD | listener port / target group / health check path | `443` / `tg-api` / `/health` | `docs/inventory/` + IaC | Manually specified | Only records rules, not certificate private keys |
+| Database (PostgreSQL) | `poolduck-mail-stg-postgres` | Staging structured data storage | Local PostgreSQL | Terraform host PostgreSQL 16 container (to be manually deployed) | TBD | engine/version/network exposure/backup target | `PostgreSQL 16` / `5432 private only` / `Object Storage bucket` | `docs/inventory/` + IaC | Manually specified | Not using Autonomous Database as ADR-004 specifies PostgreSQL 16 |
+| Network (OCI VCN/Subnet) | `poolduck-mail-stg-vcn` | Staging network isolation | N/A | Terraform: `infrastructure/oci-staging/` (to be manually applied) | TBD | vcn cidr / subnet cidr / route policy | `10.48.0.0/16` / `10.48.10.0/24` / IGW default route | `docs/inventory/` + IaC | Manually specified | Production must not be reused |
+| Security (OCI NSG) | `poolduck-mail-stg-web-nsg` / `poolduck-mail-stg-db-nsg` | Staging inbound/outbound access control | Local firewall | Terraform: `infrastructure/oci-staging/` (to be manually applied) | TBD | ingress/egress rule summary | `22 admin CIDR` / `80,443 public` / `5432 staging subnet only` | `docs/inventory/` + IaC | Manually specified | SSH CIDR must be narrowed before implementation |
+| Storage (OCI Object Storage) | `poolduck-mail-stg-backups` | Staging backup and log archiving | Optional | Terraform: `infrastructure/oci-staging/` (to be manually applied) | TBD | bucket/region/lifecycle/retention | `NoPublicAccess` / `home region` / `DELETE after 30d` | `docs/inventory/` + IaC | Manually specified | The access key is not written to this document; PII must not be saved |
+| DNS (Route53/Cloud DNS) | `tbd-zone` | Domain name resolution | N/A | TBD | TBD | hosted zone / record type / ttl | `api.stg.example.com` / `A` / `60` | DNS console + `docs/inventory/` | Manually specified | The domain name is undetermined and available space |
+| TLS Certificate (ACM/CA) | `tbd-cert-api` | HTTPS Certificate | N/A | TBD | TBD | cert provider / domains / expiry owner | `ACM` / `*.example.com` | Certificate console + `docs/inventory/` | Manually specified | Private key and issuance credentials are not lost |
+| Observability (CloudWatch/3rd) | `tbd-monitoring` | Monitoring, alarming, log aggregation | Local logs | TBD | TBD | log group / metrics / alert channel | `api-prod-log` / `5xx alarm` | Monitoring platform + `docs/inventory/` | Manual specification | webhook/token only Secrets |
 
-## 2. 维护规则
+## 2. Maintenance rules
 
-- 云资源新增、变更规格、迁移区域、删除时，必须同步更新本表。
-- 关键参数变更必须在 PR 中标注影响环境、风险与回滚方案。
-- 任何敏感值（密钥、口令、连接串、私钥）仅记录在 `docs/inventory/secrets-inventory.md` 的“名称/位置”维度，不写真实值。
+- When cloud resources are added, specifications are changed, regions are migrated, or deleted, this table must be updated simultaneously.
+- Changes in key parameters must indicate the impact environment, risks and rollback plan in the PR.
+- Any sensitive values (keys, passwords, connection strings, private keys) are only recorded in the "Name/Location" dimension of `docs/inventory/secrets-inventory.md`, and no real values are written.

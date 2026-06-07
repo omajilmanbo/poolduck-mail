@@ -1,33 +1,33 @@
-# 运维与故障排查手册（初版）
+# Operation, maintenance and troubleshooting manual (first edition)
 
-## 1. 登录失败
+## 1. Login failed
 
-排查步骤：
-1. 确认用户状态（active/suspended）
-2. 检查密码错误次数与锁定策略
-3. 检查认证服务日志（401/403）
-4. 检查 JWT_SECRET 或 session 配置是否异常
+Troubleshooting steps:
+1. Confirm user status (active/suspended)
+2. Check the number of password errors and locking policy
+3. Check the authentication service log (401/403)
+4. Check whether JWT_SECRET or session configuration is abnormal
 
-## 2. 邮件发送失败
+## 2. Email sending failed
 
-排查步骤：
-1. 查看 `mail_jobs` 中失败状态与错误信息
-2. MVP 阶段优先检查 Sandbox/Mock provider 记录与返回错误
-3. 检查收件箱地址格式与域名策略
-4. 仅在非 MVP 阶段接入真实 provider 后，再排查 SMTP/provider 凭据与连接性
+Troubleshooting steps:
+1. Check the failure status and error information in `mail_jobs`
+2. Prioritize checking Sandbox/Mock provider recording and returning errors in the MVP stage
+3. Check the inbox address format and domain name policy
+4. Only after connecting to the real provider in the non-MVP stage, check the SMTP/provider credentials and connectivity.
 
-## 3. 订阅异常
+## 3. Subscription exception
 
-排查步骤：
-1. 查看 `subscriptions` 状态与有效期
-2. 调用 `/api/license/check` 验证返回
-3. 检查时区与过期判断逻辑
-4. 确认订阅状态是否属于 `trial` / `active` / `expired` / `suspended` 之一，并核对门禁动作
+Troubleshooting steps:
+1. Check `subscriptions` status and validity period
+2. Call `/api/license/check` to verify the return
+3. Check time zone and expiration judgment logic
+4. Confirm whether the subscription status is one of `trial` / `active` / `expired` / `suspended`, and check the access control action
 
-## 4. 租户隔离异常（高优先级）
+## 4. Tenant isolation exception (high priority)
 
-排查步骤：
-1. 审查请求中的 tenant 上下文
-2. 检查 SQL 查询是否包含 tenant_id 过滤
-3. 核查审计日志中越权访问记录
-4. 立即阻断可疑访问并升级处理
+Troubleshooting steps:
+1. Review the tenant context in the request
+2. Check if the SQL query contains tenant_id filter
+3. Check the unauthorized access records in the audit log
+4. Immediately block suspicious access and escalate the processing

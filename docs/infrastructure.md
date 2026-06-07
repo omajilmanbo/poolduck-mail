@@ -1,18 +1,18 @@
-# 基础设施总览（Local / Staging / Production）
+# Infrastructure Overview (Local/Staging/Production)
 
-## 1. 目标
+## 1. Goal
 
-在进入数据库、认证、扫码邮件实现前，先统一三套环境的基础设施蓝图，确保：
+Before entering the database, authentication, and email scanning, the infrastructure blueprints of the three environments must be unified to ensure:
 
-- 环境隔离规则明确，避免跨环境误操作。
-- 前后端、数据库、邮件 provider、日志监控、Secrets 的部署位置统一。
-- 后续部署与配置类 Issue 有清晰拆分依据。
+- Environment isolation rules are clear to avoid misoperation across environments.
+- The deployment locations of front-end and back-end, database, email provider, log monitoring, and Secrets are unified.
+- There is a clear basis for splitting subsequent deployment and configuration issues.
 
-## 2. 基础设施总览图
+## 2. Infrastructure overview map
 
 ```mermaid
 flowchart LR
-    subgraph Local[Local（开发机）]
+    subgraph Local[Local (development machine)]
       LBrowser[Browser]
       LFE[Frontend\nNext.js :3000]
       LBE[Backend API\nNestJS :3001]
@@ -25,12 +25,12 @@ flowchart LR
       LBE --> LLOG
     end
 
-    subgraph Staging[Staging（预发布）]
+    subgraph Staging [Staging (pre-release)]
       SBrowser[Browser]
       SFE[Frontend\nHTTPS]
       SBE[Backend API\nHTTPS]
-      SDB[(PostgreSQL 16\nStaging 独立实例)]
-      SMAIL[Sandbox Mail Provider\nStaging 账号]
+      SDB[(PostgreSQL 16\nStaging standalone instance)]
+      SMAIL[Sandbox Mail Provider\nStaging Account]
       SOBS[Centralized Logs & Metrics]
       SBrowser --> SFE --> SBE
       SBE --> SDB
@@ -38,12 +38,12 @@ flowchart LR
       SBE --> SOBS
     end
 
-    subgraph Prod[Production（正式）]
+    subgraph Prod[Production (formal)]
       PBrowser[Browser]
-      PFE[Frontend\nHTTPS + 正式域名]
+      PFE[Frontend\nHTTPS + official domain name]
       PBE[Backend API\nHTTPS]
-      PDB[(PostgreSQL 16\nProduction 独立实例)]
-      PMAIL[Production Mail Provider\n（非 sandbox-only 配置）]
+      PDB[(PostgreSQL 16\nProduction standalone instance)]
+      PMAIL[Production Mail Provider\n (non-sandbox-only configuration)]
       POBS[Centralized Logs/Monitoring/Alerting]
       PBACKUP[(DB Backup)]
       PBrowser --> PFE --> PBE
@@ -54,82 +54,82 @@ flowchart LR
     end
 ```
 
-## 3. 组件部署位置
+## 3. Component deployment location
 
-- Frontend：
-  - Local：开发机进程。
-  - Staging/Production：独立部署单元（可与后端分开发布）。
-- Backend API：
-  - Local：开发机进程。
-  - Staging/Production：独立部署单元，负责租户鉴权、订阅门禁、邮件任务。
-- PostgreSQL：
-  - Local：Docker Compose 本地容器。
-  - Staging：独立数据库实例，仅用于测试数据。
-  - Production：独立数据库实例，用于真实业务数据，包含备份策略。
-- Mail Provider：
-  - Local：mock/sandbox。
-  - Staging：sandbox（禁止真实客户投递）。
-  - Production：正式发送链路（不能使用 mock secret 或 sandbox-only 配置）。
-- 日志/监控：
-  - Local：控制台/本地日志。
-  - Staging/Production：集中式日志与指标，Production 需告警。
-- Secrets：
-  - 三环境独立存储，禁止复用。
+- Frontend:
+  - Local: Development machine process.
+  - Staging/Production: independent deployment unit (can be released separately from the backend).
+- Backend API:
+  - Local: Development machine process.
+  - Staging/Production: an independent deployment unit responsible for tenant authentication, subscription access control, and email tasks.
+- PostgreSQL:
+  - Local: Docker Compose local container.
+  - Staging: independent database instance, used only for test data.
+  - Production: independent database instance, used for real business data, including backup strategy.
+- Mail Provider:
+  - Local:mock/sandbox.
+  - Staging: sandbox (no real customer posting).
+  - Production: Official sending link (cannot use mock secret or sandbox-only configuration).
+- Logging/monitoring:
+  - Local: console/local log.
+  - Staging/Production: centralized logs and indicators, Production needs to be alerted.
+- Secrets:
+  - The three environments are stored independently and reuse is prohibited.
 
-## 4. 隔离原则
+## 4. Isolation principle
 
-1. Staging 与 Production 必须：
-   - 独立数据库实例。
-   - 独立 Secrets。
-   - 独立环境变量集合。
-2. Staging 不使用真实客户数据。
-3. Production 不使用 mock secret 或 sandbox-only mail 配置。
-4. 禁止跨环境共享访问凭据（如同一 `DATABASE_URL` / `JWT_SECRET`）。
+1. Staging and Production must:
+   - Independent database instance.
+   - Independent Secrets.
+   - Set of independent environment variables.
+2. Staging does not use real customer data.
+3. Production does not use mock secret or sandbox-only mail configuration.
+4. Disable sharing of access credentials across environments (such as the same `DATABASE_URL` / `JWT_SECRET`).
 
-## 5. 非范围声明（与 Issue #35 对齐）
+## 5. Unscoped declaration (aligned with Issue #35)
 
-以下内容不在当前 Issue 实施范围内：
+The following are outside the scope of the current Issue implementation:
 
-- 创建 AWS/Vercel/RDS/ECS 等真实云资源。
-- 编写 Docker Compose 实现文件。
-- 建立 CI/CD 流水线实现。
-- 接入真实邮件供应商 SDK/API。
+- Create real cloud resources such as AWS/Vercel/RDS/ECS.
+-Write Docker Compose implementation files.
+- Build CI/CD pipeline implementation.
+- Access to real email provider SDK/API.
 
-## 6. 后续实现类 Issue 建议
+## 6. Subsequent implementation class Issue suggestions
 
-1. 新建：Local Docker Compose 编排（frontend/backend/postgres）。
-2. 新建：Staging/Production 环境变量与 secrets 管理规范落地。
-3. 新建：Production HTTPS 证书与域名接入流程。
-4. 新建：数据库备份与恢复演练流程。
-5. 新建：日志/指标/告警最小可观测链路。
-6. 新建：发布与回滚 Runbook（含 Staging gate）。
+1. New: Local Docker Compose orchestration (frontend/backend/postgres).
+2. New: Staging/Production environment variables and secrets management specifications are implemented.
+3. New: Production HTTPS certificate and domain name access process.
+4. New: Database backup and recovery drill process.
+5. Create new: log/indicator/alarm minimum observable link.
+6. New: Release and rollback runbook (including staging gate).
 
-## 7. 资源台账（实际参数）
+## 7. Resource ledger (actual parameters)
 
-`docs/infrastructure.md` 负责基础设施蓝图与隔离原则；实际落地资源与参数请统一维护在 `docs/inventory/`：
+`docs/infrastructure.md` is responsible for the infrastructure blueprint and isolation principle; please maintain the actual implementation resources and parameters in `docs/inventory/`:
 
-- `docs/inventory/infrastructure-inventory.md`：基础设施资源台账
-- `docs/inventory/environment-parameters.md`：环境变量参数表
-- `docs/inventory/secrets-inventory.md`：Secrets 名称与保存位置台账（不含真实值）
-- `docs/inventory/external-services.md`：外部服务依赖台账
-- `docs/inventory/cloud-resources-parameters.md`：云资源参数表（EC2/RDS/VPC/LB 等）
+- `docs/inventory/infrastructure-inventory.md`: Infrastructure resource ledger
+- `docs/inventory/environment-parameters.md`: Environment variable parameter table
+- `docs/inventory/secrets-inventory.md`: Secrets name and storage location ledger (excluding real values)
+- `docs/inventory/external-services.md`: External service dependency ledger
+- `docs/inventory/cloud-resources-parameters.md`: Cloud resource parameter table (EC2/RDS/VPC/LB, etc.)
 
-当 Local / Staging / Production 的资源、域名、端口、环境变量或外部服务发生变化时，必须同步更新以上台账。
+When Local/Staging/Production resources, domain names, ports, environment variables or external services change, the above accounts must be updated simultaneously.
 
 
-## 8. OCI Always Free Staging IaC（Issue #48）
+## 8. OCI Always Free Staging IaC(Issue #48)
 
-Issue #48 的 Staging 基础设施资源准备采用 Terraform，代码位于 `infrastructure/oci-staging/`，目标为人工已创建的 OCI compartment `Mail_project_stg`。
+The Staging infrastructure resources of Issue #48 are prepared to use Terraform. The code is located in `infrastructure/oci-staging/` and the target is the manually created OCI compartment `Mail_project_stg`.
 
-本阶段只生成 IaC 并等待人工确认后实施，不在 PR 中执行 `terraform apply`，也不提交任何真实 OCI 凭据、数据库密码、JWT secret 或邮件服务 token。
+This stage only generates IaC and waits for manual confirmation before implementation. It does not execute terraform apply in PR, nor submit any real OCI credentials, database password, JWT secret or mail service token.
 
-当前 Staging IaC 范围：
+Current Staging IaC scope:
 
-- OCI VCN / Public Subnet / Internet Gateway / Route Table，用于 Staging 网络隔离与公网 smoke test 入口。
-- Web/API NSG，仅开放 SSH、HTTP、HTTPS；SSH 来源必须在人工实施前收窄为管理员固定 IP/CIDR。
-- DB NSG，仅允许 Staging 子网访问 PostgreSQL `5432`，禁止公网直接访问数据库端口。
-- Always Free Compute，默认使用 `VM.Standard.A1.Flex` 单机承载 MVP Staging 的 Frontend、Backend 与 PostgreSQL 16 容器。
-- Object Storage Bucket，用于非真实 Staging 数据备份和运维产物归档，并配置生命周期清理。
-- Cloud-init，仅安装 Docker、创建目录和占位配置，不自动部署应用、不写入真实 secrets。
+- OCI VCN / Public Subnet / Internet Gateway / Route Table, used for Staging network isolation and public network smoke test entrance.
+- Web/API NSG, only open SSH, HTTP, HTTPS; SSH source must be narrowed to administrator fixed IP/CIDR before manual implementation.
+- DB NSG, only the Staging subnet is allowed to access PostgreSQL `5432`, and the public network is prohibited from directly accessing the database port.
+- Always Free Compute, by default uses `VM.Standard.A1.Flex` to host MVP Staging's Frontend, Backend and PostgreSQL 16 containers on a single machine.
+- Object Storage Bucket, used for non-real staging data backup and operation and maintenance product archiving, and configured life cycle cleanup.
+- Cloud-init only installs Docker, creates directories and placeholder configurations, does not automatically deploy applications, and does not write real secrets.
 
-人工实施前必须确认 OCI home region、Always Free 配额、`Mail_project_stg` compartment OCID、管理员 SSH CIDR 与 SSH 公钥。
+Before manual implementation, you must confirm the OCI home region, Always Free quota, `Mail_project_stg` compartment OCID, administrator SSH CIDR and SSH public key.
