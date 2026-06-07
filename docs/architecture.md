@@ -76,36 +76,36 @@
 
 ```mermaid
 flowchart TD
-    A[Tenant customer company] --> B[Administrator login system]
-    B --> C[Tenant Function Management]
-    C --> CA [Maintain user account subscriptions; add or delete offices/schools (administrator rights required)]
-    CA --> CA2 [Display the number of subscriptions and remaining subscription time (tenant function management page)]
-    C --> CB [Maintain the corresponding relationship between scan code number and email address (personnel list)]
-    C --> CC [Scan QR code to email (core function)]
-    C --> CD [mass mailing]
+    A["Tenant customer company"] --> B["Administrator login system"]
+    B --> C["Tenant Function Management"]
+    C --> CA["Maintain user account subscriptions and offices/schools"]
+    CA --> CA2["Display subscription count and remaining subscription time"]
+    C --> CB["Maintain scan-code-to-email mappings"]
+    C --> CC["Scan QR code to email"]
+    C --> CD["Mass mailing"]
 
-    CA --> CA1[to be added later]
-    CB --> CB1[to be added later]
+    CA --> CA1["To be added later"]
+    CB --> CB1["To be added later"]
 
-    CC --> CC1[Switch office/school building]
-    CC1 --> CC2{Is the subscription valid?}
-    CC2 -- Valid --> CC3 [Scan code panel (remaining subscription time is not displayed)]
-    CC2 -- Expired/Suspended --> CC12 [Restrict QR code scanning and email sending functions]
+    CC --> CC1["Switch office/school building"]
+    CC1 --> CC2{"Is the subscription valid?"}
+    CC2 -- "Valid" --> CC3["Scan code panel"]
+    CC2 -- "Expired or suspended" --> CC12["Restrict QR code scanning and email sending"]
 
-    CC3 --> CC4 [Use barcode scanner to scan barcode/QR code]
-    CC4 --> CC5 [System receives scan results]
-    CC5 --> CC6{Have you found the corresponding email address?}
-    CC6 -- Yes --> CC7 [Create scan code record]
-    CC7 --> CC8[Create email sending task]
-    CC8 --> CC9 [Send an email to the corresponding email address]
-    CC9 --> CC10[record sending result]
-    CC10 --> CC11[Administrator View History/Export]
+    CC3 --> CC4["Use barcode scanner to scan barcode or QR code"]
+    CC4 --> CC5["System receives scan result"]
+    CC5 --> CC6{"Is a matching email address found?"}
+    CC6 -- "Yes" --> CC7["Create scan code record"]
+    CC7 --> CC8["Create email sending task"]
+    CC8 --> CC9["Send email to the matching address"]
+    CC9 --> CC10["Record sending result"]
+    CC10 --> CC11["Administrator views history or exports records"]
 
-    CC6 -- No --> CC13 [Prompt that the corresponding email address was not found]
-    CC13 --> CC14 [Record abnormal code scanning events]
-    CC14 --> CC15[Administrator confirms personnel information]
+    CC6 -- "No" --> CC13["Prompt that no matching email address was found"]
+    CC13 --> CC14["Record abnormal scan code event"]
+    CC14 --> CC15["Administrator confirms personnel information"]
 
-    CD --> CD1[to be added later]
+    CD --> CD1["To be added later"]
 ```
 
 ## 11. Scan code email text fixed template (MVP)
