@@ -9,6 +9,7 @@ logs/
 
 # dependencies
 node_modules/
+.codex-downloads/
 
 # build
 build/
