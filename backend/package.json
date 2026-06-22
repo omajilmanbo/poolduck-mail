@@ -10,6 +10,8 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
     "db:validate": "prisma validate",
+    "prebuild": "npm run prisma:generate",
+    "pretest": "npm run prisma:generate",
     "prisma:generate": "prisma generate",
     "start": "node dist/main.js",
     "start:dev": "ts-node-dev --respawn --transpile-only src/main.ts",
