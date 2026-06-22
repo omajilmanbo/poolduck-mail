@@ -132,3 +132,147 @@ Staging 基础设施准备代码位于 `infrastructure/oci-staging/`。该目录
 - `admin_ssh_cidr` 禁止使用 `0.0.0.0/0`。
 - Staging 邮件 provider 仍必须使用 mock/sandbox，不得接入真实客户投递。
 - `terraform.tfvars`、`tfplan`、Terraform state 文件不得提交到仓库。
+
+## 8. Staging deployment design (Issue #37)
+
+This section defines the MVP Staging deployment workflow after the OCI Always Free baseline in Issue #48 exists. It is a design and operating checklist only; it does not create cloud resources, GitHub secrets, DNS records, or production deployment automation.
+
+### 8.1 Current hosting baseline
+
+- Hosting platform: OCI Always Free, using the `infrastructure/oci-staging/` Terraform baseline.
+- Runtime shape: one Staging compute instance that can run Frontend, Backend, and PostgreSQL 16 containers for MVP validation.
+- Access before a domain exists: use the Terraform `compute_public_ip` output and HTTP for temporary internal validation.
+- Domain and TLS: optional follow-up. If no Staging domain exists, use placeholders such as `http://<staging-public-ip>` and do not block Issue #37.
+- Mail provider: `mock` or `sandbox` only. Staging must not send real customer email.
+- Data policy: Staging uses synthetic/non-customer data only.
+
+### 8.2 Manual deployment trigger
+
+Until a separate CI/CD issue is approved, Staging deployment is manual:
+
+1. Merge the reviewed infrastructure PR for Issue #48.
+2. On the operator machine, prepare local-only OCI credentials and `infrastructure/oci-staging/terraform.tfvars`.
+3. Run Terraform plan/apply manually and review the plan before apply.
+4. SSH to the Staging compute public IP using the approved admin key.
+5. Prepare an application release bundle or clone the repository on the Staging host.
+6. Configure Staging environment variables from the approved secret/config sources.
+7. Start or restart the Staging services.
+8. Run the smoke test checklist in section 8.6.
+9. Record test results in the PR or deployment notes.
+
+Do not enable automatic deploy-on-main, tag deploy, or production deploy in this issue.
+
+### 8.3 Staging configuration sources
+
+Use separate storage for non-secret config and secrets:
+
+| Config kind | Examples | Storage location | Commit to repo |
+|---|---|---|---|
+| Terraform local inputs | `compartment_ocid`, `region`, `admin_ssh_cidr`, `ssh_public_key` | Local `infrastructure/oci-staging/terraform.tfvars` | No |
+| OCI credentials | tenancy/user OCID, fingerprint, private key path | Local OCI CLI config (`~/.oci/config`) | No |
+| Application non-secret config | `APP_ENV`, ports, public base URLs, log level | Staging host env file or future platform config UI | No for real values |
+| Application secrets | `DATABASE_URL`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, mail sandbox credentials | Staging secrets store or restricted host env file | No |
+| Documentation placeholders | variable names, example URLs, example secret labels | Docs and `.env.example` | Yes |
+
+If GitHub Actions Environments are introduced later, use a dedicated `staging` environment and create secrets manually in the GitHub UI. Agents must not create or read real secret values.
+
+### 8.4 Required Staging environment variables
+
+Minimum application variables for Staging:
+
+```dotenv
+APP_ENV=staging
+APP_PORT=3001
+FRONTEND_PORT=3000
+API_BASE_URL=http://<staging-public-ip>:3001
+NEXT_PUBLIC_API_BASE_URL=http://<staging-public-ip>:3001
+CORS_ORIGIN=http://<staging-public-ip>:3000
+DATABASE_URL=<secret:staging-postgres-url>
+JWT_SECRET=<secret:staging-jwt-secret>
+REFRESH_TOKEN_SECRET=<secret:staging-refresh-token-secret>
+MAIL_PROVIDER=sandbox
+MAIL_FROM_ADDRESS=<placeholder-or-secret:staging-from-address>
+LOG_LEVEL=info
+TENANT_CONTEXT_ENFORCED=true
+```
+
+If a Staging domain is added later, replace the public-IP URLs with HTTPS URLs, for example:
+
+- `API_BASE_URL=https://api.staging.<domain>`
+- `NEXT_PUBLIC_API_BASE_URL=https://api.staging.<domain>`
+- `CORS_ORIGIN=https://staging.<domain>`
+
+### 8.5 Database and mail strategy
+
+- Database: Staging must use an isolated PostgreSQL 16 database. For the OCI Always Free MVP baseline, this may run as a container on the Staging compute instance until a later issue introduces a managed database.
+- Database data: use seed/synthetic test data only. Do not import real customer PII.
+- Mail: Staging must use `mock` or `sandbox`. Do not configure a production SMTP/API provider.
+- Tenant safety: keep `TENANT_CONTEXT_ENFORCED=true` in Staging and Production.
+
+### 8.6 Smoke test checklist
+
+The smoke test list is intended to become later automated E2E coverage:
+
+1. Infrastructure health: Staging host responds over SSH from the allowed admin CIDR.
+2. Backend health: `GET /health` returns success.
+3. Frontend health: `GET /healthz` returns success.
+4. Login path: tenant-aware login accepts `tenant_id` + email/username + password for seeded Staging users.
+5. Tenant isolation: a user from one tenant cannot access another tenant's data.
+6. Subscription gate: `trial` / `active` allows the scan flow; `expired` / `suspended` blocks scan/mail-job creation.
+7. Location query: seeded location/person mapping can be queried without crossing tenant boundaries.
+8. Scan flow: submitting a scan creates a `mail_job` for the expected tenant and target address.
+9. Sandbox mail: triggering send records a sandbox/mock result and does not deliver real email.
+10. Logs: health checks, login failure, authorization denial, subscription denial, and sandbox send result are observable without logging secrets or PII.
+
+### 8.7 Human preparation checklist
+
+Before a Staging deploy attempt, a human must confirm:
+
+- OCI compartment OCID and home region are known and stored only in local/private config.
+- Terraform plan has been reviewed and targets Staging resources only.
+- Admin SSH CIDR is restricted; `0.0.0.0/0` is not allowed for SSH.
+- A Staging SSH public key is configured, and the private key is not in the repository.
+- Staging database credentials and JWT secrets are generated outside the repository.
+- Mail provider is `mock` or `sandbox`; no production mail credentials are used.
+- If no domain exists, public-IP URLs are accepted as temporary Staging endpoints.
+- If a domain exists, DNS/TLS is configured manually before switching URLs to HTTPS.
+- GitHub `staging` environment/secrets, if used later, are created manually by a human.
+
+### 8.8 Stop conditions for agents
+
+Agents must stop and report blockers instead of guessing when any of the following is missing:
+
+- OCI permissions or credentials needed to inspect/apply Staging infrastructure.
+- `compartment_ocid`, `region`, SSH public key, or admin CIDR.
+- Staging database connection details or secret storage location.
+- JWT/refresh token secrets.
+- Mail sandbox/mock provider decision or credentials.
+- Domain/TLS decision when the requested workflow requires HTTPS.
+- Permission to modify GitHub Actions workflows or GitHub Environments.
+
+## 9. Database migration operations (Issue #21)
+
+Backend database migrations are managed with Prisma.
+
+Local development flow:
+
+1. Start PostgreSQL 16, for example with `docker compose up -d postgres`.
+2. Confirm `.env` or shell environment contains a local `DATABASE_URL`.
+3. Run `cd backend`.
+4. Validate the Prisma schema with `npm run db:validate`.
+5. Apply local migrations with `npm run db:migrate`.
+6. Generate the Prisma client with `npm run prisma:generate`.
+7. Optionally run the synthetic model smoke test with `npm run test:db`.
+
+Staging/Production-like deployment flow:
+
+1. Confirm the target database is isolated for the environment.
+2. Confirm `DATABASE_URL` comes from the approved secret store or restricted host environment.
+3. Run `npm run db:deploy` from `backend/` to apply committed migrations.
+4. Do not run `npm run db:reset` outside disposable local databases.
+
+Safety rules:
+
+- Never commit `DATABASE_URL`, migration state files, dumps, seed data with customer PII, or generated Prisma client output.
+- Staging smoke data must be synthetic.
+- Agents must stop if the target database or secret source is unclear.

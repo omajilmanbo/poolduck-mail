@@ -146,3 +146,29 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 - 当前已进入实现准备阶段：按“推荐的 Issue 执行顺序”推进，优先完成 #37/#21 等基础任务。
 - 不提交 secrets / token / 真实客户数据。
 - 新功能开发前先确认 ADR、Issue、人工准备项与测试计划。
+
+## Staging deployment design note (Issue #37)
+
+Staging deployment is currently defined as a manual OCI Always Free workflow until a separate CI/CD issue is approved. The design uses the `infrastructure/oci-staging/` baseline from Issue #48, allows temporary public-IP access when no domain exists, requires isolated Staging PostgreSQL data, and keeps mail delivery on `mock` or `sandbox`.
+
+Primary references:
+
+- `docs/deployment.md` section "Staging deployment design (Issue #37)"
+- `docs/environments.md` section "Staging environment baseline (Issue #37)"
+- `docs/inventory/environment-parameters.md` section "Staging baseline for Issue #37"
+
+Real OCIDs, Terraform tfvars, OCI credentials, database URLs, JWT secrets, mail credentials, and customer data must stay outside the repository.
+
+## Database migration baseline (Issue #21)
+
+Backend schema migrations are managed with Prisma in `backend/prisma/`.
+
+Common commands:
+
+- `cd backend && npm run db:validate`
+- `cd backend && npm run db:migrate` for local development
+- `cd backend && npm run db:deploy` for committed migrations in CI/Staging-like environments
+- `cd backend && npm run prisma:generate`
+- `cd backend && npm run test:db` for a synthetic model smoke test against a disposable/local database
+
+The initial schema creates `tenants`, `users`, `subscriptions`, `devices`, `locations`, `person_mappings`, `scan_events`, `mail_jobs`, and `audit_logs`. Real database URLs, dumps, generated clients, and customer data must not be committed.
