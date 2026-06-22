@@ -144,3 +144,39 @@
 - `person_mappings (tenant_id, location_id, status, updated_at)`
 - `mail_jobs (tenant_id, status, created_at)`
 - `audit_logs (tenant_id, created_at)`
+
+## 11. Migration baseline (Issue #21)
+
+The initial migration is implemented with Prisma under `backend/prisma/`.
+
+Implementation notes:
+
+- Prisma schema: `backend/prisma/schema.prisma`.
+- Initial migration SQL: `backend/prisma/migrations/20260622000000_init/migration.sql`.
+- The implementation includes the initial MVP tables: `tenants`, `users`, `subscriptions`, `devices`, `locations`, `person_mappings`, `scan_events`, `mail_jobs`, and `audit_logs`.
+- Status fields remain `varchar` columns at the database layer to match this document; business validation will be enforced in service/API layers in later issues.
+- `scan_events.location_id` is included as a nullable foreign key to `locations.id` so scan history can be queried by the selected location context described in ADR-002 and `docs/api.md`.
+- `person_mappings` has the required unique constraint on `(tenant_id, location_id, scan_code)`.
+- Core tenant-scoped indexes are included for users, devices, locations, person mappings, scan events, mail jobs, and audit logs.
+
+Local migration commands:
+
+```bash
+cd backend
+npm run db:validate
+npm run db:migrate
+npm run db:deploy
+npm run prisma:generate
+```
+
+`db:migrate` is for local development and creates/applies migration history. `db:deploy` applies committed migrations in CI/Staging/Production-like environments. Both require `DATABASE_URL` to point to the target PostgreSQL database.
+
+Model smoke test:
+
+```bash
+cd backend
+npm run db:deploy
+npm run test:db
+```
+
+The smoke test creates a tenant, subscription, user, location, person mapping, scan event, mail job, and audit log using synthetic data only. Do not run it against a database containing real customer data.
