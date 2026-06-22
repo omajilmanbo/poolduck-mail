@@ -249,3 +249,30 @@ Agents must stop and report blockers instead of guessing when any of the followi
 - Mail sandbox/mock provider decision or credentials.
 - Domain/TLS decision when the requested workflow requires HTTPS.
 - Permission to modify GitHub Actions workflows or GitHub Environments.
+
+## 9. Database migration operations (Issue #21)
+
+Backend database migrations are managed with Prisma.
+
+Local development flow:
+
+1. Start PostgreSQL 16, for example with `docker compose up -d postgres`.
+2. Confirm `.env` or shell environment contains a local `DATABASE_URL`.
+3. Run `cd backend`.
+4. Validate the Prisma schema with `npm run db:validate`.
+5. Apply local migrations with `npm run db:migrate`.
+6. Generate the Prisma client with `npm run prisma:generate`.
+7. Optionally run the synthetic model smoke test with `npm run test:db`.
+
+Staging/Production-like deployment flow:
+
+1. Confirm the target database is isolated for the environment.
+2. Confirm `DATABASE_URL` comes from the approved secret store or restricted host environment.
+3. Run `npm run db:deploy` from `backend/` to apply committed migrations.
+4. Do not run `npm run db:reset` outside disposable local databases.
+
+Safety rules:
+
+- Never commit `DATABASE_URL`, migration state files, dumps, seed data with customer PII, or generated Prisma client output.
+- Staging smoke data must be synthetic.
+- Agents must stop if the target database or secret source is unclear.

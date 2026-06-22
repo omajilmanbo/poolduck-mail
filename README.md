@@ -158,3 +158,17 @@ Primary references:
 - `docs/inventory/environment-parameters.md` section "Staging baseline for Issue #37"
 
 Real OCIDs, Terraform tfvars, OCI credentials, database URLs, JWT secrets, mail credentials, and customer data must stay outside the repository.
+
+## Database migration baseline (Issue #21)
+
+Backend schema migrations are managed with Prisma in `backend/prisma/`.
+
+Common commands:
+
+- `cd backend && npm run db:validate`
+- `cd backend && npm run db:migrate` for local development
+- `cd backend && npm run db:deploy` for committed migrations in CI/Staging-like environments
+- `cd backend && npm run prisma:generate`
+- `cd backend && npm run test:db` for a synthetic model smoke test against a disposable/local database
+
+The initial schema creates `tenants`, `users`, `subscriptions`, `devices`, `locations`, `person_mappings`, `scan_events`, `mail_jobs`, and `audit_logs`. Real database URLs, dumps, generated clients, and customer data must not be committed.
