@@ -109,7 +109,30 @@ Issue #60 后，本地 GUI 黑盒前应额外验证容器组形态：
 
 该流程仍使用 sandbox/mock mail provider，不得接入真实邮件 provider 或真实客户数据。
 
-## 5. 质量门禁建议
+## 5. GUI 黑盒与 E2E 冒烟
+
+Issue #57 的本地 GUI 黑盒测试记录：
+
+- `docs/testing/gui-black-box-2026-06-30.md`
+
+最小 Playwright E2E smoke：
+
+```powershell
+cd frontend
+npm run test:e2e
+```
+
+覆盖范围：
+
+- active tenant 登录进入扫码工作台
+- location 与人员映射展示
+- `SCAN-LOCAL-001` 创建 `queued` mail_job 并显示“发送中”
+- 手动触发 sandbox send 后显示“已发送”
+- suspended tenant 登录后扫码输入和提交按钮禁用
+
+进入 Staging 前，GUI 黑盒结论必须明确是否存在阻塞项；UI 细节优化问题应拆分为后续 Issue，不阻塞 Staging smoke。
+
+## 6. 质量门禁建议
 
 - 单元测试通过率 100%（新增/改动相关）
 - 高风险模块必须包含至少 1 个失败场景测试

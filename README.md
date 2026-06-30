@@ -100,6 +100,7 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 - 前端构建：`cd frontend && npm run build`
 - 本地 GUI 黑盒入口：后端与前端服务启动后，打开 `http://localhost:3000/`，使用 #55 seed 账号完成登录、location 选择、扫码提交与 sandbox 发送触发。
 - 本地容器组冒烟：`docker compose up -d --build` 后检查 `http://localhost:3000/healthz`、`http://localhost:3001/health`，再执行 `docker compose exec backend npm run local:seed` 与 `docker compose exec backend npm run smoke:api`。
+- GUI 黑盒与 E2E 记录：`docs/testing/gui-black-box-2026-06-30.md`
 
 本地 seed 会创建固定的安全示例数据（均为 `example.local`，不包含真实客户数据）：
 
@@ -180,14 +181,14 @@ Staging 部署不应直接从“代码能编译”开始。建议满足以下条
 - **#55**：准备本地测试种子数据与 API 冒烟验证。
 - **#56**：实现 MVP 登录与扫码工作台最小前端界面。
 - **#60**：容器化前端与后端，提供本地一键启动容器组。
+- **#57**：制定并执行 GUI 黑盒与 E2E 冒烟测试。
 
 ### 当前后续执行顺序
 
-1. **#57**：制定并执行 GUI 黑盒与 E2E 冒烟测试。
-2. **#37**：设计 Staging 部署流程与环境变量。
-3. **#58**：执行 Staging 部署与环境冒烟验证。
-4. **#38**：设计 PostgreSQL 备份与恢复策略。
-5. **#39**：设计日志、监控与告警策略。
+1. **#37**：设计 Staging 部署流程与环境变量。
+2. **#58**：执行 Staging 部署与环境冒烟验证。
+3. **#38**：设计 PostgreSQL 备份与恢复策略。
+4. **#39**：设计日志、监控与告警策略。
 
 ### 业务实现依赖关系（按当前执行计划）
 
