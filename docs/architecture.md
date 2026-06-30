@@ -8,6 +8,14 @@
 - 认证：JWT（access + refresh）+ RBAC
 - 邮件服务：MVP 使用 Sandbox/Mock Provider（不接入真实供应商）
 
+### 1.1 Local 容器运行拓扑（Issue #60）
+
+- Local Compose 提供 `frontend`、`backend`、`postgres` 三个服务，用于本地一键启动与 GUI/API 黑盒验证。
+- `backend` 通过 Compose 内部 DNS 使用 `postgres:5432` 连接数据库；宿主机直跑后端时仍使用 `localhost:5432`。
+- 宿主机浏览器访问 `frontend` 暴露的 `http://localhost:3000`，前端客户端请求 `http://localhost:3001`。
+- `backend` CORS 默认允许 `http://localhost:3000`；禁止使用 `*` 通配 origin。
+- 该拓扑是本地 MVP 容器化基线，不包含 Production 域名、TLS、反向代理、负载均衡、真实 secrets 或真实邮件 provider。
+
 ## 2. 前端层
 
 - 登录页、扫码录入页、任务状态页、管理页
@@ -37,7 +45,10 @@
 - 登录入参包含 `tenant_id + username(email) + password`
 - 登录校验顺序：先校验 `tenant_id` 是否存在，再校验用户是否属于该 tenant 且密码正确
 - token 中包含 user_id / tenant_id / role
-- 基于 RBAC 执行接口级权限控制
+- 后端通过 `JwtAuthGuard` 解析 token，并在请求上下文注入 `tenant_id`、`user_id`、`role`
+- Controller 使用统一的 `@CurrentUser()` 获取认证上下文，业务层不得从 body/query/path 中信任前端传入的 `tenant_id`
+- MVP 提供最小角色判断能力：`@Roles('root_admin', 'manager')` + `RolesGuard`
+- 基于最小 RBAC 执行接口级权限控制
 - 角色边界：`root_admin` 可维护用户账号、订阅、办公室/学校；`manager` 仅可维护人员一览与执行扫码流程
 - 登录成功后，tenant scope 以后端会话/token 中的 `tenant_id` 为准，业务接口不允许越权切换 tenant
 
