@@ -10,8 +10,8 @@
 
 - Node.js 20 LTS
 - npm 10+
-- Docker / Docker Compose（Local PostgreSQL 16）
-- PostgreSQL 16（Local 由 `docker-compose.yml` 提供；Staging/Production 使用独立数据库）
+- Docker / Docker Compose（Local PostgreSQL 16 与本地应用容器组）
+- PostgreSQL 16（Local 由 `docker-compose.yml` 提供；Staging/Production 数据库与 secrets 策略仍需按对应 Issue 明确）
 - MVP 阶段邮件 provider 使用 sandbox/mock（不接入真实邮件发送）
 
 ## 3. 环境变量
@@ -47,20 +47,50 @@
 - 不提供真实数据库密码、真实客户数据、真实邮件凭据或 OAuth refresh token。
 - MVP 阶段邮件发送必须使用 sandbox/mock provider。
 
-### 4.1 Local PostgreSQL（Docker Compose）
+### 4.1 Local 容器组（Docker Compose）
 
-`docker-compose.yml` 当前只提供 PostgreSQL 16，本阶段不创建生产 Dockerfile，也不把 staging/production 纳入 compose。
+`docker-compose.yml` 提供本地 MVP 容器组：`postgres`、`backend`、`frontend`。该配置用于本地恢复、黑盒验证与后续 Staging 方案参考，不等同于 Production 发布流水线。
 
 1. 准备本地环境变量：
    - `copy .env.example .env`
-2. 启动本地数据库：
-   - `docker compose up -d postgres`
+2. 构建并启动完整容器组：
+   - `docker compose up -d --build`
 3. 检查容器状态：
    - `docker compose ps`
-4. 验证 PostgreSQL 可连接：
+4. 验证健康检查：
+   - `GET http://localhost:3000/healthz`
+   - `GET http://localhost:3001/health`
+5. 初始化本地测试数据：
+   - `docker compose exec backend npm run local:seed`
+6. 执行 API 冒烟：
+   - `docker compose exec backend npm run smoke:api`
+7. 打开 MVP 前端：
+   - `http://localhost:3000/`
+
+容器组网络与环境变量：
+
+- Backend 容器通过 Compose service name `postgres` 连接 PostgreSQL，容器内 `DATABASE_URL` 为 `postgresql://...@postgres:5432/...`。
+- Frontend 浏览器端默认使用 `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001`，该值在 Docker build 时写入 Next.js 客户端 bundle。
+- Backend CORS 默认允许 `http://localhost:3000`，对应宿主机浏览器访问 Frontend 的 origin。
+- Backend 启动命令会先执行 `npm run db:deploy`，再执行 `npm run start`。
+- MVP 邮件 provider 默认保持 `MAIL_PROVIDER=mock`，不会接入真实邮件服务。
+
+常用操作：
+
+- 仅启动 PostgreSQL，兼容宿主机直接启动前后端的开发方式：
+  - `docker compose up -d postgres`
+- 验证 PostgreSQL 可连接：
    - `docker compose exec postgres pg_isready -U poolduck_local -d poolduck_mail`
-5. 停止本地数据库：
+- 查看日志：
+  - `docker compose logs -f backend`
+  - `docker compose logs -f frontend`
+  - `docker compose logs -f postgres`
+- 重建镜像：
+  - `docker compose build --no-cache backend frontend`
+- 停止容器组：
    - `docker compose down`
+- 停止并清空本地数据库卷：
+  - `docker compose down -v`
 
 默认本地配置：
 
@@ -68,9 +98,10 @@
 - 用户：`poolduck_local`
 - 示例密码：`poolduck_local_password`
 - 本机端口：`5432`
-- 后端连接串：`postgresql://poolduck_local:poolduck_local_password@localhost:5432/poolduck_mail`
+- 宿主机后端连接串：`postgresql://poolduck_local:poolduck_local_password@localhost:5432/poolduck_mail`
+- 容器内后端连接串：`postgresql://poolduck_local:poolduck_local_password@postgres:5432/poolduck_mail`
 
-### 4.2 后端（当前已可运行）
+### 4.2 后端宿主机开发入口（保留）
 
 1. 安装依赖：
    - `cd backend`
@@ -78,6 +109,7 @@
 2. 配置环境变量（可选）：
    - 新建 `backend/.env`（或使用系统环境变量）
    - 可配置 `APP_PORT`（默认 `3001`）
+   - 可配置 `CORS_ORIGIN`（默认 `http://localhost:3000`）；认证 API 禁止使用 `*` 通配 origin
    - 使用 `.env.example` 中的 `DATABASE_URL` 连接 Local PostgreSQL
 3. 启动开发服务：
    - `npm run start:dev`
@@ -86,13 +118,14 @@
 5. 运行测试：
    - `npm test`
 
-### 4.3 前端（当前已可运行）
+### 4.3 前端宿主机开发入口（保留）
 
 1. 安装依赖：
    - `cd frontend`
    - `npm install`
 2. 启动开发服务：
    - `npm run dev`
+   - 前端默认请求 `NEXT_PUBLIC_API_BASE_URL`，未设置时使用 `http://localhost:3001`
 3. 构建验证：
    - `npm run build`
 4. 健康检查：
@@ -105,6 +138,9 @@
 - 使用独立数据库与邮件沙箱配置
 - 自动化部署后执行 smoke test
 - 验证订阅、权限、扫码链路
+- Staging 后续采用与 Local 相同的容器组形态部署到 OCI 服务器：Frontend 容器、Backend 容器、PostgreSQL 容器由 Compose 或同等编排入口拉起。
+- Issue #60 的 Dockerfile/Compose 建立可复用容器化基线；Staging 仍需后续 Issue 明确真实 secrets 来源、域名/TLS、备份、监控与发布策略。
+- Staging 环境变量必须替换为 staging 专用值，不能直接复用 `.env.example` 中的示例 secrets。
 
 ## 6. Production 部署
 
@@ -112,6 +148,7 @@
 - 执行数据库 migration（先备份）
 - 配置监控告警（登录失败率、邮件失败率）
 - 逐步发布或低峰发布
+- Production 不直接复用本地 `.env.example` 示例值；真实 secrets、TLS、反向代理、负载均衡、备份与回滚流程必须由后续发布/运维 Issue 明确。
 
 ## 7. OCI Always Free Staging IaC 实施入口（Issue #48）
 

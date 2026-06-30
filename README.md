@@ -4,14 +4,14 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 
 ## 当前项目阶段
 
-当前处于 **本地开发环境完成后的功能实现准备阶段**：
+当前处于 **核心后端链路本地实现后的验证准备阶段**：
 
 - 已完成产品范围、业务流程、租户隔离与订阅规则文档化。
 - 已通过 ADR-004 确认 MVP 技术栈（状态：`Accepted`）。
 - 已完成前后端基础工程骨架。
-- 已完成 Local Docker Compose 开发环境，当前本地 PostgreSQL 16 可通过 Docker Compose 启动。
+- 已完成 Local Docker Compose 开发环境，当前可通过 Docker Compose 启动 PostgreSQL 16，也可一键启动 Frontend / Backend / PostgreSQL 本地容器组。
 - 已生成 OCI Always Free Staging IaC，等待人工确认后在 `Mail_project_stg` 区间实施。
-- 后续将在 Staging IaC 人工确认基础上补齐部署流程、数据库迁移基础、认证与租户上下文，再进入扫码邮件核心闭环。
+- 本地工作区已补齐认证与租户上下文、订阅门禁、location/人员映射、扫码事件、mail_job 生成与 sandbox 发送触发链路；进入 Staging 前需要先完成本地测试数据、API 冒烟与 GUI 黑盒验证。
 
 ## MVP 技术栈摘要（以 ADR-004 为准）
 
@@ -38,21 +38,37 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 - 如本机已有 PostgreSQL 占用 `5432`，先在本地 `.env` 中改用 `POSTGRES_PORT=5433` 等端口映射。
 - 不要在 `.env`、compose 文件或文档中写入真实数据库密码、真实客户数据、真实邮件凭据。
 
-启动本地 PostgreSQL 16：
+启动完整本地容器组：
 
 1. 复制环境变量示例：
    - Windows: `copy .env.example .env`
    - macOS/Linux: `cp .env.example .env`
-2. 启动数据库：`docker compose up -d postgres`
+2. 构建并启动容器组：`docker compose up -d --build`
 3. 查看健康状态：`docker compose ps`
-4. 验证数据库连接：
+4. 健康检查：
+   - Frontend: `GET http://localhost:3000/healthz`
+   - Backend: `GET http://localhost:3001/health`
+5. 初始化本地测试数据：`docker compose exec backend npm run local:seed`
+6. API 冒烟：`docker compose exec backend npm run smoke:api`
+7. 打开 MVP 工作台：`http://localhost:3000/`
+
+常用容器操作：
+
+- 仅启动 PostgreSQL（兼容宿主机开发入口）：`docker compose up -d postgres`
+- 查看日志：`docker compose logs -f backend` / `docker compose logs -f frontend`
+- 停止容器组：`docker compose down`
+- 停止并清空本地数据库卷：`docker compose down -v`
+- 重建镜像：`docker compose build --no-cache backend frontend`
+- 验证数据库连接：
    - `docker compose exec postgres pg_isready -U poolduck_local -d poolduck_mail`
 
-`docker-compose.yml` 默认只启动 PostgreSQL。本阶段前后端仍按本地 Node.js 进程运行，后端使用 `.env.example` 中的 `DATABASE_URL` 连接本地数据库。
+`docker-compose.yml` 默认启动 `postgres`、`backend`、`frontend` 三个服务。Backend 容器使用 Compose 内部 service name `postgres` 连接数据库；宿主机直接启动后端时仍使用 `.env.example` 中的 `localhost` 数据库地址。
 
 - 后端目录：`backend/`
 - 安装依赖：`cd backend && npm install`
 - 数据库连接串：`DATABASE_URL=postgresql://poolduck_local:poolduck_local_password@localhost:5432/poolduck_mail`
+- 认证本地变量：`JWT_SECRET` 需设置为本地测试值，`JWT_ACCESS_TOKEN_TTL_SECONDS` 默认示例为 `86400`（24 小时，支持扫码工作台长时间值守）
+- 本地 CORS：后端默认允许 `CORS_ORIGIN=http://localhost:3000`；如果前端端口变化，需要同步修改后端环境变量
 - 启动开发服务：`npm run start:dev`
 - 默认健康检查地址：`GET http://localhost:3001/health`
 - 运行测试：`npm test`
@@ -61,10 +77,60 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 
 - 前端目录：`frontend/`
 - 安装依赖：`cd frontend && npm install`
+- API 地址：默认读取 `NEXT_PUBLIC_API_BASE_URL`，未设置时使用 `http://localhost:3001`
 - 启动前端开发服务：`npm run dev`
 - 前端健康检查地址：`GET http://localhost:3000/healthz`
 - 前端构建：`npm run build`
 - 前端测试：`npm test`
+- MVP 登录与扫码工作台：`GET http://localhost:3000/`
+
+## 本地测试、GUI 黑盒与 Staging 判断
+
+### 当前可立即执行的本地测试
+
+在提交 PR 或进入 Staging 前，至少执行：
+
+- 后端单元/集成测试：`cd backend && npm test`
+- 后端构建：`cd backend && npm run build`
+- Prisma schema 校验：`cd backend && npm run db:validate`
+- 如本地 PostgreSQL 已启动并完成迁移，可执行数据库 smoke：`cd backend && npm run test:db`
+- 本地测试 seed：`cd backend && npm run local:seed`
+- 本地 API 冒烟：后端服务启动后执行 `cd backend && npm run smoke:api`
+- 前端测试：`cd frontend && npm test`
+- 前端构建：`cd frontend && npm run build`
+- 本地 GUI 黑盒入口：后端与前端服务启动后，打开 `http://localhost:3000/`，使用 #55 seed 账号完成登录、location 选择、扫码提交与 sandbox 发送触发。
+- 本地容器组冒烟：`docker compose up -d --build` 后检查 `http://localhost:3000/healthz`、`http://localhost:3001/health`，再执行 `docker compose exec backend npm run local:seed` 与 `docker compose exec backend npm run smoke:api`。
+
+本地 seed 会创建固定的安全示例数据（均为 `example.local`，不包含真实客户数据）：
+
+- active tenant：`11111111-1111-4111-8111-111111111111`
+- manager：`manager@example.local` / `PoolduckLocal123!`
+- root admin：`root-admin@example.local` / `PoolduckLocal123!`
+- location：`66666666-6666-4666-8666-666666666666`
+- active scan code：`SCAN-LOCAL-001`
+- unmapped scan code：`SCAN-LOCAL-UNMAPPED`
+
+API smoke 默认验证 sandbox success。若要验证 sandbox failure，先用 `MAIL_MOCK_SEND_RESULT=failure` 启动后端，再执行：
+
+- Windows PowerShell: `$env:API_SMOKE_EXPECT_SEND_STATUS='failed'; npm run smoke:api`
+- macOS/Linux: `API_SMOKE_EXPECT_SEND_STATUS=failed npm run smoke:api`
+
+### Staging 何时可以部署
+
+Staging 部署不应直接从“代码能编译”开始。建议满足以下条件后再执行：
+
+- #55 完成：本地 seed/test data 与 API 冒烟链路可重复执行。
+- #60 完成：本地 Frontend / Backend / PostgreSQL 容器组可重复启动并通过健康检查。
+- #37 完成或人工确认：Staging 部署流程、环境变量、secrets 边界已明确。
+- #56 至少完成最小 GUI，或人工确认本轮 Staging 只验证 API。
+- sandbox/mock mail provider 保持启用，确认不会真实发信。
+- Staging 使用独立测试数据，不导入真实客户数据。
+
+### GUI 黑盒测试何时可以开始
+
+- 本地 GUI 黑盒测试：#55 与 #56 完成后即可开始，由 #57 执行。
+- Staging GUI 黑盒测试：#57 本地通过且 #58 Staging 部署冒烟通过后开始。
+- GUI 黑盒测试前必须确认：登录测试账号、tenant、subscription、location、person_mapping、sandbox success/failure 数据都可复现。
 
 ## 文档导航
 
@@ -104,19 +170,24 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 - **#43**：新增基础设施资源台账与环境参数表。
 - **#36**：创建 Local Docker Compose 开发环境。
 - **#48**：生成 OCI Always Free Staging 基础设施 IaC，等待人工确认后实施。
+- **#21**：实现数据库迁移基础与初始模型。
+- **#22**：实现租户登录与用户认证 API。
+- **#33**：认证与租户上下文中间件最小实现。
+- **#23**：实现订阅状态检查与扫码发送限制基础。
+- **#24**：实现 location 与人员映射只读 API。
+- **#25**：实现扫码事件创建与固定邮件任务生成 API。
+- **#26**：实现邮件 sandbox provider 与发送触发 API。
+- **#55**：准备本地测试种子数据与 API 冒烟验证。
+- **#56**：实现 MVP 登录与扫码工作台最小前端界面。
+- **#60**：容器化前端与后端，提供本地一键启动容器组。
 
 ### 当前后续执行顺序
 
-1. **#37**：设计 Staging 部署流程与环境变量。
-2. **#21**：实现数据库迁移基础与初始模型。
-3. **#38**：设计 PostgreSQL 备份与恢复策略。
-4. **#39**：设计日志、监控与告警策略。
-5. **#22**：实现租户登录与用户认证 API。
-6. **#33**：认证与租户上下文中间件最小实现。
-7. **#23**：实现订阅状态检查与扫码发送限制基础。
-8. **#24**：实现 location 与人员映射只读 API。
-9. **#25**：实现扫码事件创建与固定邮件任务生成 API。
-10. **#26**：实现邮件 sandbox provider 与发送触发 API。
+1. **#57**：制定并执行 GUI 黑盒与 E2E 冒烟测试。
+2. **#37**：设计 Staging 部署流程与环境变量。
+3. **#58**：执行 Staging 部署与环境冒烟验证。
+4. **#38**：设计 PostgreSQL 备份与恢复策略。
+5. **#39**：设计日志、监控与告警策略。
 
 ### 业务实现依赖关系（按当前执行计划）
 
@@ -128,6 +199,12 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 - #23 提供订阅门禁规则，是 #25/#26 的前置门禁。
 - #24 提供 location + 人员映射只读能力，是 #25 的直接前置。
 - #25 完成扫码事件与固定邮件任务生成后，#26 才执行发送触发。
+- #55 将本地 API 链路变成可重复验证的 smoke 流程，是 #56/#57/#58 的测试数据前置。
+- #56 提供可操作 GUI，是 #57 GUI 黑盒测试的前置。
+- #60 提供本地容器组启动基线，是 #57 前确认 GUI 与 API 可在容器形态下恢复的前置补强。
+- #57 给出本地 GUI 黑盒结论；通过后再进入 #58 Staging 环境验证。
+- #37 明确 Staging 部署流程与环境变量边界，是 #58 的部署前置。
+- #58 只做 Staging 部署与冒烟验证；真实邮件 provider、自动队列、生产发布仍需后续 Issue。
 
 > 说明：Issue 优先级按实施依赖排序，不按编号大小排序。
 

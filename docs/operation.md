@@ -13,8 +13,11 @@
 排查步骤：
 1. 查看 `mail_jobs` 中失败状态与错误信息
 2. MVP 阶段优先检查 Sandbox/Mock provider 记录与返回错误
-3. 检查收件箱地址格式与域名策略
-4. 仅在非 MVP 阶段接入真实 provider 后，再排查 SMTP/provider 凭据与连接性
+3. 检查 `MAIL_MOCK_SEND_RESULT`：`success` 表示模拟成功，`failure` / `failed` 表示模拟失败
+4. 通过 `POST /api/mail-jobs/{mail_job_id}/send` 手动触发状态转换，确认 `queued -> sent/failed`
+5. 已经是 `sent` 的任务不应重复发送；如果返回 `MAIL_JOB_ALREADY_SENT`，按正常幂等保护处理
+6. 检查收件箱地址格式与域名策略
+7. 仅在非 MVP 阶段接入真实 provider 后，再排查 SMTP/provider 凭据与连接性
 
 ## 3. 订阅异常
 

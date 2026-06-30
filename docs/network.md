@@ -44,6 +44,7 @@ MVP 服务间通信方向统一为：
 3. Staging：仅允许 staging 前端域名。
 4. Production：仅允许 production 前端域名。
 5. 禁止 `*` 通配放开认证接口 CORS。
+6. 后端启动时从 `CORS_ORIGIN` 读取白名单，支持逗号分隔多个 origin；未配置时默认允许 Local 前端 `http://localhost:3000`。
 
 ## 6. 数据库访问策略
 
