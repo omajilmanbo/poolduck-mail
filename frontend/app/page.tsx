@@ -283,6 +283,7 @@ export default function HomePage() {
               <label className="mb-4 block text-sm font-medium">
                 tenant_id
                 <input
+                  data-testid="tenant-id-input"
                   value={tenantId}
                   onChange={(event) => setTenantId(event.target.value)}
                   className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
@@ -293,6 +294,7 @@ export default function HomePage() {
               <label className="mb-4 block text-sm font-medium">
                 email
                 <input
+                  data-testid="email-input"
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
@@ -304,6 +306,7 @@ export default function HomePage() {
               <label className="mb-5 block text-sm font-medium">
                 password
                 <input
+                  data-testid="password-input"
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
@@ -319,6 +322,7 @@ export default function HomePage() {
               ) : null}
 
               <button
+                data-testid="login-submit"
                 type="submit"
                 disabled={loginLoading}
                 className="w-full rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
@@ -362,6 +366,7 @@ export default function HomePage() {
                 <p className="mt-1 text-sm text-slate-500">{license?.plan ?? '-'}</p>
               </div>
               <span
+                data-testid="license-status"
                 className={`rounded-md px-2 py-1 text-xs font-semibold ${
                   canSend ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700'
                 }`}
@@ -385,6 +390,7 @@ export default function HomePage() {
             <label className="block text-sm font-semibold">
               location
               <select
+                data-testid="location-select"
                 value={selectedLocationId}
                 onChange={(event) => setSelectedLocationId(event.target.value)}
                 className="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
@@ -436,6 +442,7 @@ export default function HomePage() {
               <label className="flex-1 text-sm font-semibold">
                 scan_code
                 <input
+                  data-testid="scan-code-input"
                   value={scanCode}
                   onChange={(event) => setScanCode(event.target.value)}
                   className="mt-2 w-full rounded-md border border-slate-300 px-3 py-3 font-mono text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
@@ -444,6 +451,7 @@ export default function HomePage() {
                 />
               </label>
               <button
+                data-testid="scan-submit"
                 type="submit"
                 disabled={!canSend || !selectedLocationId || !scanCode.trim() || scanLoading || workspaceLoading}
                 className="rounded-md bg-emerald-700 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
@@ -485,6 +493,7 @@ export default function HomePage() {
                       </td>
                       <td className="border-t border-slate-100 px-4 py-3">
                         <span
+                          data-testid="mail-status"
                           className={`rounded-md px-2 py-1 text-xs font-semibold ${
                             record.status === 'sent'
                               ? 'bg-emerald-100 text-emerald-800'
@@ -498,6 +507,7 @@ export default function HomePage() {
                       </td>
                       <td className="border-t border-slate-100 px-4 py-3">
                         <button
+                          data-testid="send-mail-button"
                           type="button"
                           disabled={!canSend || record.status === 'sent' || sendingId === record.mailJobId}
                           onClick={() => void handleSend(record)}
