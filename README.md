@@ -4,14 +4,14 @@ Poolduck Mail 是一个面向企业客户的 Web SaaS 项目，目标是支持�
 
 ## 当前项目阶段
 
-当前处于 **核心后端链路本地实现后的验证准备阶段**：
+当前处于 **MVP Staging 冒烟验证完成后的运维补强阶段**：
 
 - 已完成产品范围、业务流程、租户隔离与订阅规则文档化。
 - 已通过 ADR-004 确认 MVP 技术栈（状态：`Accepted`）。
 - 已完成前后端基础工程骨架。
 - 已完成 Local Docker Compose 开发环境，当前可通过 Docker Compose 启动 PostgreSQL 16，也可一键启动 Frontend / Backend / PostgreSQL 本地容器组。
-- 已生成 OCI Always Free Staging IaC，等待人工确认后在 `Mail_project_stg` 区间实施。
-- 本地工作区已补齐认证与租户上下文、订阅门禁、location/人员映射、扫码事件、mail_job 生成与 sandbox 发送触发链路；进入 Staging 前需要先完成本地测试数据、API 冒烟与 GUI 黑盒验证。
+- 已生成并实施 OCI Always Free Staging 基线，当前 Staging 通过 public IP 暂时提供 HTTP 验证入口。
+- 本地工作区已补齐认证与租户上下文、订阅门禁、location/人员映射、扫码事件、mail_job 生成与 sandbox 发送触发链路；#58 已完成 Staging 部署、seed、API 冒烟、订阅阻断与 mock success/failure 验证。
 
 ## MVP 技术栈摘要（以 ADR-004 为准）
 
@@ -116,6 +116,23 @@ API smoke 默认验证 sandbox success。若要验证 sandbox failure，先用 `
 - Windows PowerShell: `$env:API_SMOKE_EXPECT_SEND_STATUS='failed'; npm run smoke:api`
 - macOS/Linux: `API_SMOKE_EXPECT_SEND_STATUS=failed npm run smoke:api`
 
+### Staging deployment status
+
+Issue #58 was executed on 2026-07-07 against the OCI Staging VM using temporary public-IP HTTP access.
+The current rebuilt Staging VM public entry is `http://140.245.94.111/`, with Nginx proxying public port `80` to the internal Frontend and Backend containers.
+
+Current Staging result:
+
+- Backend health: `http://140.245.94.111/health` passed after 2026-07-09 rebuild.
+- Frontend health: `http://140.245.94.111/healthz` passed after 2026-07-09 rebuild.
+- Synthetic seed data was applied. New Staging-only seed data can be refreshed with `docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T backend npm run staging:seed`.
+- API smoke passed for login, license, locations, scan event, queued mail job, and mock send success.
+- Suspended subscription smoke passed with `SUBSCRIPTION_NOT_SENDABLE`.
+- Mock send failure smoke passed, and the final Staging state was restored to `MAIL_MOCK_SEND_RESULT=success`.
+
+Detailed results are recorded in `docs/testing/staging-smoke-2026-07-07.md`.
+Real secrets, Terraform state, `terraform.tfvars`, and customer data remain outside Git.
+
 ### Staging 何时可以部署
 
 Staging 部署不应直接从“代码能编译”开始。建议满足以下条件后再执行：
@@ -182,13 +199,13 @@ Staging 部署不应直接从“代码能编译”开始。建议满足以下条
 - **#56**：实现 MVP 登录与扫码工作台最小前端界面。
 - **#60**：容器化前端与后端，提供本地一键启动容器组。
 - **#57**：制定并执行 GUI 黑盒与 E2E 冒烟测试。
+- **#58**：执行 Staging 部署与环境冒烟验证。
 
 ### 当前后续执行顺序
 
-1. **#37**：设计 Staging 部署流程与环境变量。
-2. **#58**：执行 Staging 部署与环境冒烟验证。
-3. **#38**：设计 PostgreSQL 备份与恢复策略。
-4. **#39**：设计日志、监控与告警策略。
+1. **#38**：设计 PostgreSQL 备份与恢复策略。
+2. **#39**：设计日志、监控与告警策略。
+3. **Staging 域名/TLS follow-up**：在扩大外部测试前，为当前 public-IP HTTP Staging 补齐域名、TLS 与访问控制策略。
 
 ### 业务实现依赖关系（按当前执行计划）
 

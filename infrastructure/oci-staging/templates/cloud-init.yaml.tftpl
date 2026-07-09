@@ -8,7 +8,7 @@ packages:
   - git
   - ufw
   - docker.io
-  - docker-compose-plugin
+  - docker-compose-v2
 
 users:
   - default
@@ -48,9 +48,13 @@ write_files:
 runcmd:
   # Enable Docker for future manual deployment of frontend/backend/PostgreSQL containers.
   - systemctl enable --now docker
+  # The OCI Ubuntu image uses ubuntu as the default SSH user. Keep Docker usable for
+  # the documented manual deployment user after the next SSH login.
+  - usermod -aG docker ubuntu || true
+  - usermod -aG docker poolduck || true
   # Create application directories without cloning or starting application code automatically.
   - mkdir -p /opt/poolduck-mail/{app,data/postgres,backups,logs}
-  - chown -R poolduck:poolduck /opt/poolduck-mail
+  - chown -R ubuntu:ubuntu /opt/poolduck-mail
   # Host firewall defense-in-depth; OCI NSG remains the primary network control.
   - ufw allow 22/tcp
   - ufw allow 80/tcp

@@ -11,7 +11,7 @@ Terraform 将准备以下 Staging 资源：
 - DB NSG：PostgreSQL `5432` 仅允许 Staging 子网访问，禁止公网访问。
 - Always Free Compute：默认 `VM.Standard.A1.Flex`，用于 MVP Staging 单机承载 Frontend / Backend / PostgreSQL 16 容器。
 - Object Storage Bucket：用于 Staging 非真实数据备份与运维产物归档，并配置生命周期自动清理。
-- Cloud-init：只安装 Docker、创建目录和占位配置，不写入真实 secrets，不自动启动应用。
+- Cloud-init：安装 `docker.io` 与 Ubuntu 22.04 arm64 默认源可用的 `docker-compose-v2`、将默认 `ubuntu` SSH 用户加入 `docker` 组、创建目录和占位配置，不写入真实 secrets，不自动启动应用。
 
 ## Always Free 人工确认项
 

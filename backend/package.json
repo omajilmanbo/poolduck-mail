@@ -11,6 +11,7 @@
     "db:reset": "prisma migrate reset",
     "db:validate": "prisma validate",
     "local:seed": "npm run prisma:generate && node scripts/local-seed.mjs",
+    "staging:seed": "npm run prisma:generate && node scripts/staging-seed.mjs",
     "smoke:api": "node scripts/api-smoke-test.mjs",
     "prebuild": "npm run prisma:generate",
     "pretest": "npm run prisma:generate",

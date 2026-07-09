@@ -109,7 +109,31 @@ Issue #60 后，本地 GUI 黑盒前应额外验证容器组形态：
 
 该流程仍使用 sandbox/mock mail provider，不得接入真实邮件 provider 或真实客户数据。
 
-## 5. GUI 黑盒与 E2E 冒烟
+## 5. Staging seed data
+
+Staging verification uses `npm run staging:seed` from `backend/`, or the container equivalent:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T backend npm run staging:seed
+```
+
+The command is idempotent and writes only synthetic `.example.local` data. It prepares these fixed accounts:
+
+| Subscription | Tenant ID | Manager | Password | Location ID | Scan code |
+|---|---|---|---|---|---|
+| active | `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa` | `staging-active-manager@example.local` | `PoolduckStaging123!` | `dddddddd-dddd-4ddd-8ddd-dddddddddddd` | `SCAN-STG-ACTIVE-001` |
+| suspended | `11111112-1112-4112-8112-111111111112` | `staging-suspended-manager@example.local` | `PoolduckStaging123!` | `44444445-4445-4445-8445-444444444445` | `SCAN-STG-SUSPENDED-001` |
+| expired | `66666667-6667-4667-8667-666666666667` | `staging-expired-manager@example.local` | `PoolduckStaging123!` | `99999990-9990-4990-8990-999999999990` | `SCAN-STG-EXPIRED-001` |
+
+Expected Staging checks:
+
+- active tenant: login, license/check, locations, scan-events, and mail-jobs send pass with mock/sandbox provider.
+- suspended tenant: license/check returns `can_send=false`; scan-events is rejected with `SUBSCRIPTION_NOT_SENDABLE`.
+- expired tenant: license/check returns `can_send=false`; scan-events is rejected with `SUBSCRIPTION_NOT_SENDABLE`.
+
+Do not run this seed against Production or any database containing real customer data.
+
+## 6. GUI 黑盒与 E2E 冒烟
 
 Issue #57 的本地 GUI 黑盒测试记录：
 
@@ -132,7 +156,7 @@ npm run test:e2e
 
 进入 Staging 前，GUI 黑盒结论必须明确是否存在阻塞项；UI 细节优化问题应拆分为后续 Issue，不阻塞 Staging smoke。
 
-## 6. 质量门禁建议
+## 7. 质量门禁建议
 
 - 单元测试通过率 100%（新增/改动相关）
 - 高风险模块必须包含至少 1 个失败场景测试

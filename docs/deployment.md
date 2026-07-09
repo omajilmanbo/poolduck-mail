@@ -142,6 +142,60 @@
 - Issue #60 的 Dockerfile/Compose 建立可复用容器化基线；Staging 仍需后续 Issue 明确真实 secrets 来源、域名/TLS、备份、监控与发布策略。
 - Staging 环境变量必须替换为 staging 专用值，不能直接复用 `.env.example` 中的示例 secrets。
 
+### 5.1 MVP public-IP deployment entry (Issue #58)
+
+When no Staging domain exists, the MVP Staging deployment uses the OCI compute public IP over HTTP port `80`.
+The deployment keeps PostgreSQL, Backend, and Frontend bound to VM localhost ports and exposes only the `reverse-proxy` service publicly.
+
+Deployment files:
+
+- `docker-compose.yml`: shared Local/Staging container baseline.
+- `docker-compose.staging.yml`: Staging override that adds the Nginx reverse proxy.
+- `deploy/staging/nginx.conf`: routes `/` to Frontend, `/api/*` and `/health` to Backend.
+
+Required Staging `.env` shape on the VM:
+
+```dotenv
+APP_ENV=staging
+APP_PORT=127.0.0.1:3001
+FRONTEND_PORT=127.0.0.1:3000
+POSTGRES_PORT=127.0.0.1:5432
+API_BASE_URL=http://<staging-public-ip>
+NEXT_PUBLIC_API_BASE_URL=http://<staging-public-ip>
+CORS_ORIGIN=http://<staging-public-ip>
+MAIL_PROVIDER=mock
+MAIL_MOCK_SEND_RESULT=success
+TENANT_CONTEXT_ENFORCED=true
+```
+
+`POSTGRES_PASSWORD`, `DATABASE_URL`, `JWT_SECRET`, and `REFRESH_TOKEN_SECRET` must be generated on the Staging host or another approved secret store. Do not commit or paste those values into docs, issues, or PR descriptions.
+
+Manual deployment commands:
+
+```bash
+cd /opt/poolduck-mail/app
+git fetch origin
+git checkout main
+git pull --ff-only origin main
+docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T backend npm run staging:seed
+docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T -e API_BASE_URL=http://reverse-proxy backend npm run smoke:api
+```
+
+`npm run staging:seed` writes only synthetic `.example.local` data and is idempotent. It prepares fixed active, suspended, and expired tenants for Staging verification:
+
+| Subscription | Tenant ID | Manager | Password | Location ID | Scan code |
+|---|---|---|---|---|---|
+| active | `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa` | `staging-active-manager@example.local` | `PoolduckStaging123!` | `dddddddd-dddd-4ddd-8ddd-dddddddddddd` | `SCAN-STG-ACTIVE-001` |
+| suspended | `11111112-1112-4112-8112-111111111112` | `staging-suspended-manager@example.local` | `PoolduckStaging123!` | `44444445-4445-4445-8445-444444444445` | `SCAN-STG-SUSPENDED-001` |
+| expired | `66666667-6667-4667-8667-666666666667` | `staging-expired-manager@example.local` | `PoolduckStaging123!` | `99999990-9990-4990-8990-999999999990` | `SCAN-STG-EXPIRED-001` |
+
+The Staging seed must not be run against Production or any database containing real customer data.
+
+For sandbox/mock failure-path verification, temporarily set `MAIL_MOCK_SEND_RESULT=failure`, recreate Backend, run the smoke test with `API_SMOKE_EXPECT_SEND_STATUS=failed`, then restore `MAIL_MOCK_SEND_RESULT=success`.
+
+Issue #58 deployment result for 2026-07-07 is recorded in `docs/testing/staging-smoke-2026-07-07.md`.
+
 ## 6. Production 部署
 
 - 必须经过 staging 验证
@@ -169,6 +223,94 @@ Staging 基础设施准备代码位于 `infrastructure/oci-staging/`。该目录
 - `admin_ssh_cidr` 禁止使用 `0.0.0.0/0`。
 - Staging 邮件 provider 仍必须使用 mock/sandbox，不得接入真实客户投递。
 - `terraform.tfvars`、`tfplan`、Terraform state 文件不得提交到仓库。
+
+### 7.1 Staging rebuild SSH key policy
+
+For Staging rebuilds, generate the SSH key under the local repository in `.secrets/staging/`:
+
+```powershell
+New-Item -ItemType Directory -Force -Path .secrets\staging
+ssh-keygen --% -t ed25519 -N "" -C poolduck-mail-staging-YYYY-MM-DD -f .secrets\staging\id_ed25519
+```
+
+`.secrets/` is ignored by Git and must not be committed or pushed. Only the public key from `.secrets/staging/id_ed25519.pub` may be copied into the local ignored `infrastructure/oci-staging/terraform.tfvars` as `ssh_public_key`.
+
+Do not create weak password-login OS users for Staging. The Staging host should be maintained through SSH key login from the restricted `admin_ssh_cidr`.
+
+To rebuild the Staging compute instance while keeping the existing VCN, subnet, NSG, and backup bucket:
+
+```powershell
+terraform -chdir=infrastructure\oci-staging init
+terraform -chdir=infrastructure\oci-staging plan -replace=oci_core_instance.app -out=tfplan
+terraform -chdir=infrastructure\oci-staging apply tfplan
+terraform -chdir=infrastructure\oci-staging output compute_public_ip
+```
+
+After the new host is reachable:
+
+```bash
+ssh -i .secrets/staging/id_ed25519 ubuntu@<new-staging-public-ip>
+docker --version
+docker compose version
+cd /opt/poolduck-mail/app
+if [ ! -d .git ]; then git clone https://github.com/omajilmanbo/poolduck-mail.git .; fi
+git fetch origin
+git checkout main
+git pull --ff-only origin main
+docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T backend npm run staging:seed
+docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T \
+  -e API_BASE_URL=http://reverse-proxy \
+  -e API_SMOKE_TENANT_ID=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa \
+  -e API_SMOKE_EMAIL=staging-active-manager@example.local \
+  -e API_SMOKE_PASSWORD=PoolduckStaging123! \
+  -e API_SMOKE_LOCATION_ID=dddddddd-dddd-4ddd-8ddd-dddddddddddd \
+  -e API_SMOKE_SCAN_CODE=SCAN-STG-ACTIVE-001 \
+  -e API_SMOKE_UNMAPPED_SCAN_CODE=SCAN-STG-UNMAPPED \
+  backend npm run smoke:api
+```
+
+On OCI Ubuntu 22.04 arm64, cloud-init installs `docker.io` and `docker-compose-v2`. If an older host has Docker but `docker compose version` returns `unknown command`, repair it with:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose-v2
+sudo systemctl enable --now docker
+```
+
+Do not generate the Staging `.env` through a nested SSH heredoc or an inline remote shell that expands secrets in multiple shells. Generate `.secrets/staging/staging.env` locally, confirm it is ignored by Git, then copy it to the VM:
+
+```powershell
+git check-ignore -v .secrets\staging\staging.env
+scp -i .secrets\staging\id_ed25519 .secrets\staging\staging.env ubuntu@<new-staging-public-ip>:/opt/poolduck-mail/app/.env
+ssh -i .secrets\staging\id_ed25519 ubuntu@<new-staging-public-ip> "chmod 600 /opt/poolduck-mail/app/.env"
+```
+
+The Staging `.env` must include:
+
+```dotenv
+APP_ENV=staging
+APP_PORT=127.0.0.1:3001
+FRONTEND_PORT=127.0.0.1:3000
+POSTGRES_PORT=127.0.0.1:5432
+POSTGRES_DB=poolduck_mail
+POSTGRES_USER=poolduck_staging
+POSTGRES_PASSWORD=<staging-only-random-secret>
+DATABASE_URL=postgresql://poolduck_staging:<same-password>@postgres:5432/poolduck_mail
+JWT_SECRET=<staging-only-random-secret>
+JWT_ACCESS_TOKEN_TTL_SECONDS=86400
+REFRESH_TOKEN_SECRET=<staging-only-random-secret>
+API_BASE_URL=http://<new-staging-public-ip>
+NEXT_PUBLIC_API_BASE_URL=http://<new-staging-public-ip>
+CORS_ORIGIN=http://<new-staging-public-ip>
+MAIL_PROVIDER=mock
+MAIL_MOCK_SEND_RESULT=success
+MAIL_FROM_ADDRESS=no-reply@example.local
+LOG_LEVEL=info
+TENANT_CONTEXT_ENFORCED=true
+```
+
+If `docker compose` still reports Docker socket permission errors immediately after cloud-init, either open a new SSH session so the `ubuntu` group membership is refreshed, or use `sudo docker compose ...` for that deployment session.
 
 ## 8. Staging deployment design (Issue #37)
 

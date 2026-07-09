@@ -36,9 +36,9 @@ services:
       MAIL_MOCK_SEND_RESULT: ${MAIL_MOCK_SEND_RESULT:-success}
       MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-no-reply@example.local}
       LOG_LEVEL: ${LOG_LEVEL:-debug}
-      CORS_ORIGIN: http://localhost:${FRONTEND_PORT:-3000}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       TENANT_CONTEXT_ENFORCED: ${TENANT_CONTEXT_ENFORCED:-true}
-      API_BASE_URL: http://127.0.0.1:3001
+      API_BASE_URL: ${API_BASE_URL:-http://127.0.0.1:3001}
     ports:
       - "${APP_PORT:-3001}:3001"
     depends_on:
