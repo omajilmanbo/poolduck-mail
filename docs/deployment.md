@@ -136,10 +136,12 @@
 ## 5. Staging 部署
 
 - 使用独立数据库与邮件沙箱配置
-- 自动化部署后执行 smoke test
+- cloud-init 只负责安装 Docker/Compose、配置主机用户/目录和基础防火墙，不部署应用
+- 当前由人工批准后，操作者或 Agent 通过 SSH 执行 Compose 部署命令；部署后执行 smoke test
+- 已接受的目标方案是把命令链收敛为幂等部署脚本，触发仍保留人工审批；详见 ADR-005
 - 验证订阅、权限、扫码链路
-- Staging 后续采用与 Local 相同的容器组形态部署到 OCI 服务器：Frontend 容器、Backend 容器、PostgreSQL 容器由 Compose 或同等编排入口拉起。
-- Issue #60 的 Dockerfile/Compose 建立可复用容器化基线；Staging 仍需后续 Issue 明确真实 secrets 来源、域名/TLS、备份、监控与发布策略。
+- Staging 已采用与 Local 相同的容器组基线部署到 OCI 服务器，并通过 override 增加 Nginx reverse proxy。
+- Staging 仍需后续 Issue 补齐域名/TLS、备份、监控与正式 secrets store；当前 secrets 位于 VM 的仓库外 `.env`。
 - Staging 环境变量必须替换为 staging 专用值，不能直接复用 `.env.example` 中的示例 secrets。
 
 ### 5.1 MVP public-IP deployment entry (Issue #58)
@@ -170,7 +172,7 @@ TENANT_CONTEXT_ENFORCED=true
 
 `POSTGRES_PASSWORD`, `DATABASE_URL`, `JWT_SECRET`, and `REFRESH_TOKEN_SECRET` must be generated on the Staging host or another approved secret store. Do not commit or paste those values into docs, issues, or PR descriptions.
 
-Manual deployment commands:
+Current approved deployment and recovery commands (to be wrapped by the future deployment script):
 
 ```bash
 cd /opt/poolduck-mail/app
@@ -312,11 +314,11 @@ TENANT_CONTEXT_ENFORCED=true
 
 If `docker compose` still reports Docker socket permission errors immediately after cloud-init, either open a new SSH session so the `ubuntu` group membership is refreshed, or use `sudo docker compose ...` for that deployment session.
 
-## 8. Staging deployment design (Issue #37)
+## 8. Staging deployment design (Issue #37, historical baseline)
 
-This section defines the MVP Staging deployment workflow after the OCI Always Free baseline in Issue #48 exists. It is a design and operating checklist only; it does not create cloud resources, GitHub secrets, DNS records, or production deployment automation.
+This section preserves the design baseline accepted in Issue #37. The current executable deployment entry is section 5 and `docs/staging-manual.md`; where commands or URLs differ, use those current sources. This historical section does not authorize cloud resource changes, GitHub secrets, DNS records, or production automation.
 
-### 8.1 Current hosting baseline
+### 8.1 Hosting baseline
 
 - Hosting platform: OCI Always Free, using the `infrastructure/oci-staging/` Terraform baseline.
 - Runtime shape: one Staging compute instance that can run Frontend, Backend, and PostgreSQL 16 containers for MVP validation.
@@ -361,15 +363,15 @@ Minimum application variables for Staging:
 
 ```dotenv
 APP_ENV=staging
-APP_PORT=3001
-FRONTEND_PORT=3000
-API_BASE_URL=http://<staging-public-ip>:3001
-NEXT_PUBLIC_API_BASE_URL=http://<staging-public-ip>:3001
-CORS_ORIGIN=http://<staging-public-ip>:3000
+APP_PORT=127.0.0.1:3001
+FRONTEND_PORT=127.0.0.1:3000
+API_BASE_URL=http://<staging-public-ip>
+NEXT_PUBLIC_API_BASE_URL=http://<staging-public-ip>
+CORS_ORIGIN=http://<staging-public-ip>
 DATABASE_URL=<secret:staging-postgres-url>
 JWT_SECRET=<secret:staging-jwt-secret>
 REFRESH_TOKEN_SECRET=<secret:staging-refresh-token-secret>
-MAIL_PROVIDER=sandbox
+MAIL_PROVIDER=mock
 MAIL_FROM_ADDRESS=<placeholder-or-secret:staging-from-address>
 LOG_LEVEL=info
 TENANT_CONTEXT_ENFORCED=true

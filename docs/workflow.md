@@ -20,6 +20,8 @@
 ## 3. Issue 要求
 
 - 明确背景、范围、验收标准
+- 按产品改进、缺陷、工程改进、运维或基础设施分类，并同步登记到 `docs/issue-archive.md`；工程改进包括代码质量、依赖升级、重构等不直接新增产品功能的工作
+- 产品改进 Issue 必须进入 `docs/issue-archive.md` 的“产品改进”表；归档只写一句话目标，完整 Scope 与实时状态保留在 GitHub
 - 必填“人工准备 / 外部前提（Human prerequisites）”，写清账号、权限、环境、端口、域名、数据库、Secrets、外部服务；若无必须写“无”
 - 必填“Agent 权限与执行环境（Agent permissions / runtime）”，写清仓库写权限、网络、Docker、GitHub Actions、云平台等要求
 - 必填“阻塞条件 / 停止规则（Blocking conditions）”，缺少权限、环境、Secrets、云资源或人工确认时，Agent 必须停止并报告
@@ -33,6 +35,7 @@
 - 填写变更内容、测试、风险、文档更新
 - 不允许混入无关重构
 - 业务行为变更必须同步更新 docs
+- Issue 拆分、合并、关闭或 Scope 变化时，同步更新 `docs/issue-archive.md`
 - 基础设施、环境变量、Secrets、外部服务发生变更时，必须同步更新 `docs/inventory/` 下对应台账文档
 
 ## 5. CI 建议检查项

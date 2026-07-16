@@ -22,6 +22,9 @@ When changing behavior, update the corresponding docs:
 - API changes → docs/api.md
 - Deployment changes → docs/deployment.md
 - User-facing behavior changes → docs/user-guide.md or docs/admin-guide.md
+- Documentation ownership, SSOT, or maintenance rules → docs/documentation.md
+- Development entry points or validation workflow → docs/development.md
+- Issue milestones, current follow-ups, or product improvements → docs/issue-archive.md
 
 Do not store secrets, customer data, or temporary chat logs in docs.
 For important decisions, create an ADR and wait for human approval.
@@ -53,10 +56,10 @@ human confirmation before implementation.
 
 ## README update policy
 
-README.md should remain a concise project entry point. When an Issue changes project status, setup, or execution order, update the existing relevant README sections instead of appending a new Issue-specific section by default. Prefer adjusting areas such as "当前项目阶段", "本地开发入口", "文档导航", or "推荐的 Issue 执行顺序". Only add a new README section when it is a stable long-term entry point that would otherwise be hard to discover, and avoid duplicating detailed content already covered under `docs/`.
+README.md must remain a product-only entry point. Keep product positioning, core workflow, MVP capabilities, product status, scope boundaries, and a short document index. Put local development and validation in `docs/development.md`; put Issue history, current follow-ups, and all product improvement Issues in `docs/issue-archive.md`. Do not add Issue-specific or implementation-process sections to README.
 
 ## Working rules
-- 随时更新README.md以及/docs下的文档。
+- 按上述文档职责更新对应文件；README 仅保留产品信息，开发过程和 Issue 追踪分别维护在专用文档。
 - 每次只实现当前 Issue 的 Scope。
 - 不允许实现 Out of scope 中的内容。
 - 不允许提交真实密钥、token、Gmail 凭据、OAuth refresh token。

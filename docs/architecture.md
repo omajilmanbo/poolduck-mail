@@ -16,6 +16,14 @@
 - `backend` CORS 默认允许 `http://localhost:3000`；禁止使用 `*` 通配 origin。
 - 该拓扑是本地 MVP 容器化基线，不包含 Production 域名、TLS、反向代理、负载均衡、真实 secrets 或真实邮件 provider。
 
+### 1.2 Staging 部署控制边界（ADR-005）
+
+- Terraform 与 cloud-init 负责主机 bootstrap；cloud-init 不克隆应用、不注入真实 secrets、不启动应用 Compose。
+- 应用部署步骤由独立、幂等的部署脚本承载，并在人工批准后由操作者或 Agent 触发。
+- 部署脚本落地前，`docs/staging-manual.md` 的 SSH/Compose 命令链是当前执行入口。
+- 人工 Runbook 永久保留，用于脚本失败、恢复、排障和回滚。
+- `workflow_dispatch` 属于后续独立 Issue；当前不启用无审批自动发布。
+
 ## 2. 前端层
 
 - 登录页、扫码录入页、任务状态页、管理页
