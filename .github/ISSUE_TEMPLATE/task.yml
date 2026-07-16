@@ -1,85 +1,61 @@
 name: Task
-description: 文档、准备、配置类任务
+description: 提出一个文档、配置、准备或工程任务
 labels: ["type:task"]
 body:
   - type: textarea
-    id: background
+    id: summary_scope
     attributes:
-      label: 背景
+      label: 任务与范围
+      description: 用几条简短要点说明目标、要做什么，以及不做什么。
+      placeholder: |
+        目标：
+        - …
+        范围：
+        - …
+        不做：
+        - …
     validations:
       required: true
   - type: textarea
-    id: scope
+    id: acceptance_tests
     attributes:
-      label: 任务范围
+      label: 完成条件与验证
+      description: 列出完成标准、验证命令或人工检查项。
       placeholder: |
-        - 将要做
-        - 不做什么
+        - [ ] 完成条件…
+        - [ ] 验证：…
     validations:
       required: true
   - type: textarea
-    id: human_prerequisites
+    id: decisions_blockers
     attributes:
-      label: 人工准备 / 外部前提（Human prerequisites）
-      description: 必须明确人工提前准备的账号、权限、环境、端口、域名、数据库、Secrets 或外部服务；如果不需要请写“无”。
+      label: 待确认 / 外部前提（可选）
+      description: 仅在依赖人工决策、账号权限、Secrets、外部服务或特定环境时填写；没有则留空。缺少必要前提时 Agent 应停止并在评论说明。
       placeholder: |
-        - 需要人工准备：
-        - Agent 不负责：
-        - 无则填写：无
+        - 需要确认：…
+        - 外部前提：…
+        - 阻塞时：在 Issue 评论报告
     validations:
-      required: true
-  - type: textarea
-    id: agent_permissions_runtime
-    attributes:
-      label: Agent 权限与执行环境（Agent permissions / runtime）
-      description: 明确 Agent 运行该任务所需的仓库权限、网络、Docker、GitHub Actions、云平台或其他执行环境要求。
-      placeholder: |
-        - 仓库写权限：需要 / 不需要
-        - 网络访问 / npm install：需要 / 不需要
-        - Docker：需要 / 不需要
-        - GitHub Actions 权限：需要 / 不需要
-        - 云平台权限：需要 / 不需要
-    validations:
-      required: true
-  - type: textarea
-    id: blocking_conditions
-    attributes:
-      label: 阻塞条件 / 停止规则（Blocking conditions）
-      description: 如缺少权限、环境、Secrets、云资源或人工确认，Agent 必须停止并报告，不得假装完成。
-      placeholder: |
-        - 缺少以下条件时必须停止：
-        - 停止后需报告给：
-    validations:
-      required: true
-  - type: textarea
-    id: acceptance
-    attributes:
-      label: 验收标准
-      placeholder: |
-        - [ ] 条件 1
-        - [ ] 条件 2
-    validations:
-      required: true
+      required: false
   - type: dropdown
     id: role_label
     attributes:
-      label: 角色标签
+      label: 主要角色
       options:
         - role:backend
         - role:frontend
         - role:architect
         - role:devops
-        - role:qa
+        - role:test
+        - role:docs
     validations:
       required: true
-
   - type: checkboxes
-    id: ssot_check
+    id: risk_labels
     attributes:
-      label: SSOT 一致性检查
-      description: 如需求涉及以下基线，请在说明中同步引用相关文档（README/docs/api.md/docs/database.md/docs/requirements.md）
+      label: 风险（按需选择）
       options:
-        - label: 角色仍为 root_admin / manager
-        - label: 订阅状态仍为 trial / active / expired / suspended
-        - label: 登录流程仍为 tenant_id + email + password
-        - label: 扫码邮件正文仍为后端固定模板（不接收 custom_message/custom_text/mail_body）
+        - label: risk:auth
+        - label: risk:billing
+        - label: risk:data
+        - label: risk:migration

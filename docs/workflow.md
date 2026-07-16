@@ -19,13 +19,17 @@
 
 ## 3. Issue 要求
 
-- 明确背景、范围、验收标准
-- 必填“人工准备 / 外部前提（Human prerequisites）”，写清账号、权限、环境、端口、域名、数据库、Secrets、外部服务；若无必须写“无”
-- 必填“Agent 权限与执行环境（Agent permissions / runtime）”，写清仓库写权限、网络、Docker、GitHub Actions、云平台等要求
-- 必填“阻塞条件 / 停止规则（Blocking conditions）”，缺少权限、环境、Secrets、云资源或人工确认时，Agent 必须停止并报告
-- 标注角色标签（如 `role:backend`）
-- 标注风险标签（如 `risk:auth`）
-- 涉及高风险（auth/billing/data/security）需人工审批
+Issue 应保持简短，默认只需要：
+
+- **目标与范围**：问题、要做什么与明确不做什么
+- **验收与测试**：可验证的完成条件和测试/检查方式
+- **主要角色与风险标签**：如 `role:backend`、`risk:auth`
+
+仅当确实依赖人工决策、账号权限、Secrets、外部服务或特定环境时，才填写“待确认 / 外部前提”。没有前提时不要为填写模板而添加“无”等占位文本。
+
+需求在实施过程中变得更明确时，优先使用 Issue 评论补充；不要把每个潜在风险、仓库通用安全规则和执行环境重复写入每一份 Issue。
+
+涉及高风险（auth/billing/data/security）或架构决策时，必须在实现前获得必要的人类审批；若缺少必需的权限、环境、Secrets、云资源或确认，Agent 必须停止并在 Issue 评论报告。
 
 ## 4. PR 要求
 
