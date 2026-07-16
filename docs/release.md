@@ -12,7 +12,13 @@
 - 关联 Issue/PR 完整
 - 必需 CI 全通过
 - 测试回归完成（见 `docs/testing.md`）
+- 数据库 migration 已审查，且目标环境备份已完成或明确不适用
+- 回滚路径已验证
+- 环境变量与 secrets 名称/位置已核对，仓库不含真实 secret
 - 文档更新完成
+- Changelog 或 release notes 已更新
+- smoke test 计划与结果已记录
+- 客户/内部通知已准备或明确不适用
 - 高风险改动有人审阅并确认
 
 ## 3. 发布步骤（建议）

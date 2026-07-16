@@ -1,11 +1,12 @@
-# Staging 人工确认与部署手册
+# Staging 部署与恢复手册
 
-本手册用于 #37 的人工确认、Staging 应用部署和阻塞项报告。它只描述操作步骤，不要求 Agent 创建云账号、域名、DNS、GitHub secrets、数据库实例或真实邮件凭据。
+本手册用于 Staging 部署前人工确认、操作者/Agent 触发的应用部署、恢复与阻塞项报告。cloud-init 只负责主机 bootstrap，不负责应用部署。部署控制边界以 ADR-005 为准。
 
 ## 1. 使用边界
 
 - 当前默认平台：OCI Always Free 单 VM + Docker Compose。
-- 当前默认发布触发：人工手动部署。
+- 当前默认部署触发：人工批准后，由操作者或 Agent 通过 SSH 执行 Compose 命令链。
+- 目标部署入口：独立、幂等的 Staging 部署脚本；脚本实现前继续使用本文 Runbook。
 - 当前默认数据库：Staging VM 内 PostgreSQL 16。
 - 当前默认邮件 provider：`mock` 或 `sandbox`。
 - 当前禁止事项：真实客户数据、生产数据库快照、生产密钥、真实 Gmail/Workspace/SMTP 凭据、OAuth refresh token。
@@ -128,7 +129,7 @@ curl -I https://stg.example.com
 
 - GitHub Actions Environment Secrets：用于后续自动部署。
 - 平台 UI：如果托管平台提供 secret store。
-- VM 本地 `.env`：当前手动部署默认方案。
+- VM 本地 `.env`：当前 Compose 部署使用的配置来源。
 
 GitHub UI 确认方法：
 
@@ -145,7 +146,7 @@ test -f .env
 chmod 600 .env
 ```
 
-当前手动部署应先在操作者本机生成 gitignored 的 `.secrets/staging/staging.env`，再复制到 VM 的 `<staging-app-dir>/.env`。不要通过嵌套 SSH heredoc 或多层 shell inline 命令生成 `.env`，避免 `$POSTGRES_PASSWORD`、`DATABASE_URL` 等值在错误的 shell 层展开后写坏。
+部署或人工恢复前，应先在操作者本机生成 gitignored 的 `.secrets/staging/staging.env`，再通过受控方式提供给 VM 的 `<staging-app-dir>/.env`。不要通过嵌套 SSH heredoc 或多层 shell inline 命令生成 `.env`，避免 `$POSTGRES_PASSWORD`、`DATABASE_URL` 等值在错误的 shell 层展开后写坏。
 
 示例：
 
@@ -209,18 +210,21 @@ docker compose ps mail-sandbox
 
 确认方法：
 
-1. 人工决定发布触发方式：手动部署、`main` 合并后部署、tag 部署。
+1. 人工确认当前发布触发方式为操作者/Agent 执行、未来 `workflow_dispatch` 或其他已批准方式。
 2. 人工决定 Agent 是否可以读取或修改 `.github/workflows/`。
 3. 如选择自动部署，先确认 GitHub `staging` environment 和 secrets 权限。
 4. 在未确认前，不创建或修改自动发布 workflow。
 
 通过标准：
 
-- 当前默认仍是手动部署。
+- 当前默认由人工批准后，操作者或 Agent 触发部署。
+- cloud-init 只完成主机 bootstrap，不运行应用 Compose。
 - 自动发布只在单独 Issue 或明确授权下实施。
 - GitHub secrets 只由人工在 UI 中创建，不由 Agent 实际创建。
 
-## 3. 手动部署步骤
+## 3. 当前部署与人工恢复步骤
+
+本章是部署脚本实现前的当前应用部署入口，也是未来脚本失败时的恢复、排障或重新部署 Runbook。自动化脚本必须保持与本章步骤一致。
 
 ### 3.1 部署前检查
 
@@ -287,15 +291,16 @@ ssh -i .secrets\staging\id_ed25519 ubuntu@<staging-public-ip> "chmod 600 <stagin
 
 ### 3.4 构建和启动服务
 
-当前 #37 只定义流程，不强制仓库已经存在完整 Staging Compose 文件。后续实现 Compose 时，建议服务名保持：
+仓库当前已提供 `docker-compose.yml` 与 `docker-compose.staging.yml`。Staging 使用以下服务：
 
 - `reverse-proxy`
 - `frontend`
 - `backend`
 - `postgres`
-- `mail-sandbox`
 
-示例命令：
+当前 `MAIL_PROVIDER=mock` 时不需要独立 `mail-sandbox` 服务；只有后续明确引入 sandbox 容器时才新增该服务。
+
+执行命令：
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.staging.yml config
@@ -332,11 +337,11 @@ curl -fsS <staging-backend-url>/health
 curl -fsS <staging-frontend-url>/healthz
 ```
 
-业务检查按 `docs/environments.md` 的 `STG-SMOKE-*` 清单执行。若当前 API 尚未实现，记录为“实现未完成”，不要改用真实数据绕过。
+业务检查按 `docs/testing.md` 的 Staging smoke 清单执行；最近一次证据见 `docs/testing/staging-smoke-2026-07-07.md`。若后续清单新增尚未实现的 API，记录为“实现未完成”，不要改用真实数据绕过。
 
 ### 3.7 部署记录
 
-每次手动部署后记录：
+每次部署、恢复或重新部署后记录：
 
 | 项目 | 内容 |
 |---|---|
@@ -350,17 +355,17 @@ curl -fsS <staging-frontend-url>/healthz
 | 测试结果 | `pass` / `blocked` / `failed` |
 | 阻塞项 | `<none-or-details>` |
 
-## 4. 自动部署候选步骤
+## 4. 部署脚本与 workflow_dispatch 后续步骤
 
-自动部署不在当前默认范围内。人工批准后可按以下顺序单独实施：
+无审批自动部署不在当前范围内。按 ADR-005，后续应先实现部署脚本，再评估 `workflow_dispatch`：
 
-1. 确认允许 Agent 修改 `.github/workflows/`。
-2. 创建 GitHub `staging` environment。
-3. 人工在 UI 中创建 Staging secrets。
-4. 设计 workflow：build、test、SSH deploy、smoke test。
-5. 确认 workflow 不打印 secrets。
-6. 先以 `workflow_dispatch` 手动触发验证。
-7. 人工再决定是否改为 `main` 合并后部署或 tag 部署。
+1. 创建独立 Issue，实现幂等部署脚本并验证失败退出码、重复执行和恢复路径。
+2. 脚本检查目标环境、`.env`、commit、Compose config、migration、health 和 smoke，且不打印 secrets。
+3. 脚本稳定后，确认允许 Agent 修改 `.github/workflows/`。
+4. 创建 GitHub `staging` environment，并由人工在 UI 中配置 Staging secrets。
+5. workflow 调用同一个部署脚本，不复制另一套 SSH/Compose 逻辑。
+6. 首先只开放 `workflow_dispatch`，并保留环境审批。
+7. 是否启用 `main` 或 tag 自动发布，必须另行人工决定。
 
 ## 5. 阻塞项报告模板
 

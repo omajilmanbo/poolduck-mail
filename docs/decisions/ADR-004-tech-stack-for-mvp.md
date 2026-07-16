@@ -121,5 +121,6 @@ MVP 技术栈统一如下：
 - 更新 `docs/testing.md`：补充与本 ADR 对齐的测试分层与命令约定。
 - 更新 `docs/deployment.md`：补充 Node/PostgreSQL 基础运行要求与 CI 约束。
 
-> 历史编号说明（2026-05-27）：本节 Issue 编号反映 ADR 编写当时的计划。
-> 当前执行顺序与编号映射以 `README.md` 的“推荐的 Issue 执行顺序”为准；若冲突，以 README 为当前实施基线。
+> 历史编号说明（2026-05-27）：本节 Issue 编号反映 ADR 编写当时的计划，已不作为当前 Issue 映射。
+> 后续实际拆分为 #20 CI、#21 数据库迁移、#26 sandbox mail provider、#33 认证与租户上下文。
+> Issue 的当前 Scope 与状态以 GitHub Issue 为准；本说明只修正追溯口径，不改变本 ADR 的技术决策。

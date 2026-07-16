@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-在进入数据库、认证、扫码邮件实现前，先统一三套环境的基础设施蓝图，确保：
+本文维护 Local、Staging、Production 三套环境的基础设施蓝图与隔离边界，确保：
 
 - 环境隔离规则明确，避免跨环境误操作。
 - 前后端、数据库、邮件 provider、日志监控、Secrets 的部署位置统一。
@@ -57,14 +57,16 @@ flowchart LR
 ## 3. 组件部署位置
 
 - Frontend：
-  - Local：开发机进程。
-  - Staging/Production：独立部署单元（可与后端分开发布）。
+  - Local：开发机进程或 Compose 容器。
+  - Staging：当前为 OCI 单 VM 上的独立 Compose 容器，经 Nginx 反向代理访问。
+  - Production：目标为独立部署单元，可与后端分开发布。
 - Backend API：
-  - Local：开发机进程。
-  - Staging/Production：独立部署单元，负责租户鉴权、订阅门禁、邮件任务。
+  - Local：开发机进程或 Compose 容器。
+  - Staging：当前为同一 OCI VM 上的独立 Compose 容器，负责租户鉴权、订阅门禁和邮件任务。
+  - Production：目标为独立部署单元。
 - PostgreSQL：
   - Local：Docker Compose 本地容器。
-  - Staging：独立数据库实例，仅用于测试数据。
+  - Staging：当前为 Staging VM 内的 PostgreSQL 16 容器，仅使用合成测试数据；不与 Production 共用。
   - Production：独立数据库实例，用于真实业务数据，包含备份策略。
 - Mail Provider：
   - Local：mock/sandbox。
@@ -86,23 +88,25 @@ flowchart LR
 3. Production 不使用 mock secret 或 sandbox-only mail 配置。
 4. 禁止跨环境共享访问凭据（如同一 `DATABASE_URL` / `JWT_SECRET`）。
 
-## 5. 非范围声明（与 Issue #35 对齐）
+## 5. Issue #35 历史范围
 
-以下内容不在当前 Issue 实施范围内：
+Issue #35 只负责基础设施设计，当时不包含以下实现；后续 Issue 已完成其中部分内容，本节仅用于历史追溯，不代表当前仓库状态：
 
 - 创建 AWS/Vercel/RDS/ECS 等真实云资源。
 - 编写 Docker Compose 实现文件。
 - 建立 CI/CD 流水线实现。
 - 接入真实邮件供应商 SDK/API。
 
-## 6. 后续实现类 Issue 建议
+## 6. 当前待补强项
 
-1. 新建：Local Docker Compose 编排（frontend/backend/postgres）。
-2. 新建：Staging/Production 环境变量与 secrets 管理规范落地。
-3. 新建：Production HTTPS 证书与域名接入流程。
-4. 新建：数据库备份与恢复演练流程。
-5. 新建：日志/指标/告警最小可观测链路。
-6. 新建：发布与回滚 Runbook（含 Staging gate）。
+Local Compose、Staging IaC 与人工批准的 Compose 部署 Runbook 已经落地。当前仍需补强：
+
+1. 按 ADR-005 实现 Staging 幂等部署脚本，并保持人工审批触发。
+2. Staging/Production secrets 管理规范落地。
+3. Staging 与 Production HTTPS 证书、域名和访问控制。
+4. 数据库备份与恢复演练（#38）。
+5. 日志、指标与告警最小可观测链路（#39）。
+6. Production 发布与回滚 Runbook。
 
 ## 7. 资源台账（实际参数）
 
@@ -121,7 +125,7 @@ flowchart LR
 
 Issue #48 的 Staging 基础设施资源准备采用 Terraform，代码位于 `infrastructure/oci-staging/`，目标为人工已创建的 OCI compartment `Mail_project_stg`。
 
-本阶段只生成 IaC 并等待人工确认后实施，不在 PR 中执行 `terraform apply`，也不提交任何真实 OCI 凭据、数据库密码、JWT secret 或邮件服务 token。
+Issue #48 最初只生成 IaC 并等待人工确认实施。该基线后来已由人工执行，并在 2026-07-09 完成 Staging VM 重建验证；历史执行证据见 `docs/testing/staging-smoke-2026-07-07.md`。后续 apply 仍必须由人工审核，且不得提交真实 OCI 凭据、数据库密码、JWT secret 或邮件服务 token。
 
 当前 Staging IaC 范围：
 

@@ -2,14 +2,9 @@
 
 For architecture-impacting changes, create an ADR.
 
-ADR format:
-- Context
-- Decision
-- Alternatives considered
-- Consequences
-- Migration impact
-- Security impact
-- Operational impact
+Create every ADR from `docs/decisions/ADR-TEMPLATE.md`; do not maintain a
+separate custom format in this skill. The template includes status, date,
+related Issue, required decision sections, and Follow-up.
 
 Do not implement architecture changes directly before the ADR is accepted.
 
