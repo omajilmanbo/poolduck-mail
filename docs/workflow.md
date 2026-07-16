@@ -19,13 +19,26 @@
 
 ## 3. Issue 要求
 
-- 明确背景、范围、验收标准
-- 必填“人工准备 / 外部前提（Human prerequisites）”，写清账号、权限、环境、端口、域名、数据库、Secrets、外部服务；若无必须写“无”
-- 必填“Agent 权限与执行环境（Agent permissions / runtime）”，写清仓库写权限、网络、Docker、GitHub Actions、云平台等要求
-- 必填“阻塞条件 / 停止规则（Blocking conditions）”，缺少权限、环境、Secrets、云资源或人工确认时，Agent 必须停止并报告
-- 标注角色标签（如 `role:backend`）
-- 标注风险标签（如 `risk:auth`）
-- 涉及高风险（auth/billing/data/security）需人工审批
+Issue 使用 `.github/ISSUE_TEMPLATE/*.md` 的 Markdown 模板创建，正文采用 [#60](https://github.com/omajilmanbo/poolduck-mail/issues/60) 的内容丰富型格式，而不是由多个 Issue Form 输入框拼出的碎片化文本。
+
+功能和任务类 Issue 默认包含：
+
+- Background
+- Scope
+- Out of scope
+- Acceptance criteria
+- Test requirements
+- Recommended labels
+- Risk labels
+- Human decision required
+
+每个标题下可以写完整、可读的上下文和项目符号。不要为了简短删除 Scope、Out of scope、验收或测试要求；也不要把仓库通用安全规则、无关的运行环境说明和空的“无”占位重复进每一份 Issue。
+
+仅在任务确实依赖人工决策、账号权限、Secrets、外部服务或特定环境时，在 `Human decision required` 中说明具体条件和停止边界。需求后续细化优先通过 Issue 评论补充。
+
+- 每个 Issue 保持在约 1–8 小时可独立实施的粒度
+- 标注角色标签（如 `role:backend`）和风险标签（如 `risk:auth`）
+- 涉及高风险（auth/billing/data/security）或架构决策时，必须在实现前获得必要的人类审批
 
 ## 4. PR 要求
 
