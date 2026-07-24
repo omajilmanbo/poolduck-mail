@@ -56,14 +56,18 @@ export class LicenseService {
     endAt: Date;
   }): LicenseCheckResponse {
     const endAt = subscription.endAt.toISOString();
+    const status =
+      this.canSendForStatus(subscription.status) && subscription.endAt.getTime() <= Date.now()
+        ? 'expired'
+        : subscription.status;
 
     return {
-      status: subscription.status,
+      status,
       plan: subscription.plan,
       end_at: endAt,
       expired_at: endAt,
       grace_period: null,
-      can_send: this.canSendForStatus(subscription.status),
+      can_send: this.canSendForStatus(status),
     };
   }
 }

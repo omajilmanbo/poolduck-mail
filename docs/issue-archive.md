@@ -24,6 +24,21 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | Issue | 摘要 | 阶段备注 | 人工确认 |
 |---|---|---|---|
 | #61 | 自动处理扫码后创建的 `queued` mail job，并移除 GUI 手动发送按钮；真实 SMTP/provider 不在该项范围内 | 已登记，实时状态与 Scope 见 GitHub | 是，改变邮件发送行为 |
+| #73 | 实现 tenant_manager 的 location 管理 API 与安全停用规则 | 不依赖商业配额或计费配置；实时状态与 Scope 见 GitHub | 是，停用行为与 queued 任务处理已确认 |
+| #83 | 商业订阅概览、location allowance 与续订提醒 | 已关闭为 `not_planned`；MVP 仅保留 #64/#65 的安全门禁与页面修正 | 是，商业化范围延后 |
+| #90 | 用 ADR 定义 tenant、location、person 的短业务 ID、内部主键与 location 简化模型 | ADR-007 Accepted：保留内部 UUID，并新增受控公开业务 ID | 是，已确认 |
+| #91 | 按批准的 ID ADR 引入 8–12 位 tenant 公共 ID 并迁移登录入口 | 已登记，实时状态与 Scope 见 GitHub | 是，涉及认证与数据迁移 |
+| #92 | 自动生成 location ID，将类型统一为 `location`，简化创建并补充重新启用 | 依赖 ID ADR；不依赖 #83/#102 或商业计费配置 | 是，涉及 ID 与迁移 |
+| #93 | 引入有序人员 ID，并固化 person → location → tenant 的邮件上下文追溯 | 当前工作区已实现并通过全量后端、前端、Prisma、API smoke 与 GUI 验证，待 PR | 是，涉及历史数据迁移 |
+| #94 | 用 ADR 定义人员扫码进入、离开及异常场景的动作判定规则 | ADR-008 Accepted：采用 `PD1\|ENTRY\|person_code` / `PD1\|EXIT\|person_code` 两张人员动作码 | 是，已确认 |
+| #95 | 按批准规则记录进出动作，并同步扫码历史与固定邮件正文 | 当前工作区已实现并通过全量后端、前端、API smoke 与 Playwright 验证，待 PR | 是，动作 ADR 已确认 |
+| #96 | 实现 operator-location assignment 模型及所有服务端业务路径的授权门禁 | 当前工作区已实现 fail-closed 授权并通过全量测试，待 PR | 是，已确认 fail-closed 迁移 |
+| #97 | 在用户管理页配置 operator 的 location 权限并验证实际可见范围 | 已登记，实时状态与 Scope 见 GitHub | 是，涉及权限 UI |
+| #98 | 用 ADR 定义 operator 用户名、可选邮箱与 tenant_manager 邮箱登录规则 | ADR-010 Accepted：tenant 内唯一、operator 邮箱可空、按 `@` 分区且不回退查询 | 是，已确认 |
+| #99 | 实现用户名/邮箱双模式登录及相应的 operator 账号管理 | 当前工作区已实现并通过认证、用户管理、全量后端与前端测试，待 PR | 是，ADR-010 已确认 |
+| #100 | 用 ADR 规划真实邮箱注册 tenant 与首个 tenant_manager 的流程 | 已登记，实时状态与 Scope 见 GitHub | 是，涉及真实邮箱与注册安全 |
+| #101 | 基于已批准的 `person_code` 生成人员二维码与 Code 128 条形码图片，并支持安全预览和下载 | 当前工作区已实现四张动作码预览、单张 PNG 与 ZIP 下载，并通过往返解码、前端与 Playwright 验证，待 PR | 否，依赖 #90 与 #93 |
+| #102 | 用 ADR 定义按启用 location 数量与单据点活动人员计算的边际阶梯计费模型 | P3/Future；仅服务未来商业化，不阻塞任何 MVP 功能 | 是，涉及计费口径、proration 与安全上限 |
 
 后续所有产品能力、用户体验和业务流程改进 Issue 均追加到本节。
 

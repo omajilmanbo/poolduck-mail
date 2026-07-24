@@ -25,8 +25,8 @@
 1. 登录接口显式接收 `tenant_id`，后端先校验 tenant 是否存在，再校验用户是否属于该 tenant 且密码正确。
 2. 登录成功后，业务接口仅使用 token/session 中的 `tenant_id` 作为租户上下文，不接受业务接口再显式传入 `tenant_id`。
 3. MVP 角色边界：
-   - `root_admin`：可维护用户账号、订阅、办公室/学校，并可执行管理员接口。
-   - `manager`：仅可维护人员一览并执行扫码流程，不可维护订阅与办公室/学校。
+   - `tenant_manager`：可维护用户账号、订阅、办公室/学校，并可执行管理员接口。
+   - `operator`：仅可维护人员一览并执行扫码流程，不可维护订阅与办公室/学校。
 4. 订阅状态统一为：`trial` / `active` / `expired` / `suspended`。
 5. 功能门禁：仅 `trial`、`active` 允许扫码与邮件发送；`expired`、`suspended` 禁止扫码提交、邮件创建与重试。
 
@@ -61,7 +61,7 @@
 
 是否影响权限、认证、租户隔离、数据安全？
 - 强化租户隔离：登录时校验 tenant 存在性与用户归属，登录后禁止业务接口通过客户端参数切换 tenant。
-- 强化权限边界：明确 `root_admin` 与 `manager` 可执行范围。
+- 强化权限边界：明确 `tenant_manager` 与 `operator` 可执行范围。
 - 强化订阅门禁：订阅无效时阻断扫码与邮件发送关键链路。
 
 ## Operational impact

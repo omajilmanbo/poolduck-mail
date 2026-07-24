@@ -45,7 +45,7 @@ MVP 技术栈统一如下：
 4. 认证与授权
    - 登录方式：tenant_id + username(email) + password
    - 密码存储：Argon2id 哈希
-   - 权限模型：RBAC（root_admin / manager）
+   - 权限模型：RBAC（tenant_manager / operator）
 
 5. 邮件 provider
    - MVP 默认 provider：Sandbox/Mock Mail Provider（仅记录发送请求与结果，不发真实邮件）

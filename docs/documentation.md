@@ -25,13 +25,15 @@
 
 - `tenant` 是一级数据隔离边界。
 - `location` 是办公室、学校或校舍的统一技术抽象；字段使用 `location_id`，不引入 `office_id` 等并行命名。
-- 角色集合为 `root_admin` / `manager`。
+- 角色集合为 `tenant_manager` / `operator`。
 - 订阅状态集合为 `trial` / `active` / `expired` / `suspended`。
-- 登录输入为 `tenant_id + email + password`；登录后 tenant scope 来自后端认证上下文。
+- 登录输入为 `tenant_id + identifier + password`；operator 使用 username 或可选 email，
+  tenant_manager 使用 email。登录后 tenant scope 来自后端认证上下文。
 - 邮件正文由后端固定模板生成，MVP 不接受前端自定义正文。
 - 仅 `trial`、`active` 允许扫码和发送；`expired`、`suspended` 必须阻断扫码提交、邮件任务创建、发送与重试。
 
-上述规则的决策依据分别位于 ADR-002、ADR-003 与相关产品/需求文档。若需要改变规则，应按 `AGENTS.md` 创建或 supersede ADR，并等待人工批准。
+上述规则的决策依据分别位于 ADR-002、ADR-003、ADR-010 与相关产品/需求文档。若需要改变规则，应按
+`AGENTS.md` 创建或 supersede ADR，并等待人工批准。
 
 ## 3. 当前状态与历史记录
 

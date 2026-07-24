@@ -17,14 +17,17 @@ describe('Mail Jobs API', () => {
     };
     mailJob: {
       findFirst: jest.Mock;
+      findFirstOrThrow: jest.Mock;
+      updateMany: jest.Mock;
       update: jest.Mock;
     };
+    auditLog: { create: jest.Mock };
   };
 
   const tenantId = '11111111-1111-4111-8111-111111111111';
   const userId = '33333333-3333-4333-8333-333333333333';
   const mailJobId = '66666666-6666-4666-8666-666666666666';
-  const email = 'manager@example.local';
+  const email = 'operator@example.local';
   const sentAt = new Date('2026-06-22T04:05:06.000Z');
 
   beforeAll(() => {
@@ -45,8 +48,11 @@ describe('Mail Jobs API', () => {
       },
       mailJob: {
         findFirst: jest.fn(),
+        findFirstOrThrow: jest.fn(),
+        updateMany: jest.fn(),
         update: jest.fn(),
       },
+      auditLog: { create: jest.fn().mockResolvedValue(undefined) },
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -79,6 +85,8 @@ describe('Mail Jobs API', () => {
       .expect({
         mail_job_id: mailJobId,
         status: 'sent',
+        retry_count: 0,
+        scheduled_at: null,
         provider_result: {
           provider: 'sandbox',
           success: true,
@@ -86,18 +94,14 @@ describe('Mail Jobs API', () => {
         },
       });
 
-    expect(prisma.mailJob.findFirst).toHaveBeenCalledWith({
+    expect(prisma.mailJob.updateMany).toHaveBeenCalledWith({
       where: {
         id: mailJobId,
         tenantId,
+        status: 'queued',
+        OR: [{ scheduledAt: null }, { scheduledAt: { lte: sentAt } }],
       },
-      select: {
-        id: true,
-        status: true,
-        toEmail: true,
-        subject: true,
-        body: true,
-      },
+      data: { status: 'processing' },
     });
     expect(prisma.mailJob.update).toHaveBeenCalledWith({
       where: { id: mailJobId },
@@ -105,12 +109,21 @@ describe('Mail Jobs API', () => {
         status: 'sent',
         providerMessageId: `sandbox_${mailJobId}`,
         errorMessage: null,
+        scheduledAt: null,
         sentAt,
       },
     });
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'mail.send',
+        resourceId: mailJobId,
+        result: 'success',
+        metadataJson: { provider: 'sandbox' },
+      }),
+    });
   });
 
-  it('POST /api/mail-jobs/:mail_job_id/send should mark mail_job as failed for sandbox failure', async () => {
+  it('POST /api/mail-jobs/:mail_job_id/send should schedule the first sandbox retry after 30 seconds', async () => {
     process.env.MAIL_MOCK_SEND_RESULT = 'failure';
     mockAuthenticatedUser();
     mockSubscription('active');
@@ -123,7 +136,9 @@ describe('Mail Jobs API', () => {
       .expect(201)
       .expect({
         mail_job_id: mailJobId,
-        status: 'failed',
+        status: 'queued',
+        retry_count: 1,
+        scheduled_at: '2026-06-22T04:05:36.000Z',
         provider_result: {
           provider: 'sandbox',
           success: false,
@@ -134,15 +149,30 @@ describe('Mail Jobs API', () => {
     expect(prisma.mailJob.update).toHaveBeenCalledWith({
       where: { id: mailJobId },
       data: {
-        status: 'failed',
+        status: 'queued',
+        retryCount: 1,
+        scheduledAt: new Date('2026-06-22T04:05:36.000Z'),
         errorMessage: 'Sandbox provider simulated failure',
         providerMessageId: undefined,
       },
+    });
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'mail.retry.scheduled',
+        result: 'failure',
+        metadataJson: {
+          provider: 'sandbox',
+          reason: 'PROVIDER_FAILURE',
+          retry_count: 1,
+          scheduled_at: '2026-06-22T04:05:36.000Z',
+        },
+      }),
     });
   });
 
   it('POST /api/mail-jobs/:mail_job_id/send should reject cross-tenant mail_jobs', async () => {
     mockAuthenticatedUser();
+    prisma.mailJob.updateMany.mockResolvedValue({ count: 0 });
     prisma.mailJob.findFirst.mockResolvedValue(null);
 
     const response = await request(app.getHttpServer())
@@ -155,10 +185,16 @@ describe('Mail Jobs API', () => {
     });
     expect(prisma.subscription.findUnique).not.toHaveBeenCalled();
     expect(prisma.mailJob.update).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'authorization.mail_job.denied',
+        result: 'denied',
+      }),
+    });
   });
 
   it.each(['expired', 'suspended'])(
-    'POST /api/mail-jobs/:mail_job_id/send should reject %s subscriptions',
+    'POST /api/mail-jobs/:mail_job_id/send should terminally fail %s subscriptions',
     async (status) => {
       mockAuthenticatedUser();
       mockMailJob('queued');
@@ -167,12 +203,22 @@ describe('Mail Jobs API', () => {
       const response = await request(app.getHttpServer())
         .post(`/api/mail-jobs/${mailJobId}/send`)
         .set('Authorization', `Bearer ${accessToken()}`)
-        .expect(403);
+        .expect(201);
 
       expect(response.body).toMatchObject({
-        code: 'SUBSCRIPTION_NOT_SENDABLE',
+        status: 'failed',
+        retry_count: 0,
+        scheduled_at: null,
+        provider_result: { error_message: 'SUBSCRIPTION_NOT_SENDABLE' },
       });
-      expect(prisma.mailJob.update).not.toHaveBeenCalled();
+      expect(prisma.mailJob.update).toHaveBeenCalledWith({
+        where: { id: mailJobId },
+        data: {
+          status: 'failed',
+          scheduledAt: null,
+          errorMessage: 'SUBSCRIPTION_NOT_SENDABLE',
+        },
+      });
     },
   );
 
@@ -210,7 +256,8 @@ describe('Mail Jobs API', () => {
       id: userId,
       tenantId,
       email,
-      role: 'manager',
+      role: 'operator',
+      status: 'active',
     });
   }
 
@@ -223,12 +270,18 @@ describe('Mail Jobs API', () => {
   }
 
   function mockMailJob(status: string) {
+    prisma.mailJob.updateMany.mockResolvedValue({ count: status === 'queued' ? 1 : 0 });
     prisma.mailJob.findFirst.mockResolvedValue({
       id: mailJobId,
       status,
+      scheduledAt: null,
+    });
+    prisma.mailJob.findFirstOrThrow.mockResolvedValue({
+      id: mailJobId,
       toEmail: 'taro.yamada@example.local',
       subject: 'Office Aからのお知らせ',
       body: 'mail body',
+      retryCount: 0,
     });
   }
 
@@ -237,7 +290,7 @@ describe('Mail Jobs API', () => {
       sub: userId,
       user_id: userId,
       tenant_id: tenantId,
-      role: 'manager',
+      role: 'operator',
     });
   }
 });

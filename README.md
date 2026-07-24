@@ -11,7 +11,8 @@ Poolduck Mail 是面向企业客户的 Web SaaS。用户使用扫码枪提交条
 
 ## 核心流程
 
-1. 用户使用 `tenant_id + email + password` 登录。
+1. 用户使用 `tenant_id + 用户名/邮箱 + password` 登录；operator 使用用户名或可选邮箱，
+   tenant_manager 使用邮箱。
 2. 用户选择当前办公室、学校或校舍（统一抽象为 `location`）。
 3. 扫码枪提交扫码编号。
 4. 系统在当前 tenant 和 location 内查找启用的人员邮箱映射。
@@ -20,17 +21,19 @@ Poolduck Mail 是面向企业客户的 Web SaaS。用户使用扫码枪提交条
 
 ## MVP 产品能力
 
-- 租户账号登录与基础角色控制（`root_admin` / `manager`）
+- 租户账号登录与基础角色控制（`tenant_manager` / `operator`）
+- `tenant_manager` 管理本租户 `operator` 账号生命周期
 - 订阅状态检查与功能门禁
 - location 与人员邮箱映射查询
 - 扫码事件和异常事件记录
 - 固定邮件正文的邮件任务创建
-- mock/sandbox 发送触发与结果展示
+- 扫码后自动调用 mock/sandbox provider、失败退避重试与结果展示
+- 未映射扫码处理队列（修正状态不自动补发历史邮件）
 - 基础扫码工作台和操作记录
 
 ## 当前产品状态
 
-MVP 核心业务链路已完成本地和 Staging 冒烟验证。目前仍使用 mock/sandbox 邮件 provider 和合成测试数据；真实邮件投递、自动任务处理、完整后台管理、生产级备份监控及正式对外发布仍需后续迭代。
+MVP 核心业务链路已完成本地和 Staging 冒烟验证；本地实现还包含自动邮件任务处理、地点/人员软停用管理、租户内审计与历史导出，以及 HttpOnly Cookie 会话。当前仍使用 mock/sandbox 邮件 provider 和合成测试数据；真实邮件投递、平台级管理、生产级备份监控及正式对外发布仍需后续迭代。
 
 ## MVP 边界
 

@@ -14,13 +14,14 @@
 
 ## 2. users
 
-> 用法：可登录系统的管理员账号表（仅后台管理用户，不等同于收件人）。管理员分两类：`root_admin`（可编辑订阅、增减 location）与 `manager`（仅可维护 `person_mappings`）。
+> 用法：可登录系统的租户管理员账号表（仅后台管理用户，不等同于收件人）。管理员分为 `tenant_manager`（管理自身 tenant）与 `operator`（仅维护 `person_mappings` 与扫码）。ADR-006 已 Accepted；tenantless `platform_admin` 尚未进入当前 schema。
 
 - `id` (pk, uuid)
 - `tenant_id` (fk -> tenants.id)
-- `email` (varchar, unique within tenant)
+- `username` (varchar(32), nullable, unique within tenant；operator 必填，tenant_manager 必须为空)
+- `email` (varchar(254), nullable, unique within tenant；tenant_manager 必填，operator 可空)
 - `password_hash` (varchar)
-- `role` (varchar) - root_admin/manager
+- `role` (varchar) - tenant_manager/operator
 - `status` (varchar)
 - `last_login_at` (timestamp, nullable)
 - `created_at` (timestamp)
@@ -28,7 +29,7 @@
 
 ## 3. subscriptions
 
-> 用法：订阅配置表（MVP 先按 tenant 统一订阅）；由 `root_admin` 管理。
+> 用法：订阅配置表（MVP 先按 tenant 统一订阅）；现行权限遵循 ADR-003。ADR-006 已 Accepted，后续平台控制面将把订阅修改移交 `platform_admin`；该平台 API 当前尚未实现。
 
 - `id` (pk, uuid)
 - `tenant_id` (fk -> tenants.id, unique)
@@ -36,6 +37,8 @@
 - `status` (varchar) - trial/active/expired/suspended
 - `start_at` (timestamp)
 - `end_at` (timestamp)
+
+时间统一按 UTC 存储；当 `end_at <= 当前 UTC 时间` 时，trial/active 在运行时视为 expired。过期用户仍可登录，但不能创建扫描发送或发送邮件。
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
 
@@ -59,8 +62,13 @@
 - `id` (pk, uuid)
 - `tenant_id` (fk -> tenants.id)
 - `device_id` (fk -> devices.id, nullable)
+- `location_id` (fk -> locations.id, nullable)
+- `person_mapping_id` (fk -> person_mappings.id, nullable；未映射扫码为空)
+- `person_code_snapshot` (varchar(12), nullable；有效动作码即使未映射也保存解析后的人员码，旧数据可为空)
 - `scan_code` (varchar)
-- `scan_type` (varchar) - barcode/qrcode
+- `scan_type` (varchar) - entry/exit/unmapped（旧数据保留兼容值）
+- `action` (varchar) - entry/exit/unknown
+- `action_source` (varchar) - person_action_code/legacy_unknown
 - `raw_payload` (text)
 - `received_at` (timestamp)
 - `created_by_user_id` (fk -> users.id, nullable)
@@ -81,34 +89,62 @@
 
 > 说明：为满足“扫码前先切换办公室/校舍”，`locations` 作为租户内的唯一正式上下文命名。
 
+## 6a. operator_location_assignments
+
+> 用法：保存 tenant_manager 对 operator 的显式 location 授权。没有 assignment 即没有任何 location 权限；该表不做旧 operator 的自动回填。
+
+- `id` (pk, uuid)
+- `tenant_id` (tenant-scoped fk)
+- `operator_id` (tenant-scoped fk -> users)
+- `location_id` (tenant-scoped fk -> locations)
+- `created_at` (timestamp)
+
+约束：
+
+- `(tenant_id, operator_id, location_id)` unique
+- `(tenant_id, operator_id)` 必须引用同 tenant user，服务层同时要求目标角色为 `operator`
+- `(tenant_id, location_id)` 必须引用同 tenant location
+- 设置 API 只允许 active location；停用后保留 assignment 以支持历史识别和显式撤销，但所有新写操作继续受 location 状态门禁
+
 ## 7. person_mappings（扫码编号与人员邮箱映射）
 
-> 用法：非登录人员（收件人）映射表，维护 location 内的 `scan_code -> person_name/email`；由 `manager` 与 `root_admin` 维护。与 `users` 严格区分：`users` 是登录管理员，`person_mappings` 是业务通讯录映射。
+> 用法：非登录人员（收件人）映射表。内部 UUID 只用于主外键；公开的 `person_code` 由服务端生成，并嵌入该人员的 ENTRY/EXIT 两张动作码。由 `operator` 与 `tenant_manager` 维护。与 `users` 严格区分：`users` 是登录管理员，`person_mappings` 是业务通讯录映射。
 
 - `id` (pk, uuid)
 - `tenant_id` (fk -> tenants.id)
 - `location_id` (fk -> locations.id)
-- `scan_code` (varchar)
+- `person_code` (varchar(12), global unique, not null)
+- `scan_code` (varchar；迁移兼容列，新记录与 `person_code` 相同)
 - `person_name` (varchar)
 - `email` (varchar)
 - `status` (varchar) - active/inactive
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
 
-> 查询约束：`scan_code` 查找必须同时带上 `tenant_id` 与当前 `location_id`（办公室/学校上下文），禁止仅按 `scan_code` 全局查找，避免跨租户或跨办公室/学校误匹配。
+> `person_code` 为 12 位大写 Crockford Base32：前 7 位编码 Unix 秒，后 5 位为密码学随机后缀。同一进程同秒生成时后缀单调递增；数据库全局唯一约束与最多 5 次重试处理跨节点碰撞。客户端不能指定或修改该值。
+>
+> 查询约束：扫码写接口只接受 `PD1|ENTRY|<person_code>` / `PD1|EXIT|<person_code>`。解析后必须同时带上服务端认证得到的 `tenant_id` 与当前 `location_id` 查人，禁止仅按全局唯一 `person_code` 查询，也不接受裸 `person_code` 或旧 `scan_code`。
 
 ## 8. mail_jobs
 
-> 用法：邮件发送任务表，记录从生成到发送完成/失败的投递状态与错误信息。MVP 仅保存系统生成后的最终 `subject`/`body`，不单独保存用户自定义正文。
+> 用法：邮件发送任务表，记录从生成到发送完成/失败的投递状态与错误信息，并固化发送时的 tenant/location/person 上下文。MVP 仅保存系统生成后的最终 `subject`/`body`，不单独保存用户自定义正文。
 
 - `id` (pk, uuid)
 - `tenant_id` (fk -> tenants.id)
-- `scan_event_id` (fk -> scan_events.id, nullable)
+- `location_id` (fk -> locations.id)
+- `person_mapping_id` (fk -> person_mappings.id)
+- `scan_event_id` (fk -> scan_events.id)
+- `tenant_name_snapshot` (varchar)
+- `location_name_snapshot` (varchar)
+- `person_name_snapshot` (varchar)
+- `person_code_snapshot` (varchar(12))
+- `action_snapshot` (varchar) - entry/exit/unknown；重试和历史读取均使用该快照
+- `context_snapshot_source` (varchar) - `scan_relation` / `legacy_backfill`
 - `to_email` (varchar)
 - `subject` (varchar)
 - `body` (text)
 - `template_key` (varchar)
-- `status` (varchar) - queued/sent/failed
+- `status` (varchar) - queued/processing/sent/failed
 - `retry_count` (int)
 - `provider_message_id` (varchar, nullable)
 - `error_message` (text, nullable)
@@ -117,7 +153,35 @@
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
 
-## 9. audit_logs
+## 9. scan_request_idempotency
+
+> 用法：保存扫码写请求的 24 小时幂等结果引用。原始 `Idempotency-Key` 和请求正文均不落库，只保存 SHA-256 哈希。
+
+- `id` (pk, uuid)
+- `tenant_id` (fk -> tenants.id)
+- `route` (varchar)
+- `key_hash` (char(64))
+- `request_fingerprint` (char(64))
+- `scan_event_id` (fk -> scan_events.id)
+- `mail_job_id` (fk -> mail_jobs.id, nullable)
+- `expires_at` (timestamp)
+- `created_at` (timestamp)
+- unique (`tenant_id`, `route`, `key_hash`)
+
+## 10. unmapped_scan_cases
+
+> 用法：把未找到 active 人员映射的扫码事件形成可处理队列。处理状态与原始 `scan_events` 分离；`resolved` 只表示数据修正，不触发历史邮件补发。
+
+- `id` (pk, uuid)
+- `tenant_id` (fk -> tenants.id)
+- `scan_event_id` (unique fk -> scan_events.id)
+- `location_id` (fk -> locations.id, nullable)
+- `status` (varchar) - open/resolved/ignored
+- `handled_by_user_id` (fk -> users.id, nullable)
+- `handled_at` (timestamp, nullable)
+- `created_at` / `updated_at` (timestamp)
+
+## 11. audit_logs
 
 > 用法：审计日志表，记录管理员关键操作、资源对象与执行结果，满足合规与问题追踪。
 
@@ -131,21 +195,33 @@
 - `metadata_json` (jsonb)
 - `created_at` (timestamp)
 
-## 10. 索引建议
+## 12. 索引建议
 
+- `users (tenant_id, username)` unique
 - `users (tenant_id, email)` unique
 - `users (tenant_id, role, status)`
 - `subscriptions (tenant_id)` unique
 - `devices (tenant_id, device_code)` unique
 - `scan_events (tenant_id, received_at)`
 - `locations (tenant_id, location_code)` unique
+- `operator_location_assignments (tenant_id, operator_id, location_id)` unique
+- `operator_location_assignments (tenant_id, operator_id)`
+- `operator_location_assignments (tenant_id, location_id)`
 - `locations (tenant_id, name)`
 - `person_mappings (tenant_id, location_id, scan_code)` unique
+- `person_mappings (person_code)` global unique
 - `person_mappings (tenant_id, location_id, status, updated_at)`
+- `scan_events (tenant_id, person_mapping_id, created_at)`
+- `scan_events (tenant_id, location_id, person_mapping_id, received_at)`
 - `mail_jobs (tenant_id, status, created_at)`
+- `mail_jobs (tenant_id, location_id, created_at)`
+- `mail_jobs (tenant_id, person_mapping_id, created_at)`
+- `unmapped_scan_cases (tenant_id, status, created_at)`
+- `scan_request_idempotency (tenant_id, route, key_hash)` unique
+- `scan_request_idempotency (expires_at)`
 - `audit_logs (tenant_id, created_at)`
 
-## 11. Migration baseline (Issue #21)
+## 13. Migration baseline (Issue #21)
 
 The initial migration is implemented with Prisma under `backend/prisma/`.
 
@@ -153,10 +229,23 @@ Implementation notes:
 
 - Prisma schema: `backend/prisma/schema.prisma`.
 - Initial migration SQL: `backend/prisma/migrations/20260622000000_init/migration.sql`.
-- The implementation includes the initial MVP tables: `tenants`, `users`, `subscriptions`, `devices`, `locations`, `person_mappings`, `scan_events`, `mail_jobs`, and `audit_logs`.
+- The implementation includes the MVP tables: `tenants`, `users`, `subscriptions`, `devices`, `locations`, `operator_location_assignments`, `person_mappings`, `scan_events`, `mail_jobs`, `scan_request_idempotency`, `unmapped_scan_cases`, `audit_logs`, and `sessions`.
+- `sessions` stores one row per device login. Only a SHA-256 refresh-token hash is stored; sessions have expiry, last-used, and revocation timestamps, supporting independent multi-device logout and rotation.
 - Status fields remain `varchar` columns at the database layer to match this document; business validation will be enforced in service/API layers in later issues.
 - `scan_events.location_id` is included as a nullable foreign key to `locations.id` so scan history can be queried by the selected location context described in ADR-002 and `docs/api.md`.
 - `person_mappings` has the required unique constraint on `(tenant_id, location_id, scan_code)`.
+- Issue #93 adds an immutable, globally unique `person_code`, backfills legacy mappings in stable `created_at, id` order, and stops the migration if mapped scan/mail history cannot be linked safely.
+- Mapped scan events persist `person_mapping_id` and `person_code_snapshot`; mail jobs require the full person/location/tenant relation plus immutable name/code snapshots. Existing jobs are labeled `legacy_backfill`, while new jobs use `scan_relation`.
+- Emergency rollback SQL is kept at `backend/prisma/rollback/20260724000000_add_person_codes_and_mail_context.sql`. It requires a backup and stopped writes; it removes the new trace columns without dropping legacy `scan_code`, UUID keys, scan events, or mail jobs.
+- Issue #95 adds `action` / `action_source` to scan events, `action_snapshot` to mail jobs, and `scan_request_idempotency` for 24-hour replay. Existing rows default to `unknown` / `legacy_unknown`; rollback SQL is `backend/prisma/rollback/20260724010000_add_scan_actions.sql`.
+- Issue #96 adds `operator_location_assignments` with tenant-scoped composite foreign keys. The approved migration is fail-closed: it inserts no rows, so every existing operator starts with no location access until a tenant_manager assigns locations.
+- Issue #96 rollback SQL is `backend/prisma/rollback/20260724020000_add_operator_location_assignments.sql`. Roll back application code before dropping the table; otherwise current code will fail closed because its authorization relation no longer exists. Returning to the old application restores its former permissive operator behavior and therefore requires explicit security approval.
+- Issue #99 新增 `users.username`，在规范化邮箱和检查 tenant 内大小写冲突后，为旧 operator 回填
+  `op-` 加 10 位随机小写 Crockford Base32 子集用户名。数据库约束保证 operator username 必填、
+  tenant_manager email 必填且 username 为空；username/email 均以小写规范值执行 tenant 内唯一。
+- Issue #99 回滚脚本为 `backend/prisma/rollback/20260724030000_add_user_login_identities.sql`。存在
+  `email IS NULL` 的 operator 时脚本会停止；必须先保留 username-capable 版本并由 tenant_manager
+  补齐邮箱，不得删除账号以完成回滚。
 - Core tenant-scoped indexes are included for users, devices, locations, person mappings, scan events, mail jobs, and audit logs.
 
 Local migration commands:

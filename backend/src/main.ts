@@ -24,8 +24,14 @@ export async function bootstrap() {
 
   app.enableCors({
     origin: corsOrigins,
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Accept', 'Authorization', 'Content-Type'],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Accept',
+      'Authorization',
+      'Content-Type',
+      'Idempotency-Key',
+    ],
+    credentials: true,
   });
 
   await app.listen(port);

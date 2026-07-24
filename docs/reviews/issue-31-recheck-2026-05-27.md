@@ -9,7 +9,7 @@
 ## 2. 已确认一致的内容
 - 已排除 MVP 的“自定义邮件正文”在核心文档中一致：`docs/api.md`、`docs/requirements.md`、`docs/user-guide.md` 均明确固定模板并禁止 `custom_message/custom_text/mail_body`。
 - 订阅状态主集合在核心文档中一致：`trial` / `active` / `expired` / `suspended`。
-- 用户角色主集合在核心文档中一致：`root_admin` / `manager`。
+- 用户角色主集合在核心文档中一致：`tenant_manager` / `operator`。
 - 登录流程主口径在核心文档中一致：`tenant_id + email + password`（文案中“用户名/密码”与 API 的 `email/password` 表述可对齐但不冲突）。
 - API 草案与数据库草案关于 `location_id` 维度隔离、`tenant_id + location_id + scan_code` 约束基本一致。
 

@@ -33,21 +33,21 @@ Out of scope:
 
 | Case | tenant_id | Email | Password |
 |---|---|---|---|
-| Active manager | `11111111-1111-4111-8111-111111111111` | `manager@example.local` | `PoolduckLocal123!` |
-| Suspended manager | `22222222-2222-4222-8222-222222222222` | `suspended-manager@example.local` | `PoolduckLocal123!` |
+| Active operator | `11111111-1111-4111-8111-111111111111` | `operator@example.local` | `PoolduckLocal123!` |
+| Suspended operator | `22222222-2222-4222-8222-222222222222` | `suspended-operator@example.local` | `PoolduckLocal123!` |
 
 ## Manual Black-box Checklist
 
 | Area | Case | Steps | Expected result | Result |
 |---|---|---|---|---|
-| Normal | Active login | Open `/`, login with active manager | Workspace opens | Pass |
+| Normal | Active login | Open `/`, login with active operator | Workspace opens | Pass |
 | Normal | Location/person mapping | Select `Local Office` | `Local Recipient`, `SCAN-LOCAL-001`, and masked email are visible | Pass |
 | Normal | Scan submit | Submit `SCAN-LOCAL-001` | New scan record appears with mail status `发送中` | Pass |
 | Normal | Sandbox send success | Click send on queued record | Mail status becomes `已发送` | Pass |
 | Error | Unauthenticated access | Open `/` in a fresh browser context | Login screen is shown before workspace data loads | Pass |
 | Error | Unmapped scan code | Submit `SCAN-LOCAL-UNMAPPED` | Error feedback is shown and no mail send button is created for that scan | Pass via API smoke and GUI checklist |
-| Permission/license | Suspended tenant | Login with suspended manager | Scan input and submit are disabled | Pass |
-| Tenant isolation | Suspended tenant visibility | Login with suspended manager | Active tenant locations/person mappings are not visible | Pass |
+| Permission/license | Suspended tenant | Login with suspended operator | Scan input and submit are disabled | Pass |
+| Tenant isolation | Suspended tenant visibility | Login with suspended operator | Active tenant locations/person mappings are not visible | Pass |
 | Boundary | Empty scan input | Leave scan field empty | Submit button remains disabled | Pass |
 | Regression | Custom mail body | Submit scan through GUI | Request contains only `location_id` and `scan_code`; no custom body fields | Pass via frontend unit test |
 | Regression | Token/session | Clear token or use fresh context | Workspace requires login again | Pass |
@@ -69,11 +69,11 @@ Result:
 
 Coverage:
 
-- Active manager login
+- Active operator login
 - Location/person mapping visible
 - Scan code `SCAN-LOCAL-001` creates a queued record
 - Manual send changes status to `已发送`
-- Suspended manager login disables scan controls and does not expose active tenant person mapping
+- Suspended operator login disables scan controls and does not expose active tenant person mapping
 
 ## Required Command Checks
 

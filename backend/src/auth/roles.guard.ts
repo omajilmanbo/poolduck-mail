@@ -7,12 +7,16 @@ import {
 import { Reflector } from '@nestjs/core';
 import { AuthenticatedRequest, UserRole } from './auth.types';
 import { ROLES_KEY } from './roles.decorator';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly audit: AuditService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredRoles =
       this.reflector.getAllAndOverride<UserRole[]>(ROLES_KEY, [
         context.getHandler(),
@@ -29,6 +33,16 @@ export class RolesGuard implements CanActivate {
     if (role && requiredRoles.includes(role as UserRole)) {
       return true;
     }
+
+    await this.audit.record({
+      tenantId: request.auth?.tenant_id,
+      actorUserId: request.auth?.user_id,
+      action: 'authorization.denied',
+      resourceType: 'route',
+      resourceId: context.getHandler().name,
+      result: 'denied',
+      metadata: { role: role ?? 'unknown', required_roles: requiredRoles },
+    });
 
     throw new ForbiddenException({
       code: 'ROLE_FORBIDDEN',

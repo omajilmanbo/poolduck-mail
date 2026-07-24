@@ -25,7 +25,7 @@ describe('Locations API', () => {
   const otherTenantId = '22222222-2222-4222-8222-222222222222';
   const userId = '33333333-3333-4333-8333-333333333333';
   const locationId = '44444444-4444-4444-8444-444444444444';
-  const email = 'manager@example.local';
+  const email = 'operator@example.local';
 
   beforeAll(() => {
     process.env.JWT_SECRET = 'locations-spec-secret';
@@ -103,7 +103,12 @@ describe('Locations API', () => {
       ]);
 
     expect(prisma.location.findMany).toHaveBeenCalledWith({
-      where: { tenantId },
+      where: {
+        tenantId,
+        operatorLocationAssignments: {
+          some: { tenantId, operatorId: userId },
+        },
+      },
       orderBy: [{ name: 'asc' }, { createdAt: 'asc' }],
       select: {
         id: true,
@@ -120,16 +125,14 @@ describe('Locations API', () => {
     prisma.location.findFirst.mockResolvedValue({ id: locationId });
     prisma.personMapping.findMany.mockResolvedValue([
       {
-        id: '66666666-6666-4666-8666-666666666666',
+        personCode: '01K0ABC40001',
         personName: 'Ada Lovelace',
-        scanCode: 'SCAN-001',
         email: 'ada.lovelace@example.local',
         status: 'active',
       },
       {
-        id: '77777777-7777-4777-8777-777777777777',
+        personCode: '01K0ABC40002',
         personName: 'Q',
-        scanCode: 'SCAN-002',
         email: 'q@example.local',
         status: 'inactive',
       },
@@ -143,16 +146,18 @@ describe('Locations API', () => {
 
     expect(response.body).toEqual([
       {
-        person_id: '66666666-6666-4666-8666-666666666666',
+        person_id: '01K0ABC40001',
+        person_code: '01K0ABC40001',
         person_name: 'Ada Lovelace',
-        scan_code: 'SCAN-001',
+        scan_code: '01K0ABC40001',
         email_masked: 'a***e@example.local',
         is_active: true,
       },
       {
-        person_id: '77777777-7777-4777-8777-777777777777',
+        person_id: '01K0ABC40002',
+        person_code: '01K0ABC40002',
         person_name: 'Q',
-        scan_code: 'SCAN-002',
+        scan_code: '01K0ABC40002',
         email_masked: '*@example.local',
         is_active: false,
       },
@@ -164,19 +169,21 @@ describe('Locations API', () => {
       where: {
         id: locationId,
         tenantId,
+        operatorLocationAssignments: {
+          some: { tenantId, operatorId: userId },
+        },
       },
-      select: { id: true },
+      select: { id: true, status: true },
     });
     expect(prisma.personMapping.findMany).toHaveBeenCalledWith({
       where: {
         tenantId,
         locationId,
       },
-      orderBy: [{ personName: 'asc' }, { scanCode: 'asc' }],
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       select: {
-        id: true,
+        personCode: true,
         personName: true,
-        scanCode: true,
         email: true,
         status: true,
       },
@@ -216,7 +223,7 @@ describe('Locations API', () => {
       sub: userId,
       user_id: userId,
       tenant_id: tenantId,
-      role: 'manager',
+      role: 'operator',
     });
   }
 
@@ -225,7 +232,8 @@ describe('Locations API', () => {
       id: userId,
       tenantId,
       email,
-      role: 'manager',
+      role: 'operator',
+      status: 'active',
     };
   }
 });

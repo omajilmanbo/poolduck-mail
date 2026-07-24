@@ -28,6 +28,10 @@
 - `DATABASE_URL`
 - `JWT_SECRET`
 - `REFRESH_TOKEN_SECRET`
+- `AUTH_IDENTITY_HASH_SECRET`
+- `AUTH_LOGIN_RATE_WINDOW_MS` / `AUTH_LOGIN_MAX_PER_IP` /
+  `AUTH_LOGIN_MAX_PER_TENANT` / `AUTH_LOGIN_MAX_PER_IDENTIFIER` /
+  `AUTH_LOGIN_MAX_PER_COMPOSITE`
 - `MAIL_PROVIDER`
 - `MAIL_SMTP_HOST` / `MAIL_SMTP_USER` / `MAIL_SMTP_PASS`
 - `MAIL_FROM_ADDRESS`
@@ -170,7 +174,9 @@ MAIL_MOCK_SEND_RESULT=success
 TENANT_CONTEXT_ENFORCED=true
 ```
 
-`POSTGRES_PASSWORD`, `DATABASE_URL`, `JWT_SECRET`, and `REFRESH_TOKEN_SECRET` must be generated on the Staging host or another approved secret store. Do not commit or paste those values into docs, issues, or PR descriptions.
+`POSTGRES_PASSWORD`, `DATABASE_URL`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, and
+`AUTH_IDENTITY_HASH_SECRET` must be generated on the Staging host or another approved secret store. Do not
+commit or paste those values into docs, issues, or PR descriptions.
 
 Current approved deployment and recovery commands (to be wrapped by the future deployment script):
 
@@ -186,11 +192,11 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T -e AP
 
 `npm run staging:seed` writes only synthetic `.example.local` data and is idempotent. It prepares fixed active, suspended, and expired tenants for Staging verification:
 
-| Subscription | Tenant ID | Manager | Password | Location ID | Scan code |
+| Subscription | Tenant ID | Operator | Password | Location ID | Scan code |
 |---|---|---|---|---|---|
-| active | `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa` | `staging-active-manager@example.local` | `PoolduckStaging123!` | `dddddddd-dddd-4ddd-8ddd-dddddddddddd` | `SCAN-STG-ACTIVE-001` |
-| suspended | `11111112-1112-4112-8112-111111111112` | `staging-suspended-manager@example.local` | `PoolduckStaging123!` | `44444445-4445-4445-8445-444444444445` | `SCAN-STG-SUSPENDED-001` |
-| expired | `66666667-6667-4667-8667-666666666667` | `staging-expired-manager@example.local` | `PoolduckStaging123!` | `99999990-9990-4990-8990-999999999990` | `SCAN-STG-EXPIRED-001` |
+| active | `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa` | `staging-active-operator@example.local` | `PoolduckStaging123!` | `dddddddd-dddd-4ddd-8ddd-dddddddddddd` | `01K0ABC20001` |
+| suspended | `11111112-1112-4112-8112-111111111112` | `staging-suspended-operator@example.local` | `PoolduckStaging123!` | `44444445-4445-4445-8445-444444444445` | `01K0ABC20002` |
+| expired | `66666667-6667-4667-8667-666666666667` | `staging-expired-operator@example.local` | `PoolduckStaging123!` | `99999990-9990-4990-8990-999999999990` | `01K0ABC20003` |
 
 The Staging seed must not be run against Production or any database containing real customer data.
 
@@ -264,11 +270,11 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T backe
 docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T \
   -e API_BASE_URL=http://reverse-proxy \
   -e API_SMOKE_TENANT_ID=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa \
-  -e API_SMOKE_EMAIL=staging-active-manager@example.local \
+  -e API_SMOKE_EMAIL=staging-active-operator@example.local \
   -e API_SMOKE_PASSWORD=PoolduckStaging123! \
   -e API_SMOKE_LOCATION_ID=dddddddd-dddd-4ddd-8ddd-dddddddddddd \
-  -e API_SMOKE_SCAN_CODE=SCAN-STG-ACTIVE-001 \
-  -e API_SMOKE_UNMAPPED_SCAN_CODE=SCAN-STG-UNMAPPED \
+  -e 'API_SMOKE_SCAN_CODE=PD1|ENTRY|01K0ABC20001' \
+  -e 'API_SMOKE_UNMAPPED_SCAN_CODE=PD1|ENTRY|01K0ABC29999' \
   backend npm run smoke:api
 ```
 
@@ -300,8 +306,15 @@ POSTGRES_USER=poolduck_staging
 POSTGRES_PASSWORD=<staging-only-random-secret>
 DATABASE_URL=postgresql://poolduck_staging:<same-password>@postgres:5432/poolduck_mail
 JWT_SECRET=<staging-only-random-secret>
-JWT_ACCESS_TOKEN_TTL_SECONDS=86400
+JWT_ACCESS_TOKEN_TTL_SECONDS=900
+JWT_REFRESH_TOKEN_TTL_SECONDS=604800
 REFRESH_TOKEN_SECRET=<staging-only-random-secret>
+AUTH_IDENTITY_HASH_SECRET=<staging-only-random-secret>
+AUTH_LOGIN_RATE_WINDOW_MS=900000
+AUTH_LOGIN_MAX_PER_IP=60
+AUTH_LOGIN_MAX_PER_TENANT=100
+AUTH_LOGIN_MAX_PER_IDENTIFIER=10
+AUTH_LOGIN_MAX_PER_COMPOSITE=8
 API_BASE_URL=http://<new-staging-public-ip>
 NEXT_PUBLIC_API_BASE_URL=http://<new-staging-public-ip>
 CORS_ORIGIN=http://<new-staging-public-ip>
@@ -352,7 +365,7 @@ Use separate storage for non-secret config and secrets:
 | Terraform local inputs | `compartment_ocid`, `region`, `admin_ssh_cidr`, `ssh_public_key` | Local `infrastructure/oci-staging/terraform.tfvars` | No |
 | OCI credentials | tenancy/user OCID, fingerprint, private key path | Local OCI CLI config (`~/.oci/config`) | No |
 | Application non-secret config | `APP_ENV`, ports, public base URLs, log level | Staging host env file or future platform config UI | No for real values |
-| Application secrets | `DATABASE_URL`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, mail sandbox credentials | Staging secrets store or restricted host env file | No |
+| Application secrets | `DATABASE_URL`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `AUTH_IDENTITY_HASH_SECRET`, mail sandbox credentials | Staging secrets store or restricted host env file | No |
 | Documentation placeholders | variable names, example URLs, example secret labels | Docs and `.env.example` | Yes |
 
 If GitHub Actions Environments are introduced later, use a dedicated `staging` environment and create secrets manually in the GitHub UI. Agents must not create or read real secret values.
@@ -371,6 +384,7 @@ CORS_ORIGIN=http://<staging-public-ip>
 DATABASE_URL=<secret:staging-postgres-url>
 JWT_SECRET=<secret:staging-jwt-secret>
 REFRESH_TOKEN_SECRET=<secret:staging-refresh-token-secret>
+AUTH_IDENTITY_HASH_SECRET=<secret:staging-identity-hash-secret>
 MAIL_PROVIDER=mock
 MAIL_FROM_ADDRESS=<placeholder-or-secret:staging-from-address>
 LOG_LEVEL=info
@@ -457,3 +471,5 @@ Safety rules:
 - Never commit `DATABASE_URL`, migration state files, dumps, seed data with customer PII, or generated Prisma client output.
 - Staging smoke data must be synthetic.
 - Agents must stop if the target database or secret source is unclear.
+- `20260724020000_add_operator_location_assignments` 是 fail-closed migration：不回填任何现有 operator。部署后先由 tenant_manager 使用 assignment API 授权合成/批准的地点，再执行 operator smoke；不得通过 SQL 批量默认授权全部地点。
+- 回滚 #96 时先停止写入并回滚应用，再运行 `backend/prisma/rollback/20260724020000_add_operator_location_assignments.sql`。旧应用会恢复此前“operator 可访问 tenant 全部地点”的宽权限行为，执行前必须获得安全负责人确认。

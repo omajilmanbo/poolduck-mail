@@ -16,6 +16,8 @@ node_modules/
 build/
 dist/
 coverage/
+frontend/test-results/
+frontend/playwright-report/
 
 # OS/editor
 .DS_Store

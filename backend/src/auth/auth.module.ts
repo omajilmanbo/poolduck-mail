@@ -6,6 +6,7 @@ import { AuthController } from './auth.controller';
 import { DEFAULT_ACCESS_TOKEN_TTL_SECONDS } from './auth.constants';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { LoginRateLimiterService } from './login-rate-limiter.service';
 import { RolesGuard } from './roles.guard';
 
 @Module({
@@ -26,7 +27,7 @@ import { RolesGuard } from './roles.guard';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard, RolesGuard],
+  providers: [AuthService, JwtAuthGuard, LoginRateLimiterService, RolesGuard],
   exports: [AuthService, JwtAuthGuard, RolesGuard],
 })
 export class AuthModule {}
