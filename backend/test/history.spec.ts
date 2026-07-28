@@ -84,7 +84,11 @@ describe('Tenant-scoped history APIs', () => {
   });
 
   it('combines location, status, date, limit and stable cursor pagination', async () => {
-    prisma.location.findFirst.mockResolvedValue({ id: locationId });
+    prisma.location.findFirst.mockResolvedValue({
+      id: locationId,
+      locationCode: 'A1B2C3D4',
+      status: 'active',
+    });
     prisma.scanEvent.findMany.mockResolvedValue([
       scanRow(scanEventId, 'queued'),
       scanRow(otherScanEventId, 'queued'),
@@ -191,6 +195,7 @@ describe('Tenant-scoped history APIs', () => {
       retryCount: 0,
       scheduledAt: null,
       locationId,
+      location: { locationCode: 'A1B2C3D4' },
       tenantNameSnapshot: 'Tenant at send time',
       locationNameSnapshot: 'Office A at send time',
       personNameSnapshot: 'Person at send time',
@@ -281,7 +286,7 @@ describe('Tenant-scoped history APIs', () => {
       actionSource: 'person_action_code',
       receivedAt: createdAt,
       createdAt,
-      location: { name: 'Office A' },
+      location: { locationCode: 'A1B2C3D4', name: 'Office A' },
       mailJobs: [
         {
           id: mailJobId,

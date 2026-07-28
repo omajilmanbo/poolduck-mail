@@ -29,7 +29,7 @@
 - 登录页、扫码录入页、任务状态页、管理页
 - 调用 `/api/*` 后端接口
 - 按角色展示可见功能（普通用户/管理员）
-- 登录页先输入 `tenant_id`，再输入“用户名/邮箱”与密码；保留 `autocomplete=username` 供密码管理器识别
+- 登录页先输入 10 位公开 `tenant_code`，再输入“用户名/邮箱”与密码；不接受或展示 tenant UUID，并保留 `autocomplete=username` 供密码管理器识别
 
 ## 3. 后端层
 
@@ -46,15 +46,18 @@
 - 所有业务核心表包含 `tenant_id`
 - 查询默认附带 tenant scope，防止越权读取
 - tenant scope 来源于认证后的登录用户上下文，禁止直接使用前端传入的 `tenant_id`
+- tenant UUID 继续作为内部主外键；登录入口仅用全局唯一 `tenant_code` 定位 tenant，解析后才用内部 UUID 查询用户并签发 session/token
+- location 保留 UUID 主键和所有历史外键；客户 API/UI 使用 tenant-scoped 的 8 位 Crockford Base32 `location_code`。共享访问层先按 token tenant 与 assignment 解析业务码，再用内部 UUID 查询或写入关联表
+- location 技术类型固定为 `location`。办公室、学校等未来分类不得复用 `type`，需要独立 ADR 与 `category` 字段
 
 ## 5. 认证与授权
 
 - MVP 使用账号密码登录
-- 登录入参包含 `tenant_id + identifier + password`。含 `@` 的 identifier 只按规范邮箱查询，不含 `@`
+- 登录入参包含 `tenant_code + identifier + password`。含 `@` 的 identifier 只按规范邮箱查询，不含 `@`
   的 identifier 只按本 tenant operator 用户名查询，不执行跨字段回退
 - operator 必须有 tenant 内唯一的小写 ASCII username，邮箱可空；tenant_manager 必须有 tenant 内唯一邮箱且
   username 为空。身份字段不能改变数据库记录中的角色
-- tenant 不存在、身份不存在、账号停用或密码错误统一返回 `LOGIN_FAILED`；不存在身份仍执行伪 Argon2
+- tenant_code 不存在、身份不存在、账号停用或密码错误统一返回 `LOGIN_FAILED`；不存在身份仍执行伪 Argon2
   校验。登录尝试按 IP、tenant hash、identifier hash 及组合维度限流，日志不记录原始身份
 - token 中包含 user_id / tenant_id / role
 - 后端通过 `JwtAuthGuard` 解析 token，并在请求上下文注入 `tenant_id`、`user_id`、`role`

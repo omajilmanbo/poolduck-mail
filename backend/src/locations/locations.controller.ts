@@ -57,9 +57,16 @@ export class LocationsController {
     @CurrentUser() user: AuthenticatedUserResponse,
     @Param('location_id') locationId: string,
   ) {
-    return this.locationsService.updateLocation(user, locationId, {
-      status: 'inactive',
-    });
+    return this.locationsService.setLocationStatus(user, locationId, 'inactive');
+  }
+
+  @Post(':location_id/reactivate')
+  @Roles('tenant_manager')
+  reactivateLocation(
+    @CurrentUser() user: AuthenticatedUserResponse,
+    @Param('location_id') locationId: string,
+  ) {
+    return this.locationsService.setLocationStatus(user, locationId, 'active');
   }
 
   @Get(':location_id/people')
@@ -104,8 +111,15 @@ export class LocationsController {
     @Param('location_id') locationId: string,
     @Param('person_id') personId: string,
   ) {
-    return this.locationsService.updatePerson(user, locationId, personId, {
-      status: 'inactive',
-    });
+    return this.locationsService.setPersonStatus(user, locationId, personId, 'inactive');
+  }
+
+  @Post(':location_id/people/:person_id/reactivate')
+  reactivatePerson(
+    @CurrentUser() user: AuthenticatedUserResponse,
+    @Param('location_id') locationId: string,
+    @Param('person_id') personId: string,
+  ) {
+    return this.locationsService.setPersonStatus(user, locationId, personId, 'active');
   }
 }

@@ -28,7 +28,7 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #83 | 商业订阅概览、location allowance 与续订提醒 | 已关闭为 `not_planned`；MVP 仅保留 #64/#65 的安全门禁与页面修正 | 是，商业化范围延后 |
 | #90 | 用 ADR 定义 tenant、location、person 的短业务 ID、内部主键与 location 简化模型 | ADR-007 Accepted：保留内部 UUID，并新增受控公开业务 ID | 是，已确认 |
 | #91 | 按批准的 ID ADR 引入 8–12 位 tenant 公共 ID 并迁移登录入口 | 已登记，实时状态与 Scope 见 GitHub | 是，涉及认证与数据迁移 |
-| #92 | 自动生成 location ID，将类型统一为 `location`，简化创建并补充重新启用 | 依赖 ID ADR；不依赖 #83/#102 或商业计费配置 | 是，涉及 ID 与迁移 |
+| #92 | 自动生成 location ID，将类型统一为 `location`，简化创建并补充地点/人员重新启用 | 当前工作区已实现并通过 migration、全量后端/前端、API smoke 与 Playwright 验证，待 PR | 是，ADR-007 已 Accepted |
 | #93 | 引入有序人员 ID，并固化 person → location → tenant 的邮件上下文追溯 | 当前工作区已实现并通过全量后端、前端、Prisma、API smoke 与 GUI 验证，待 PR | 是，涉及历史数据迁移 |
 | #94 | 用 ADR 定义人员扫码进入、离开及异常场景的动作判定规则 | ADR-008 Accepted：采用 `PD1\|ENTRY\|person_code` / `PD1\|EXIT\|person_code` 两张人员动作码 | 是，已确认 |
 | #95 | 按批准规则记录进出动作，并同步扫码历史与固定邮件正文 | 当前工作区已实现并通过全量后端、前端、API smoke 与 Playwright 验证，待 PR | 是，动作 ADR 已确认 |

@@ -61,14 +61,14 @@ export class ScanEventsService {
     user: AuthenticatedUserResponse,
     query: ListScanEventsDto,
   ): Promise<ScanEventListResponse> {
-    if (query.location_id) {
-      await this.locationAccess.assertLocation(user, query.location_id);
-    }
+    const selectedLocation = query.location_id
+      ? await this.locationAccess.assertLocation(user, query.location_id)
+      : null;
 
     const cursor = this.decodeCursor(query.cursor);
     const where: Prisma.ScanEventWhereInput = {
       tenantId: user.tenant_id,
-      ...(query.location_id ? { locationId: query.location_id } : {}),
+      ...(selectedLocation ? { locationId: selectedLocation.id } : {}),
       ...(!query.location_id
         ? this.locationAccess.resourceLocationWhere(user)
         : {}),
@@ -139,15 +139,15 @@ export class ScanEventsService {
   }
 
   async exportScanEvents(user: AuthenticatedUserResponse, query: ExportScanEventsDto) {
-    if (query.location_id) {
-      await this.locationAccess.assertLocation(user, query.location_id);
-    }
+    const selectedLocation = query.location_id
+      ? await this.locationAccess.assertLocation(user, query.location_id)
+      : null;
     const range = this.assertExportRange(query.created_from, query.created_to);
     const rows = await this.prisma.scanEvent.findMany({
       where: {
         tenantId: user.tenant_id,
         createdAt: { gte: range.from, lte: range.to },
-        ...(query.location_id ? { locationId: query.location_id } : {}),
+        ...(selectedLocation ? { locationId: selectedLocation.id } : {}),
         ...(!query.location_id
           ? this.locationAccess.resourceLocationWhere(user)
           : {}),
@@ -238,6 +238,7 @@ export class ScanEventsService {
       user,
       dto.location_id,
     );
+    const internalLocationId = authorizedLocation.id;
     if (authorizedLocation.status !== 'active') {
       throw new NotFoundException({
         code: 'LOCATION_INACTIVE',
@@ -247,7 +248,7 @@ export class ScanEventsService {
     const idempotency = normalizedIdempotencyKey
       ? this.buildIdempotencyContext(
           normalizedIdempotencyKey,
-          dto.location_id,
+          internalLocationId,
           parsedCode,
         )
       : null;
@@ -284,7 +285,7 @@ export class ScanEventsService {
     const location = await this.prisma.location.findFirst({
       where: {
         ...this.locationAccess.locationWhere(user, {
-          id: dto.location_id,
+          id: internalLocationId,
         }),
       },
       select: {
@@ -317,7 +318,7 @@ export class ScanEventsService {
     const personMapping = await this.prisma.personMapping.findFirst({
       where: {
         tenantId: user.tenant_id,
-        locationId: dto.location_id,
+        locationId: internalLocationId,
         personCode: parsedCode.personCode,
         status: 'active',
       },
@@ -341,7 +342,7 @@ export class ScanEventsService {
         const created = await tx.scanEvent.create({
           data: {
             tenantId: user.tenant_id,
-            locationId: dto.location_id,
+            locationId: internalLocationId,
             personCodeSnapshot: parsedCode.personCode,
             scanCode: parsedCode.personCode,
             scanType: 'unmapped',
@@ -357,7 +358,7 @@ export class ScanEventsService {
           data: {
             tenantId: user.tenant_id,
             scanEventId: created.id,
-            locationId: dto.location_id,
+            locationId: internalLocationId,
           },
         });
         return created;
@@ -399,7 +400,7 @@ export class ScanEventsService {
           }
         }
 
-        const lockKey = `${user.tenant_id}:${dto.location_id}:${personMapping.personCode}`;
+        const lockKey = `${user.tenant_id}:${internalLocationId}:${personMapping.personCode}`;
         await tx.$executeRawUnsafe(
           'SELECT pg_advisory_xact_lock(hashtext($1))',
           lockKey,
@@ -411,7 +412,7 @@ export class ScanEventsService {
         const existing = await tx.scanEvent.findFirst({
           where: {
             tenantId: user.tenant_id,
-            locationId: dto.location_id,
+            locationId: internalLocationId,
             personMappingId: personMapping.id,
             receivedAt: { gt: duplicateAfter },
             mailJobs: { some: {} },
@@ -476,7 +477,7 @@ export class ScanEventsService {
         const scanEvent = await tx.scanEvent.create({
           data: {
             tenantId: user.tenant_id,
-            locationId: dto.location_id,
+            locationId: internalLocationId,
             personMappingId: personMapping.id,
             personCodeSnapshot: personMapping.personCode,
             scanCode: personMapping.personCode,
@@ -794,7 +795,7 @@ export class ScanEventsService {
       actionSource: true,
       receivedAt: true,
       createdAt: true,
-      location: { select: { name: true } },
+      location: { select: { locationCode: true, name: true } },
       mailJobs: {
         orderBy: [{ createdAt: 'desc' as const }, { id: 'desc' as const }],
         take: 1,
@@ -821,7 +822,7 @@ export class ScanEventsService {
     action: string;
     actionSource: string;
     receivedAt: Date;
-    location: { name: string } | null;
+    location: { locationCode: string; name: string } | null;
     mailJobs: Array<{
       id: string;
       status: string;
@@ -841,7 +842,7 @@ export class ScanEventsService {
 
     return {
       scan_event_id: row.id,
-      location_id: row.locationId,
+      location_id: row.location?.locationCode ?? null,
       location_name:
         mailJob?.locationNameSnapshot ?? row.location?.name ?? null,
       person_code:

@@ -43,17 +43,35 @@ export class LocationAccessService {
 
   async assertLocation(
     user: AuthenticatedUserResponse,
-    locationId: string,
-  ): Promise<{ id: string; status: string }> {
+    locationIdentifier: string,
+  ): Promise<{ id: string; locationCode: string; status: string }> {
+    const normalized = locationIdentifier.trim().toUpperCase();
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        locationIdentifier,
+      );
     const location = await this.prisma.location.findFirst({
-      where: this.locationWhere(user, { id: locationId }),
-      select: { id: true, status: true },
+      where: this.locationWhere(user, {
+        OR: [
+          { locationCode: normalized },
+          ...(isUuid ? [{ id: locationIdentifier }] : []),
+          {
+            legacyIdentifiers: {
+              some: {
+                tenantId: user.tenant_id,
+                legacyCode: normalized,
+              },
+            },
+          },
+        ],
+      }),
+      select: { id: true, locationCode: true, status: true },
     });
     if (location) {
       return location;
     }
 
-    await this.recordDenied(user, locationId);
+    await this.recordDenied(user, normalized);
     throw new NotFoundException({
       code: 'LOCATION_NOT_FOUND',
       message: 'location不存在或不属于当前租户',

@@ -3,7 +3,7 @@ export type ApiClientConfig = {
 };
 
 export type LoginRequest = {
-  tenant_id: string;
+  tenant_code: string;
   identifier: string;
   password: string;
 };
@@ -12,7 +12,7 @@ export type LoginResponse = {
   expires_in: number;
   user: {
     user_id: string;
-    tenant_id: string;
+    tenant_code: string;
     username: string | null;
     email: string | null;
     role: string;
@@ -52,10 +52,7 @@ export type PersonMappingInput = {
   status?: 'active' | 'inactive';
 };
 export type LocationInput = {
-  location_code: string;
   location_name: string;
-  type: 'office' | 'school';
-  status?: 'active' | 'inactive';
 };
 export type AuditLogItem = {
   audit_log_id: string;
@@ -342,11 +339,15 @@ export function createApiClient(config: ApiClientConfig = {}) {
       request<PersonMappingDetail>(`/api/locations/${encodeURIComponent(locationId)}/people/${encodeURIComponent(personId)}`, { method: 'PATCH', body }),
     deactivatePerson: (locationId: string, personId: string) =>
       request<PersonMappingDetail>(`/api/locations/${encodeURIComponent(locationId)}/people/${encodeURIComponent(personId)}`, { method: 'DELETE' }),
+    reactivatePerson: (locationId: string, personId: string) =>
+      request<PersonMappingDetail>(`/api/locations/${encodeURIComponent(locationId)}/people/${encodeURIComponent(personId)}/reactivate`, { method: 'POST' }),
     createLocation: (body: LocationInput) => request<LocationItem>('/api/locations', { method: 'POST', body }),
     updateLocation: (locationId: string, body: Partial<LocationInput>) =>
       request<LocationItem>(`/api/locations/${encodeURIComponent(locationId)}`, { method: 'PATCH', body }),
     deactivateLocation: (locationId: string) =>
       request<LocationItem>(`/api/locations/${encodeURIComponent(locationId)}`, { method: 'DELETE' }),
+    reactivateLocation: (locationId: string) =>
+      request<LocationItem>(`/api/locations/${encodeURIComponent(locationId)}/reactivate`, { method: 'POST' }),
     getAuditLogs: (params = '') => request<AuditLogResponse>(`/api/audit-logs${params ? `?${params}` : ''}`),
     getUnmappedScans: (params = '') =>
       request<UnmappedScanCase[]>(`/api/unmapped-scans${params ? `?${params}` : ''}`),

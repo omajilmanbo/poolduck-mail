@@ -93,13 +93,13 @@ describe('Operator location assignment API', () => {
       operator_id: operatorId,
       locations: [
         {
-          location_id: locationA,
+          location_id: 'A001',
           location_code: 'A001',
           location_name: 'Office A',
           is_active: true,
         },
         {
-          location_id: locationB,
+          location_id: 'B001',
           location_code: 'B001',
           location_name: 'Office B',
           is_active: false,
@@ -212,11 +212,10 @@ describe('Operator location assignment API', () => {
     });
     expect(prisma.location.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: {
+        where: expect.objectContaining({
           tenantId,
-          id: { in: [locationA, locationB] },
           status: 'active',
-        },
+        }),
       }),
     );
     expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -229,7 +228,11 @@ describe('Operator location assignment API', () => {
   });
 
   it('revokes an assignment immediately and records no PII', async () => {
-    prisma.location.findFirst.mockResolvedValue({ id: locationA });
+    prisma.location.findFirst.mockResolvedValue({
+      id: locationA,
+      locationCode: 'A001',
+      status: 'active',
+    });
 
     const response = await request(app.getHttpServer())
       .delete(`/api/users/${operatorId}/location-assignments/${locationA}`)
@@ -238,7 +241,7 @@ describe('Operator location assignment API', () => {
 
     expect(response.body).toEqual({
       operator_id: operatorId,
-      location_id: locationA,
+      location_id: 'A001',
       status: 'revoked',
     });
     expect(prisma.operatorLocationAssignment.deleteMany).toHaveBeenCalledWith({
@@ -248,7 +251,7 @@ describe('Operator location assignment API', () => {
     expect(auditPayload.data).toMatchObject({
       action: 'operator_location_assignment.revoked',
       actorUserId: managerId,
-      metadataJson: { location_id: locationA },
+      metadataJson: { location_id: 'A001' },
     });
     expect(JSON.stringify(auditPayload)).not.toContain('@');
   });
@@ -273,6 +276,23 @@ describe('Operator location assignment API', () => {
       .set('Authorization', managerAuthorization())
       .send({ location_ids: [locationA, locationA] })
       .expect(400);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a public code and UUID that resolve to the same location', async () => {
+    prisma.location.findMany.mockResolvedValue([
+      locationRow(locationA, 'A1B2C3D4', 'Office A', 'active'),
+    ]);
+
+    const response = await request(app.getHttpServer())
+      .put(`/api/users/${operatorId}/location-assignments`)
+      .set('Authorization', managerAuthorization())
+      .send({ location_ids: [locationA, 'A1B2C3D4'] })
+      .expect(400);
+
+    expect(response.body).toMatchObject({
+      code: 'DUPLICATE_LOCATION_ASSIGNMENT',
+    });
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 

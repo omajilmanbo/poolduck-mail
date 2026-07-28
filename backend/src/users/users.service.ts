@@ -9,6 +9,7 @@ import * as argon2 from 'argon2';
 import { AuditService } from '../audit/audit.service';
 import { AuthService } from '../auth/auth.service';
 import { AuthenticatedUserResponse } from '../auth/auth.types';
+import { LocationAccessService } from '../location-access/location-access.service';
 import {
   isAllowedUsername,
   normalizeEmail,
@@ -32,6 +33,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
     private readonly audit: AuditService,
+    private readonly locationAccess: LocationAccessService,
   ) {}
 
   async listOperators(
@@ -182,12 +184,33 @@ export class UsersService {
     dto: SetOperatorLocationAssignmentsDto,
   ): Promise<OperatorLocationAssignmentResponse> {
     await this.assertManagedOperator(actor, operatorId);
+    const normalizedIdentifiers = dto.location_ids.map((identifier) =>
+      identifier.trim().toUpperCase(),
+    );
+    const uuidIdentifiers = dto.location_ids.filter((identifier) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        identifier,
+      ),
+    );
     const locations = dto.location_ids.length
       ? await this.prisma.location.findMany({
           where: {
             tenantId: actor.tenant_id,
-            id: { in: dto.location_ids },
             status: 'active',
+            OR: [
+              { locationCode: { in: normalizedIdentifiers } },
+              ...(uuidIdentifiers.length
+                ? [{ id: { in: uuidIdentifiers } }]
+                : []),
+              {
+                legacyIdentifiers: {
+                  some: {
+                    tenantId: actor.tenant_id,
+                    legacyCode: { in: normalizedIdentifiers },
+                  },
+                },
+              },
+            ],
           },
           orderBy: [{ name: 'asc' }, { id: 'asc' }],
           select: {
@@ -195,14 +218,33 @@ export class UsersService {
             locationCode: true,
             name: true,
             status: true,
+            legacyIdentifiers: { select: { legacyCode: true } },
           },
         })
       : [];
-    if (locations.length !== dto.location_ids.length) {
+    const resolved = dto.location_ids.map((identifier) => {
+      const normalized = identifier.trim().toUpperCase();
+      return locations.find(
+        (location) =>
+          location.id === identifier ||
+          location.locationCode === normalized ||
+          location.legacyIdentifiers?.some(
+            (legacy) => legacy.legacyCode === normalized,
+          ),
+      );
+    });
+    if (resolved.some((location) => !location)) {
       await this.recordAssignmentDenied(actor, operatorId);
       throw new NotFoundException({
         code: 'ASSIGNABLE_LOCATION_NOT_FOUND',
         message: '一个或多个 location 不存在、已停用或不属于当前租户',
+      });
+    }
+    const internalLocationIds = resolved.map((location) => location!.id);
+    if (new Set(internalLocationIds).size !== internalLocationIds.length) {
+      throw new BadRequestException({
+        code: 'DUPLICATE_LOCATION_ASSIGNMENT',
+        message: 'location_ids 不能通过不同标识重复指向同一地点',
       });
     }
 
@@ -210,19 +252,19 @@ export class UsersService {
       where: { tenantId: actor.tenant_id, operatorId },
       select: { locationId: true },
     });
-    const requestedIds = new Set(dto.location_ids);
+    const requestedIds = new Set(internalLocationIds);
     const existingIds = new Set(existing.map((row) => row.locationId));
     await this.prisma.$transaction(async (tx) => {
       await tx.operatorLocationAssignment.deleteMany({
         where: {
           tenantId: actor.tenant_id,
           operatorId,
-          locationId: { notIn: dto.location_ids },
+          locationId: { notIn: internalLocationIds },
         },
       });
-      if (dto.location_ids.length) {
+      if (internalLocationIds.length) {
         await tx.operatorLocationAssignment.createMany({
-          data: dto.location_ids.map((locationId) => ({
+          data: internalLocationIds.map((locationId) => ({
             tenantId: actor.tenant_id,
             operatorId,
             locationId,
@@ -257,22 +299,12 @@ export class UsersService {
     locationId: string,
   ) {
     await this.assertManagedOperator(actor, operatorId);
-    const location = await this.prisma.location.findFirst({
-      where: { id: locationId, tenantId: actor.tenant_id },
-      select: { id: true },
-    });
-    if (!location) {
-      await this.recordAssignmentDenied(actor, operatorId);
-      throw new NotFoundException({
-        code: 'OPERATOR_LOCATION_ASSIGNMENT_NOT_FOUND',
-        message: 'assignment 不存在或不属于当前租户',
-      });
-    }
+    const location = await this.locationAccess.assertLocation(actor, locationId);
     const deleted = await this.prisma.operatorLocationAssignment.deleteMany({
       where: {
         tenantId: actor.tenant_id,
         operatorId,
-        locationId,
+        locationId: location.id,
       },
     });
     if (deleted.count !== 1) {
@@ -288,11 +320,11 @@ export class UsersService {
       resourceType: 'operator_location_assignment',
       resourceId: operatorId,
       result: 'success',
-      metadata: { location_id: locationId },
+      metadata: { location_id: location.locationCode },
     });
     return {
       operator_id: operatorId,
-      location_id: locationId,
+      location_id: location.locationCode,
       status: 'revoked',
     };
   }
@@ -444,7 +476,7 @@ export class UsersService {
     return {
       operator_id: operatorId,
       locations: assignments.map(({ location }) => ({
-        location_id: location.id,
+        location_id: location.locationCode,
         location_code: location.locationCode,
         location_name: location.name,
         is_active: location.status === 'active',

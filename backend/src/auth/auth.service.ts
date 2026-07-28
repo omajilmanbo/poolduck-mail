@@ -12,6 +12,7 @@ import { LoginDto } from './dto';
 import {
   AuthenticatedUserResponse,
   AuthTokenPayload,
+  PublicAuthenticatedUserResponse,
 } from './auth.types';
 import {
   ACCESS_COOKIE_NAME,
@@ -25,6 +26,7 @@ import {
   parseLoginIdentity,
 } from './identity';
 import { LoginRateLimiterService } from './login-rate-limiter.service';
+import { normalizeTenantCode } from '../tenants/tenant-code.generator';
 
 const DUMMY_PASSWORD_HASH =
   '$argon2id$v=19$m=65536,t=3,p=4$UgDSqK4u6aW1VlnypZuvDw$+J8Xad+ShD8yU2FVCBeeihzR1/yM57cWIt76pnfF8Wk';
@@ -39,16 +41,36 @@ export class AuthService {
   ) {}
 
   async login(dto: LoginDto, sourceIp = 'unknown') {
+    const tenantCode = dto.tenant_code
+      ? normalizeTenantCode(dto.tenant_code)
+      : '';
+    const tenantLookupKey = tenantCode || dto.tenant_id || '';
     const rawIdentifier = dto.identifier ?? dto.email ?? '';
+    if (
+      (dto.tenant_id && tenantCode) ||
+      (dto.tenant_id && !this.legacyTenantUuidLoginEnabled())
+    ) {
+      await this.failLogin(
+        tenantLookupKey,
+        rawIdentifier,
+        dto.tenant_id && tenantCode
+          ? 'TENANT_IDENTIFIER_CONFLICT'
+          : 'LEGACY_TENANT_UUID_DISABLED',
+      );
+    }
     if (
       dto.identifier !== undefined &&
       dto.email !== undefined &&
       dto.identifier.trim().toLowerCase() !== normalizeEmail(dto.email)
     ) {
-      await this.failLogin(dto.tenant_id, rawIdentifier, 'IDENTIFIER_CONFLICT');
+      await this.failLogin(
+        tenantLookupKey,
+        rawIdentifier,
+        'IDENTIFIER_CONFLICT',
+      );
     }
 
-    if (!this.loginRateLimiter.allow(sourceIp, dto.tenant_id, rawIdentifier)) {
+    if (!this.loginRateLimiter.allow(sourceIp, tenantLookupKey, rawIdentifier)) {
       await this.audit.record({
         action: 'auth.login',
         resourceType: 'user',
@@ -56,7 +78,7 @@ export class AuthService {
         result: 'denied',
         metadata: {
           reason: 'RATE_LIMITED',
-          tenant_hash: this.loginRateLimiter.fingerprint(dto.tenant_id),
+          tenant_hash: this.loginRateLimiter.fingerprint(tenantLookupKey),
           identifier_hash:
             this.loginRateLimiter.fingerprint(rawIdentifier.trim().toLowerCase()),
         },
@@ -68,31 +90,31 @@ export class AuthService {
     }
 
     const identity = parseLoginIdentity(rawIdentifier);
-    const [tenant, user] = await Promise.all([
-      this.prisma.tenant.findUnique({
-        where: { id: dto.tenant_id },
-        select: { id: true },
-      }),
-      identity
-        ? this.prisma.user.findFirst({
-            where: {
-              tenantId: dto.tenant_id,
-              ...(identity.kind === 'email'
-                ? { email: identity.value }
-                : { username: identity.value, role: 'operator' }),
-            },
-            select: {
-              id: true,
-              tenantId: true,
-              username: true,
-              email: true,
-              passwordHash: true,
-              role: true,
-              status: true,
-            },
-          })
-        : Promise.resolve(null),
-    ]);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: tenantCode
+        ? { tenantCode }
+        : { id: dto.tenant_id as string },
+      select: { id: true, tenantCode: true },
+    });
+    const user = identity
+      ? await this.prisma.user.findFirst({
+          where: {
+            tenantId: tenant?.id ?? '00000000-0000-0000-0000-000000000000',
+            ...(identity.kind === 'email'
+              ? { email: identity.value }
+              : { username: identity.value, role: 'operator' }),
+          },
+          select: {
+            id: true,
+            tenantId: true,
+            username: true,
+            email: true,
+            passwordHash: true,
+            role: true,
+            status: true,
+          },
+        })
+      : null;
 
     const passwordMatches = await this.verifyPassword(
       user?.passwordHash ?? DUMMY_PASSWORD_HASH,
@@ -106,7 +128,7 @@ export class AuthService {
       !passwordMatches
     ) {
       return this.failLogin(
-        dto.tenant_id,
+        tenantLookupKey,
         rawIdentifier,
         !tenant
           ? 'TENANT_NOT_FOUND'
@@ -149,7 +171,7 @@ export class AuthService {
     return {
       ...tokens,
       expiresIn: this.accessTtlSeconds(),
-      user: this.toUserResponse(user),
+      user: this.toUserResponse({ ...user, tenantCode: tenant.tenantCode }),
     };
   }
 
@@ -174,7 +196,17 @@ export class AuthService {
       select: {
         id: true,
         refreshTokenHash: true,
-        user: { select: { id: true, tenantId: true, username: true, email: true, role: true, status: true } },
+        user: {
+          select: {
+            id: true,
+            tenantId: true,
+            username: true,
+            email: true,
+            role: true,
+            status: true,
+            tenant: { select: { tenantCode: true } },
+          },
+        },
       },
     });
     if (!session || !this.hashMatches(session.refreshTokenHash, refreshToken)) {
@@ -193,7 +225,14 @@ export class AuthService {
       data: { refreshTokenHash: this.hashToken(tokens.refreshToken), lastUsedAt: new Date() },
     });
     await this.audit.record({ tenantId: payload.tenant_id, actorUserId: payload.user_id, action: 'auth.refresh', resourceType: 'session', resourceId: session.id, result: 'success' });
-    return { ...tokens, expiresIn: this.accessTtlSeconds(), user: this.toUserResponse(session.user) };
+    return {
+      ...tokens,
+      expiresIn: this.accessTtlSeconds(),
+      user: this.toUserResponse({
+        ...session.user,
+        tenantCode: session.user.tenant.tenantCode,
+      }),
+    };
   }
 
   async logout(cookieHeader: string | undefined) {
@@ -213,7 +252,7 @@ export class AuthService {
 
   me(user: AuthenticatedUserResponse) {
     return {
-      user,
+      user: this.presentUser(user),
     };
   }
 
@@ -238,6 +277,7 @@ export class AuthService {
         email: true,
         role: true,
         status: true,
+        tenant: { select: { tenantCode: true } },
       },
     });
 
@@ -250,7 +290,10 @@ export class AuthService {
       throw this.disabledUser();
     }
 
-    return this.toUserResponse(user);
+    return this.toUserResponse({
+      ...user,
+      tenantCode: user.tenant?.tenantCode ?? '',
+    });
   }
 
   private async verifyPassword(passwordHash: string, password: string) {
@@ -367,6 +410,10 @@ export class AuthService {
     return process.env.REFRESH_TOKEN_SECRET ?? process.env.JWT_SECRET ?? 'local-development-jwt-secret';
   }
 
+  private legacyTenantUuidLoginEnabled() {
+    return process.env.AUTH_ACCEPT_LEGACY_TENANT_UUID === 'true';
+  }
+
   private hashMatches(expected: string, token: string) {
     const actual = this.hashToken(token);
     return expected.length === actual.length && timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
@@ -405,6 +452,7 @@ export class AuthService {
   private toUserResponse(user: {
     id: string;
     tenantId: string;
+    tenantCode: string;
     username: string | null;
     email: string | null;
     role: string;
@@ -412,6 +460,19 @@ export class AuthService {
     return {
       user_id: user.id,
       tenant_id: user.tenantId,
+      tenant_code: user.tenantCode,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+    };
+  }
+
+  presentUser(
+    user: AuthenticatedUserResponse,
+  ): PublicAuthenticatedUserResponse {
+    return {
+      user_id: user.user_id,
+      tenant_code: user.tenant_code ?? '',
       username: user.username,
       email: user.email,
       role: user.role,

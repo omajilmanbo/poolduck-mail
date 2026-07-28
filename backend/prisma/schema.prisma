@@ -8,6 +8,7 @@ datasource db {
 
 model Tenant {
   id                          String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantCode                  String                       @unique @map("tenant_code") @db.VarChar(10)
   name                        String                       @db.VarChar(255)
   status                      String                       @default("active") @db.VarChar(32)
   createdAt                   DateTime                     @default(now()) @map("created_at")
@@ -86,9 +87,9 @@ model Device {
 model Location {
   id                          String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tenantId                    String                       @map("tenant_id") @db.Uuid
-  locationCode                String                       @map("location_code") @db.VarChar(128)
+  locationCode                String                       @map("location_code") @db.VarChar(8)
   name                        String                       @db.VarChar(255)
-  type                        String                       @db.VarChar(32)
+  type                        String                       @default("location") @db.VarChar(32)
   status                      String                       @default("active") @db.VarChar(32)
   createdAt                   DateTime                     @default(now()) @map("created_at")
   updatedAt                   DateTime                     @updatedAt @map("updated_at")
@@ -98,11 +99,26 @@ model Location {
   mailJobs                    MailJob[]
   unmappedScanCases           UnmappedScanCase[]
   operatorLocationAssignments OperatorLocationAssignment[]
+  legacyIdentifiers           LocationLegacyIdentifier[]
 
   @@unique([tenantId, locationCode])
   @@unique([tenantId, id])
   @@index([tenantId, name])
   @@map("locations")
+}
+
+model LocationLegacyIdentifier {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  locationId   String   @map("location_id") @db.Uuid
+  legacyCode   String   @map("legacy_code") @db.VarChar(128)
+  legacyType   String   @map("legacy_type") @db.VarChar(32)
+  createdAt    DateTime @default(now()) @map("created_at")
+  location     Location @relation(fields: [tenantId, locationId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, legacyCode])
+  @@index([tenantId, locationId])
+  @@map("location_legacy_identifiers")
 }
 
 model OperatorLocationAssignment {

@@ -173,5 +173,4 @@ Issue #90 希望降低人工输入和识别成本：
 - #92：把 `location_code` 改为系统生成，统一 `type=location`，补充停用/恢复与 tenant-scoped 碰撞测试。
 - #93：新增并回填 `person_code`，迁移扫码入口并验证 person → location → tenant → mail job 的历史追溯。
 - #101：基于稳定的 `person_code` 生成二维码与 Code 128 条形码图片，并提供安全预览和下载；不扩展 #93 的数据迁移范围。
-- 在 ADR 经人工批准后，同步更新 `docs/database.md`、`docs/api.md`、`docs/architecture.md`、用户指南和管理员指南；本 Proposed 阶段不把方案写成已生效行为。
-- 人工批准前，#91、#92、#93 不得修改 schema、运行时代码或现有数据。
+- ADR 已人工批准；#91、#92、#93 分别按本决策同步数据库、API、架构、用户指南和管理员指南。

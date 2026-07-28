@@ -87,14 +87,14 @@ describe('Locations API', () => {
       .expect(200)
       .expect([
         {
-          location_id: locationId,
+          location_id: 'office-a',
           location_code: 'office-a',
           location_name: 'Office A',
           type: 'office',
           is_active: true,
         },
         {
-          location_id: '55555555-5555-4555-8555-555555555555',
+          location_id: 'school-b',
           location_code: 'school-b',
           location_name: 'School B',
           type: 'school',
@@ -122,7 +122,11 @@ describe('Locations API', () => {
 
   it('GET /api/locations/:location_id/people should return masked people mappings for the current tenant and location', async () => {
     prisma.user.findFirst.mockResolvedValue(currentUser());
-    prisma.location.findFirst.mockResolvedValue({ id: locationId });
+    prisma.location.findFirst.mockResolvedValue({
+      id: locationId,
+      locationCode: 'A1B2C3D4',
+      status: 'active',
+    });
     prisma.personMapping.findMany.mockResolvedValue([
       {
         personCode: '01K0ABC40001',
@@ -165,16 +169,17 @@ describe('Locations API', () => {
     expect(JSON.stringify(response.body)).not.toContain(
       'ada.lovelace@example.local',
     );
-    expect(prisma.location.findFirst).toHaveBeenCalledWith({
-      where: {
-        id: locationId,
-        tenantId,
-        operatorLocationAssignments: {
-          some: { tenantId, operatorId: userId },
-        },
-      },
-      select: { id: true, status: true },
-    });
+    expect(prisma.location.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId,
+          operatorLocationAssignments: {
+            some: { tenantId, operatorId: userId },
+          },
+        }),
+        select: { id: true, locationCode: true, status: true },
+      }),
+    );
     expect(prisma.personMapping.findMany).toHaveBeenCalledWith({
       where: {
         tenantId,

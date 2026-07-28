@@ -32,15 +32,15 @@ export class MailJobsService {
     user: AuthenticatedUserResponse,
     query: ListMailJobsDto,
   ): Promise<MailJobListResponse> {
-    if (query.location_id) {
-      await this.locationAccess.assertLocation(user, query.location_id);
-    }
+    const selectedLocation = query.location_id
+      ? await this.locationAccess.assertLocation(user, query.location_id)
+      : null;
 
     const cursor = this.decodeCursor(query.cursor);
     const where: Prisma.MailJobWhereInput = {
       tenantId: user.tenant_id,
       ...(query.status ? { status: query.status } : {}),
-      ...(query.location_id ? { locationId: query.location_id } : {}),
+      ...(selectedLocation ? { locationId: selectedLocation.id } : {}),
       ...(!query.location_id
         ? this.locationAccess.resourceLocationWhere(user)
         : {}),
@@ -103,16 +103,16 @@ export class MailJobsService {
   }
 
   async exportMailJobs(user: AuthenticatedUserResponse, query: ExportMailJobsDto) {
-    if (query.location_id) {
-      await this.locationAccess.assertLocation(user, query.location_id);
-    }
+    const selectedLocation = query.location_id
+      ? await this.locationAccess.assertLocation(user, query.location_id)
+      : null;
     const range = this.assertExportRange(query.created_from, query.created_to);
     const rows = await this.prisma.mailJob.findMany({
       where: {
         tenantId: user.tenant_id,
         createdAt: { gte: range.from, lte: range.to },
         ...(query.status ? { status: query.status } : {}),
-        ...(query.location_id ? { locationId: query.location_id } : {}),
+        ...(selectedLocation ? { locationId: selectedLocation.id } : {}),
         ...(!query.location_id
           ? this.locationAccess.resourceLocationWhere(user)
           : {}),
@@ -391,6 +391,7 @@ export class MailJobsService {
       personCodeSnapshot: true,
       actionSnapshot: true,
       contextSnapshotSource: true,
+      location: { select: { locationCode: true } },
       scanEvent: {
         select: {
           id: true,
@@ -418,6 +419,7 @@ export class MailJobsService {
     actionSnapshot: string;
     contextSnapshotSource: string;
     locationId: string;
+    location: { locationCode: string };
     scanEvent: {
       id: string;
       scanCode: string;
@@ -444,7 +446,7 @@ export class MailJobsService {
       },
       scan_event: {
         scan_event_id: row.scanEvent.id,
-        location_id: row.locationId,
+        location_id: row.location.locationCode,
         location_name: row.locationNameSnapshot,
         person_code: row.personCodeSnapshot,
         action: row.scanEvent.action as MailJobHistoryItem['scan_event']['action'],

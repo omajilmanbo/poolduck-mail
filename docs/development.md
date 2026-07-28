@@ -79,18 +79,20 @@
 只使用 Local/Staging 合成账号：
 
 1. 执行最新 migration 与 `local:seed`，用
-   `tenant_id=11111111-1111-4111-8111-111111111111`、
+   `tenant_code=10CA000001`、
    `identifier=local-operator` 登录，确认 operator username 登录成功。
 2. 使用同一 operator 的 `operator@example.local` 登录，确认可选邮箱路径成功；使用
    `tenant-manager@example.local` 确认 tenant_manager 邮箱登录成功。
 3. 以 tenant_manager 进入“用户管理”，创建只有 username、没有邮箱的 operator；退出后使用该 username
    登录。补充邮箱后确认两种身份均可登录，清空邮箱后确认只有 username 可登录。
 4. 修改 operator username，确认旧会话立即失效、旧 username 登录失败、新 username 可登录。
-5. 尝试同 tenant 大小写重复 username/email、保留字、Unicode username、跨 tenant 身份和错误密码，
+5. 尝试 UUID tenant_id、未知/大小写 tenant_code、同 tenant 大小写重复 username/email、保留字、Unicode username、跨 tenant 身份和错误密码，
    确认创建冲突明确，而登录统一返回 `LOGIN_FAILED` 且不显示账号类型或存在性。
 6. 在 active/trial/suspended/expired 合成订阅下确认登录本身不受订阅状态影响；业务发送门禁仍分别按
    `can_send=true/true/false/false` 工作。
 7. 停止后端后提交登录，确认前端显示网络错误；恢复后端后重新登录，不应保留密码输入。
+8. 默认确认 UUID tenant_id 登录返回统一 `LOGIN_FAILED`；仅在隔离回滚验证中临时设置
+   `AUTH_ACCEPT_LEGACY_TENANT_UUID=true`，确认旧 UUID 可双读后立即恢复为 `false`。
 
 自动验证至少运行：
 

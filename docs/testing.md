@@ -23,7 +23,7 @@
 - operator 生命周期：仅 tenant_manager 可用、跨 tenant/tenant_manager 目标统一拒绝、重复
   username/email、保留字/Unicode、8 位字母数字密码边界、身份修改/禁用/重置会话撤销、响应不含
   passwordHash
-- 登录身份：username/email 双模式、无邮箱 operator、tenant_manager email-only、大小写规范化、统一
+- 登录身份：10 位 tenant_code 回填与大小写规范化、UUID tenant_id 拒绝、username/email 双模式、无邮箱 operator、tenant_manager email-only、统一
   `LOGIN_FAILED`、伪哈希路径、限流与旧 `email` 请求字段兼容
 - 未授权访问拦截
 - 输入参数校验与错误码一致性
@@ -62,10 +62,10 @@ seed 数据仅使用 `example.local` 邮箱和固定 UUID，不包含真实客�
 
 核心 seed 值：
 
-- `tenant_id`: `11111111-1111-4111-8111-111111111111`
+- `tenant_code`: `10CA000001`（内部 tenant UUID 不作为登录输入）
 - `operator@example.local` / `PoolduckLocal123!`
 - `tenant-manager@example.local` / `PoolduckLocal123!`
-- `location_id`: `66666666-6666-4666-8666-666666666666`
+- `location_id`: `10CA1001`（公开地点 ID；内部 UUID 仅用于数据库追溯）
 - active `person_code`: `01K0ABC10001`；进入动作码：`PD1|ENTRY|01K0ABC10001`；离开动作码：`PD1|EXIT|01K0ABC10001`
 - unmapped 动作码：`PD1|ENTRY|01K0ABC19999`
 
@@ -147,6 +147,23 @@ Issue #60 后，本地 GUI 黑盒前应额外验证容器组形态：
 4. 修改人员或地点名称后重新读取旧邮件任务，确认 `context` 未变化。
 5. 在另一个 location 或 tenant 扫描同一人员动作码，确认返回统一未映射/不存在结果且未创建 mail job。
 6. 在一次性数据库运行 `backend/prisma/rollback/20260724000000_add_person_codes_and_mail_context.sql`，确认 `scan_code`、UUID、人员映射、扫码事件和邮件任务行仍保留；禁止在未备份或仍有写流量的数据库直接回滚。
+
+### 4.6a Issue #92 地点 ID、统一类型与重新启用验证
+
+- 创建：tenant_manager 仅提交地点名称，响应 `location_id=location_code` 且符合 8 位大写 Crockford Base32，`type=location`；客户端提交 ID/code/type 返回 `400`
+- 碰撞与名称：同 tenant 名称按 trim 后大小写不敏感拒绝重名；不同 tenant 可使用同名。模拟 ID 唯一冲突最多重试 5 次，耗尽返回 `LOCATION_CODE_GENERATION_EXHAUSTED`
+- 迁移：旧 code/type 保存到兼容表，所有旧地点转为 `type=location`；person、scan、mail、assignment 与 unmapped 的内部 `location_id` UUID 不改写，历史关联数量一致
+- 权限与隔离：operator 不能创建、编辑、停用或启用地点；公开地点 ID、旧 ID 或 UUID 的兼容解析始终先限定 token tenant 与 operator assignment
+- 启停：地点停用安全终止 queued 邮件，重新启用后恢复新扫描/人员写入；人员停用与重新启用保留同一 `person_code` 和历史。人员所属地点 inactive 时不得重新启用人员
+- 商业边界：不配置价格、allowance、付款或 #102 数据，地点创建与重新启用仍成功
+
+人工步骤：
+
+1. 在合成数据库备份后执行 migration 和 seed，记录旧地点 UUID 与关联行数；验证新地点码、固定类型、兼容表和关联行数。
+2. 用 tenant_manager 打开地点管理，只输入名称创建地点；确认页面没有地点代码输入和 office/school 选择。
+3. 停用并重新启用地点，确认 ID 不变；在人员管理停用并重新启用人员，确认 `person_code` 和历史不变。
+4. 用 operator 和其他 tenant 的地点码重复上述写操作，确认统一拒绝且无跨 tenant 数据变化。
+5. 在一次性数据库运行 `backend/prisma/rollback/20260728000000_generate_location_codes.sql`，确认旧 code/type 恢复且 UUID 关系未改写。
 
 ### 4.7 Issue #95 进出动作一致性验证
 
@@ -233,6 +250,7 @@ npm run test:e2e
 - `PD1|ENTRY|01K0ABC10001` 创建 mail_job 并显示“进入”，自动触发 sandbox，按 CI matrix 验证“已发送”或“等待重试/发送失败”
 - `PD1|EXIT|01K0ABC10001` 在冲突窗口外创建离开记录并使用“退室”正文
 - 页面刷新后从 tenant-scoped API 恢复历史记录
+- 当前 location 的扫码记录首列显示人员名称，不重复显示地点；缺少人员名称的历史记录安全显示 `-`
 - Tenant A token 不能用 Tenant B location 查询历史
 - suspended tenant 登录后扫码输入和提交按钮禁用
 

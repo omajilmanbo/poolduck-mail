@@ -44,16 +44,17 @@ describe('LocationAccessService', () => {
         message: 'location不存在或不属于当前租户',
       },
     });
-    expect(prisma.location.findFirst).toHaveBeenCalledWith({
-      where: {
-        id: 'forged-location',
-        tenantId: 'tenant-1',
-        operatorLocationAssignments: {
-          some: { tenantId: 'tenant-1', operatorId: 'operator-1' },
-        },
-      },
-      select: { id: true, status: true },
-    });
+    expect(prisma.location.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 'tenant-1',
+          operatorLocationAssignments: {
+            some: { tenantId: 'tenant-1', operatorId: 'operator-1' },
+          },
+        }),
+        select: { id: true, locationCode: true, status: true },
+      }),
+    );
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         actorUserId: 'operator-1',

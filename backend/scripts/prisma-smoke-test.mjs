@@ -27,9 +27,18 @@ function createPersonCode() {
   return encodeBase32(seconds, 7) + encodeBase32(random, 5);
 }
 
+function createLocationCode() {
+  return [...randomBytes(8)].map((value) => alphabet[value & 31]).join("");
+}
+
+function createTenantCode() {
+  return [...randomBytes(10)].map((value) => alphabet[value & 31]).join("");
+}
+
 async function main() {
   const tenant = await prisma.tenant.create({
     data: {
+      tenantCode: createTenantCode(),
       name: `Smoke Tenant ${suffix}`,
       status: "active",
     },
@@ -70,9 +79,9 @@ async function main() {
   const location = await prisma.location.create({
     data: {
       tenantId: tenant.id,
-      locationCode: `OFFICE_${suffix}`,
+      locationCode: createLocationCode(),
       name: "Smoke Office",
-      type: "office",
+      type: "location",
       status: "active",
     },
   });

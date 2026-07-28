@@ -3,15 +3,28 @@ import {
   IsNotEmpty,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   ValidateIf,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class LoginDto {
+  @ValidateIf(
+    (dto: LoginDto) =>
+      dto.tenant_code !== undefined || dto.tenant_id === undefined,
+  )
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
   @IsString()
   @IsNotEmpty()
+  @Matches(/^[0-9ABCDEFGHJKMNPQRSTVWXYZ]{10}$/)
+  tenant_code?: string;
+
+  @ValidateIf((dto: LoginDto) => dto.tenant_id !== undefined)
   @IsUUID()
-  tenant_id!: string;
+  tenant_id?: string;
 
   @ValidateIf(
     (dto: LoginDto) =>

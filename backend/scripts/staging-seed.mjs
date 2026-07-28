@@ -23,6 +23,7 @@ const expiredEndAt = new Date("2025-12-31T23:59:59.000Z");
 const tenants = [
   {
     id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    tenantCode: "5A6E000001",
     name: "Poolduck Staging Active Tenant",
     subscriptionStatus: "active",
     operator: {
@@ -36,9 +37,9 @@ const tenants = [
     },
     location: {
       id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-      code: "STG-ACTIVE-OFFICE",
+      code: "5A6E0001",
       name: "Staging Active Office",
-      type: "office",
+      type: "location",
     },
     mapping: {
       id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
@@ -49,6 +50,7 @@ const tenants = [
   },
   {
     id: "11111112-1112-4112-8112-111111111112",
+    tenantCode: "5A6E000002",
     name: "Poolduck Staging Suspended Tenant",
     subscriptionStatus: "suspended",
     operator: {
@@ -62,9 +64,9 @@ const tenants = [
     },
     location: {
       id: "44444445-4445-4445-8445-444444444445",
-      code: "STG-SUSPENDED-OFFICE",
+      code: "5A6E0002",
       name: "Staging Suspended Office",
-      type: "office",
+      type: "location",
     },
     mapping: {
       id: "55555556-5556-4556-8556-555555555556",
@@ -75,6 +77,7 @@ const tenants = [
   },
   {
     id: "66666667-6667-4667-8667-666666666667",
+    tenantCode: "5A6E000003",
     name: "Poolduck Staging Expired Tenant",
     subscriptionStatus: "expired",
     operator: {
@@ -88,9 +91,9 @@ const tenants = [
     },
     location: {
       id: "99999990-9990-4990-8990-999999999990",
-      code: "STG-EXPIRED-OFFICE",
+      code: "5A6E0003",
       name: "Staging Expired Office",
-      type: "office",
+      type: "location",
     },
     mapping: {
       id: "abababab-abab-4bab-8bab-abababababab",
@@ -129,7 +132,7 @@ async function upsertLocation({ id, tenantId, code, name, type }) {
   const existing = await prisma.location.findFirst({
     where: {
       tenantId,
-      locationCode: code,
+      OR: [{ id }, { locationCode: code }],
     },
     select: { id: true },
   });
@@ -226,11 +229,13 @@ async function seedTenant(tenant, passwordHash) {
   await prisma.tenant.upsert({
     where: { id: tenant.id },
     update: {
+      tenantCode: tenant.tenantCode,
       name: tenant.name,
       status: "active",
     },
     create: {
       id: tenant.id,
+      tenantCode: tenant.tenantCode,
       name: tenant.name,
       status: "active",
     },
@@ -306,7 +311,7 @@ async function main() {
       {
         password,
         tenants: tenants.map((tenant) => ({
-          tenant_id: tenant.id,
+          tenant_code: tenant.tenantCode,
           subscription_status: tenant.subscriptionStatus,
           operator_username: tenant.operator.username,
           operator_email: tenant.operator.email,

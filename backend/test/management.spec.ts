@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { LocationCodeGenerator } from '../src/locations/location-code.generator';
 import { PersonCodeGenerator } from '../src/locations/person-code.generator';
 import { PrismaService } from '../src/prisma.service';
 
@@ -10,6 +11,7 @@ describe('Location and person mapping management', () => {
   let app: INestApplication;
   let jwtService: JwtService;
   let personCodeGenerator: PersonCodeGenerator;
+  let locationCodeGenerator: LocationCodeGenerator;
   let prisma: {
     $transaction: jest.Mock;
     user: { findFirst: jest.Mock };
@@ -18,6 +20,7 @@ describe('Location and person mapping management', () => {
       create: jest.Mock;
       update: jest.Mock;
     };
+    locationLegacyIdentifier: { findFirst: jest.Mock };
     personMapping: {
       findFirst: jest.Mock;
       create: jest.Mock;
@@ -46,6 +49,7 @@ describe('Location and person mapping management', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
+      locationLegacyIdentifier: { findFirst: jest.fn().mockResolvedValue(null) },
       personMapping: {
         findFirst: jest.fn(),
         create: jest.fn(),
@@ -61,7 +65,9 @@ describe('Location and person mapping management', () => {
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get(JwtService);
     personCodeGenerator = moduleFixture.get(PersonCodeGenerator);
+    locationCodeGenerator = moduleFixture.get(LocationCodeGenerator);
     jest.spyOn(personCodeGenerator, 'generate').mockReturnValue(personCode);
+    jest.spyOn(locationCodeGenerator, 'generate').mockReturnValue('ABCD1234');
     await app.init();
   });
 
@@ -69,7 +75,7 @@ describe('Location and person mapping management', () => {
 
   it.each(['operator', 'tenant_manager'])('allows %s to create a mapping in an active tenant location', async (role) => {
     authenticate(role);
-    prisma.location.findFirst.mockResolvedValue({ id: locationId, status: 'active' });
+    prisma.location.findFirst.mockResolvedValue({ id: locationId, locationCode: 'ABCD1234', status: 'active' });
     prisma.personMapping.create.mockImplementation(({ data }) =>
       Promise.resolve(personRow('active', data.personCode)),
     );
@@ -83,7 +89,7 @@ describe('Location and person mapping management', () => {
         person_id: personCode,
         person_code: personCode,
         scan_code: personCode,
-        location_id: locationId,
+        location_id: 'ABCD1234',
         email: 'person@example.local',
         email_masked: 'p***n@example.local',
         is_active: true,
@@ -136,7 +142,7 @@ describe('Location and person mapping management', () => {
 
   it('soft-deactivates a mapping and preserves its identity', async () => {
     authenticate('operator');
-    prisma.location.findFirst.mockResolvedValue({ id: locationId, status: 'active' });
+    prisma.location.findFirst.mockResolvedValue({ id: locationId, locationCode: 'ABCD1234', status: 'active' });
     prisma.personMapping.findFirst.mockResolvedValue({ id: personId, personCode });
     prisma.personMapping.update.mockResolvedValue(personRow('inactive'));
 
@@ -157,7 +163,7 @@ describe('Location and person mapping management', () => {
 
   it('retries person_code collisions and never records the collided code in audit metadata', async () => {
     authenticate('operator');
-    prisma.location.findFirst.mockResolvedValue({ id: locationId, status: 'active' });
+    prisma.location.findFirst.mockResolvedValue({ id: locationId, locationCode: 'ABCD1234', status: 'active' });
     jest
       .spyOn(personCodeGenerator, 'generate')
       .mockReturnValueOnce('01K0ABC30002')
@@ -186,24 +192,25 @@ describe('Location and person mapping management', () => {
     await request(app.getHttpServer())
       .post('/api/locations')
       .set('Authorization', `Bearer ${token('operator')}`)
-      .send({ location_code: 'OFFICE-B', location_name: 'Office B', type: 'office' })
+      .send({ location_name: 'Office B' })
       .expect(403);
 
     authenticate('tenant_manager');
+    prisma.location.findFirst.mockResolvedValueOnce(null);
     prisma.location.create.mockResolvedValue(locationRow('active'));
     await request(app.getHttpServer())
       .post('/api/locations')
       .set('Authorization', `Bearer ${token('tenant_manager')}`)
-      .send({ location_code: 'OFFICE-B', location_name: 'Office B', type: 'office' })
+      .send({ location_name: 'Office B' })
       .expect(201);
 
-    prisma.location.findFirst.mockResolvedValue({ id: locationId, status: 'active' });
+    prisma.location.findFirst.mockResolvedValue({ id: locationId, locationCode: 'ABCD1234', status: 'active' });
     prisma.location.update.mockResolvedValue(locationRow('inactive'));
     const response = await request(app.getHttpServer())
       .delete(`/api/locations/${locationId}`)
       .set('Authorization', `Bearer ${token('tenant_manager')}`)
       .expect(200);
-    expect(response.body).toEqual(expect.objectContaining({ location_id: locationId, is_active: false }));
+    expect(response.body).toEqual(expect.objectContaining({ location_id: 'ABCD1234', type: 'location', is_active: false }));
 
     expect(prisma.mailJob.updateMany).toHaveBeenCalledWith({
       where: {
@@ -213,6 +220,96 @@ describe('Location and person mapping management', () => {
       },
       data: { status: 'failed', errorMessage: 'LOCATION_INACTIVE' },
     });
+  });
+
+  it('rejects client-supplied location IDs/types and same-tenant duplicate names', async () => {
+    authenticate('tenant_manager');
+    await request(app.getHttpServer())
+      .post('/api/locations')
+      .set('Authorization', `Bearer ${token('tenant_manager')}`)
+      .send({
+        location_name: 'Office B',
+        location_code: 'FORGED01',
+        type: 'office',
+      })
+      .expect(400);
+
+    prisma.location.findFirst.mockResolvedValue({ id: locationId });
+    const response = await request(app.getHttpServer())
+      .post('/api/locations')
+      .set('Authorization', `Bearer ${token('tenant_manager')}`)
+      .send({ location_name: ' office b ' })
+      .expect(409);
+    expect(response.body).toMatchObject({ code: 'LOCATION_NAME_CONFLICT' });
+    expect(prisma.location.create).not.toHaveBeenCalled();
+  });
+
+  it('retries location ID collisions five times without accepting an override', async () => {
+    authenticate('tenant_manager');
+    prisma.location.findFirst.mockResolvedValue(null);
+    prisma.location.create.mockRejectedValue({ code: 'P2002' });
+
+    const response = await request(app.getHttpServer())
+      .post('/api/locations')
+      .set('Authorization', `Bearer ${token('tenant_manager')}`)
+      .send({ location_name: 'Office B' })
+      .expect(503);
+
+    expect(response.body).toMatchObject({
+      code: 'LOCATION_CODE_GENERATION_EXHAUSTED',
+    });
+    expect(prisma.location.create).toHaveBeenCalledTimes(5);
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'location.code_generation_failed',
+        metadataJson: { collision_retries: 5 },
+      }),
+    });
+  });
+
+  it('reactivates inactive locations and people while preserving internal IDs', async () => {
+    authenticate('tenant_manager');
+    prisma.location.findFirst.mockResolvedValue({
+      id: locationId,
+      locationCode: 'ABCD1234',
+      status: 'inactive',
+    });
+    prisma.location.update.mockResolvedValue(locationRow('active'));
+
+    const locationResponse = await request(app.getHttpServer())
+      .post('/api/locations/ABCD1234/reactivate')
+      .set('Authorization', `Bearer ${token('tenant_manager')}`)
+      .expect(201);
+    expect(locationResponse.body).toEqual(
+      expect.objectContaining({
+        location_id: 'ABCD1234',
+        is_active: true,
+      }),
+    );
+
+    prisma.location.findFirst.mockResolvedValue({
+      id: locationId,
+      locationCode: 'ABCD1234',
+      status: 'active',
+    });
+    prisma.personMapping.findFirst.mockResolvedValue({
+      id: personId,
+      personCode,
+      status: 'inactive',
+    });
+    prisma.personMapping.update.mockResolvedValue(personRow('active'));
+
+    const personResponse = await request(app.getHttpServer())
+      .post(`/api/locations/ABCD1234/people/${personCode}/reactivate`)
+      .set('Authorization', `Bearer ${token('tenant_manager')}`)
+      .expect(201);
+    expect(personResponse.body).toEqual(
+      expect.objectContaining({
+        person_id: personCode,
+        location_id: 'ABCD1234',
+        is_active: true,
+      }),
+    );
   });
 
   function authenticate(role: string) {
@@ -243,9 +340,9 @@ describe('Location and person mapping management', () => {
   function locationRow(status: string) {
     return {
       id: locationId,
-      locationCode: 'OFFICE-B',
+      locationCode: 'ABCD1234',
       name: 'Office B',
-      type: 'office',
+      type: 'location',
       status,
     };
   }

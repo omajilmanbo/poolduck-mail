@@ -76,7 +76,7 @@ describe('frontend API client', () => {
 
     await expect(
       client.login({
-        tenant_id: '11111111-1111-4111-8111-111111111111',
+        tenant_code: '10CA000001',
         identifier: 'local-operator',
         password: 'PoolduckLocal123!',
       }),
@@ -89,7 +89,7 @@ describe('frontend API client', () => {
 
     await expect(
       client.login({
-        tenant_id: '11111111-1111-4111-8111-111111111111',
+        tenant_code: '10CA000001',
         identifier: 'local-operator',
         password: 'PoolduckLocal123!',
       }),

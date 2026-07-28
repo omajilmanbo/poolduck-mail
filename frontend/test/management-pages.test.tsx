@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import PeoplePage, { canManagePeople } from '../app/people/page';
-import { canManageLocations } from '../app/locations/page';
+import LocationsPage, { canManageLocations } from '../app/locations/page';
 
 const locationId = '44444444-4444-4444-8444-444444444444';
 const personId = '01K0ABC70001';
@@ -53,6 +53,57 @@ describe('management pages', () => {
     expect(canManageLocations('operator')).toBe(false);
     expect(canManagePeople('operator')).toBe(true);
     expect(canManagePeople('viewer')).toBe(false);
+  });
+
+  it('creates a location from its name only and reactivates inactive locations', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/auth/me')) return json({ user: { role: 'tenant_manager' } });
+      if (url.endsWith('/api/locations') && init?.method === 'POST') {
+        expect(JSON.parse(String(init.body))).toEqual({ location_name: 'Tokyo' });
+        return json({ location_id: 'A1B2C3D4', location_code: 'A1B2C3D4', location_name: 'Tokyo', type: 'location', is_active: true });
+      }
+      if (url.endsWith('/api/locations')) return json([{ location_id: 'A1B2C3D4', location_code: 'A1B2C3D4', location_name: 'Tokyo', type: 'location', is_active: false }]);
+      if (url.endsWith('/api/locations/A1B2C3D4/reactivate')) return json({ is_active: true });
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.stubGlobal('fetch', fetchMock);
+    render(<LocationsPage />);
+
+    expect(await screen.findByText('A1B2C3D4')).not.toBeNull();
+    expect(screen.queryByPlaceholderText('地点代码')).toBeNull();
+    expect(screen.queryByText('office')).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText('地点名称'), { target: { value: 'Tokyo' } });
+    fireEvent.click(screen.getByRole('button', { name: '新增地点' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/locations'),
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ location_name: 'Tokyo' }) }),
+    ));
+    fireEvent.click(screen.getByRole('button', { name: '重新启用' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/locations/A1B2C3D4/reactivate'),
+      expect.objectContaining({ method: 'POST' }),
+    ));
+  });
+
+  it('reactivates an inactive person from the people page', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/auth/me')) return json({ user: { role: 'operator' } });
+      if (url.endsWith('/api/locations')) return json([{ location_id: locationId, location_code: 'A1B2C3D4', location_name: 'Tokyo', type: 'location', is_active: true }]);
+      if (url.endsWith(`/people/${personId}/reactivate`) && init?.method === 'POST') return json({ is_active: true });
+      if (url.endsWith('/people')) return json([{ person_id: personId, person_code: personId, person_name: 'Person', scan_code: personId, email_masked: 'p***n@example.local', is_active: false }]);
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.stubGlobal('fetch', fetchMock);
+    render(<PeoplePage />);
+    fireEvent.click(await screen.findByRole('button', { name: '重新启用' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/people/${personId}/reactivate`),
+      expect.objectContaining({ method: 'POST' }),
+    ));
   });
 });
 

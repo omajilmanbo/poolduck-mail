@@ -31,14 +31,20 @@ export class AuthController {
       request.ip ?? request.socket?.remoteAddress ?? 'unknown',
     );
     this.setSessionCookies(response, session.accessToken, session.refreshToken);
-    return { expires_in: session.expiresIn, user: session.user };
+    return {
+      expires_in: session.expiresIn,
+      user: this.authService.presentUser(session.user),
+    };
   }
 
   @Post('refresh')
   async refresh(@Req() request: HttpRequest, @Res({ passthrough: true }) response: HttpResponse) {
     const session = await this.authService.refresh(request.headers.cookie);
     this.setSessionCookies(response, session.accessToken, session.refreshToken);
-    return { expires_in: session.expiresIn, user: session.user };
+    return {
+      expires_in: session.expiresIn,
+      user: this.authService.presentUser(session.user),
+    };
   }
 
   @Post('logout')

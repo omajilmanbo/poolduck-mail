@@ -7,6 +7,7 @@
 > 用法：租户主表，代表一个独立客户组织；用于多租户数据隔离与计费归属的顶层边界。
 
 - `id` (pk, uuid)
+- `tenant_code` (varchar(10), unique) - 服务端生成的全局唯一 Crockford Base32 登录标识；不可由客户指定或修改
 - `name` (varchar)
 - `status` (varchar) - active/suspended
 - `created_at` (timestamp)
@@ -80,14 +81,14 @@
 
 - `id` (pk, uuid)
 - `tenant_id` (fk -> tenants.id)
-- `location_code` (varchar) - 业务可读编码，如 OFFICE_A / SCHOOL_1
-- `name` (varchar) - 办公室/学校名称
-- `type` (varchar) - office/school
+- `location_code` (varchar(8)) - 服务端生成的大写 Crockford Base32 公开业务 ID；tenant 内唯一
+- `name` (varchar) - 地点名称；服务层按去除首尾空白、大小写不敏感的 tenant 内规则拒绝重名
+- `type` (varchar) - 固定为 `location`
 - `status` (varchar) - active/inactive
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
 
-> 说明：为满足“扫码前先切换办公室/校舍”，`locations` 作为租户内的唯一正式上下文命名。
+> 说明：`locations.id` UUID 继续作为主外键，普通 API 不返回该 UUID。迁移把旧 code/type 保存到 `location_legacy_identifiers`，再回填 8 位公开 ID 与固定类型；所有历史关联保持内部 UUID 不变。
 
 ## 6a. operator_location_assignments
 
@@ -152,6 +153,8 @@
 - `sent_at` (timestamp, nullable)
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
+
+> `id` 继续作为所有内部主外键目标；普通登录只提交 `tenant_code`。迁移按 `created_at, id` 稳定顺序回填旧 tenant，最多重试 5 次，并保留 UUID 关系用于回滚。
 
 ## 9. scan_request_idempotency
 

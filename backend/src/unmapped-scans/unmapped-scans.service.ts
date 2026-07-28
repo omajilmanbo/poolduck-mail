@@ -15,13 +15,13 @@ export class UnmappedScansService {
   ) {}
 
   async list(user: AuthenticatedUserResponse, query: ListUnmappedScansDto) {
-    if (query.location_id) {
-      await this.locationAccess.assertLocation(user, query.location_id);
-    }
+    const selectedLocation = query.location_id
+      ? await this.locationAccess.assertLocation(user, query.location_id)
+      : null;
     const rows = await this.prisma.unmappedScanCase.findMany({
       where: {
         tenantId: user.tenant_id,
-        ...(query.location_id ? { locationId: query.location_id } : {}),
+        ...(selectedLocation ? { locationId: selectedLocation.id } : {}),
         ...(!query.location_id
           ? this.locationAccess.resourceLocationWhere(user)
           : {}),
@@ -134,7 +134,7 @@ export class UnmappedScansService {
       handledByUserId: true,
       handledAt: true,
       locationId: true,
-      location: { select: { name: true, status: true } },
+      location: { select: { locationCode: true, name: true, status: true } },
       scanEvent: {
         select: { id: true, scanCode: true, receivedAt: true },
       },
@@ -147,14 +147,14 @@ export class UnmappedScansService {
     handledByUserId: string | null;
     handledAt: Date | null;
     locationId: string | null;
-    location: { name: string; status: string } | null;
+    location: { locationCode: string; name: string; status: string } | null;
     scanEvent: { id: string; scanCode: string; receivedAt: Date };
   }): UnmappedScanCaseResponse {
     const locationActive = row.location?.status === 'active';
     return {
       case_id: row.id,
       scan_event_id: row.scanEvent.id,
-      location_id: row.locationId,
+      location_id: row.location?.locationCode ?? null,
       location_name: row.location?.name ?? null,
       location_active: locationActive,
       scan_code: row.scanEvent.scanCode,

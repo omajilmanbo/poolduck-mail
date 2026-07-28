@@ -11,7 +11,7 @@ Poolduck Mail 是面向企业客户的 Web SaaS。用户使用扫码枪提交条
 
 ## 核心流程
 
-1. 用户使用 `tenant_id + 用户名/邮箱 + password` 登录；operator 使用用户名或可选邮箱，
+1. 用户使用 `tenant_code + 用户名/邮箱 + password` 登录；operator 使用用户名或可选邮箱，
    tenant_manager 使用邮箱。
 2. 用户选择当前办公室、学校或校舍（统一抽象为 `location`）。
 3. 扫码枪提交扫码编号。

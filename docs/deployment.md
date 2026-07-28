@@ -192,13 +192,23 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T -e AP
 
 `npm run staging:seed` writes only synthetic `.example.local` data and is idempotent. It prepares fixed active, suspended, and expired tenants for Staging verification:
 
-| Subscription | Tenant ID | Operator | Password | Location ID | Scan code |
+| Subscription | Tenant code | Operator | Password | Location ID | Scan code |
 |---|---|---|---|---|---|
-| active | `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa` | `staging-active-operator@example.local` | `PoolduckStaging123!` | `dddddddd-dddd-4ddd-8ddd-dddddddddddd` | `01K0ABC20001` |
-| suspended | `11111112-1112-4112-8112-111111111112` | `staging-suspended-operator@example.local` | `PoolduckStaging123!` | `44444445-4445-4445-8445-444444444445` | `01K0ABC20002` |
-| expired | `66666667-6667-4667-8667-666666666667` | `staging-expired-operator@example.local` | `PoolduckStaging123!` | `99999990-9990-4990-8990-999999999990` | `01K0ABC20003` |
+| active | `5A6E000001` | `staging-active-operator` | `PoolduckStaging123!` | `5A6E0001` | `01K0ABC20001` |
+| suspended | `5A6E000002` | `staging-suspended-operator` | `PoolduckStaging123!` | `5A6E0002` | `01K0ABC20002` |
+| expired | `5A6E000003` | `staging-expired-operator` | `PoolduckStaging123!` | `5A6E0003` | `01K0ABC20003` |
 
 The Staging seed must not be run against Production or any database containing real customer data.
+
+Issue #91 tenant-code cutover and rollback:
+
+1. 部署前备份 Staging 数据库，并确认 `AUTH_ACCEPT_LEGACY_TENANT_UUID=false`。
+2. `db:deploy` 回填并约束 10 位 `tenant_code`；`staging:seed` 把上述合成 tenant 更新为固定测试码。
+3. 验证短码登录成功、UUID 登录统一失败、JWT/session 中 tenant scope 仍为服务端解析的内部 UUID。
+4. 若切换失败，先临时设置 `AUTH_ACCEPT_LEGACY_TENANT_UUID=true` 并重建 backend，恢复旧 UUID 登录；
+   修复或回滚应用后，才可运行
+   `backend/prisma/rollback/20260728010000_add_tenant_codes.sql`。不得先删除仍被当前应用依赖的列。
+5. 恢复完成后将兼容开关重置为 `false`；不得长期保留双读。
 
 For sandbox/mock failure-path verification, temporarily set `MAIL_MOCK_SEND_RESULT=failure`, recreate Backend, run the smoke test with `API_SMOKE_EXPECT_SEND_STATUS=failed`, then restore `MAIL_MOCK_SEND_RESULT=success`.
 
@@ -269,10 +279,10 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
 docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T backend npm run staging:seed
 docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T \
   -e API_BASE_URL=http://reverse-proxy \
-  -e API_SMOKE_TENANT_ID=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa \
-  -e API_SMOKE_EMAIL=staging-active-operator@example.local \
+  -e API_SMOKE_TENANT_CODE=5A6E000001 \
+  -e API_SMOKE_IDENTIFIER=staging-active-operator \
   -e API_SMOKE_PASSWORD=PoolduckStaging123! \
-  -e API_SMOKE_LOCATION_ID=dddddddd-dddd-4ddd-8ddd-dddddddddddd \
+  -e API_SMOKE_LOCATION_ID=5A6E0001 \
   -e 'API_SMOKE_SCAN_CODE=PD1|ENTRY|01K0ABC20001' \
   -e 'API_SMOKE_UNMAPPED_SCAN_CODE=PD1|ENTRY|01K0ABC29999' \
   backend npm run smoke:api
@@ -411,7 +421,7 @@ The smoke test list is intended to become later automated E2E coverage:
 1. Infrastructure health: Staging host responds over SSH from the allowed admin CIDR.
 2. Backend health: `GET /health` returns success.
 3. Frontend health: `GET /healthz` returns success.
-4. Login path: tenant-aware login accepts `tenant_id` + email/username + password for seeded Staging users.
+4. Login path: tenant-aware login accepts public `tenant_code` + email/username + password for seeded Staging users and rejects UUID tenant login.
 5. Tenant isolation: a user from one tenant cannot access another tenant's data.
 6. Subscription gate: `trial` / `active` allows the scan flow; `expired` / `suspended` blocks scan/mail-job creation.
 7. Location query: seeded location/person mapping can be queried without crossing tenant boundaries.

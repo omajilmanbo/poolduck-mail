@@ -9,9 +9,9 @@ const expectedSendStatus = process.env.API_SMOKE_EXPECT_SEND_STATUS ?? "sent";
 let sessionCookie = "";
 
 const smoke = {
-  tenantId:
-    process.env.API_SMOKE_TENANT_ID ??
-    "11111111-1111-4111-8111-111111111111",
+  tenantCode:
+    process.env.API_SMOKE_TENANT_CODE ??
+    "10CA000001",
   identifier:
     process.env.API_SMOKE_IDENTIFIER ??
     process.env.API_SMOKE_EMAIL ??
@@ -19,7 +19,7 @@ const smoke = {
   password: process.env.API_SMOKE_PASSWORD ?? "PoolduckLocal123!",
   locationId:
     process.env.API_SMOKE_LOCATION_ID ??
-    "66666666-6666-4666-8666-666666666666",
+    "10CA1001",
   scanCode:
     process.env.API_SMOKE_SCAN_CODE ?? "PD1|ENTRY|01K0ABC10001",
   unmappedScanCode:
@@ -64,7 +64,7 @@ async function main() {
   const login = await request("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({
-      tenant_id: smoke.tenantId,
+      tenant_code: smoke.tenantCode,
       identifier: smoke.identifier,
       password: smoke.password,
     }),
@@ -107,7 +107,7 @@ async function main() {
     unmapped.response.status === 404 &&
       unmapped.body?.code === "SCAN_CODE_NOT_MAPPED" &&
       unmapped.body?.scan_event_id,
-    "Unmapped scan_code did not create an abnormal scan_event.",
+    `Unmapped scan_code did not create an abnormal scan_event: ${unmapped.response.status} ${JSON.stringify(unmapped.body)}`,
   );
 
   const scan = await request("/api/scan-events", {
@@ -134,7 +134,7 @@ async function main() {
   console.log(
     JSON.stringify(
       {
-        tenant_id: smoke.tenantId,
+        tenant_code: smoke.tenantCode,
         location_id: smoke.locationId,
         scan_event_id: scan.body.scan_event_id,
         mail_job_id: scan.body.mail_job_id,

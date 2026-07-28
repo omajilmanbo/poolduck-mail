@@ -16,7 +16,9 @@ const prisma = new PrismaClient({ adapter });
 
 const seed = {
   activeTenantId: "11111111-1111-4111-8111-111111111111",
+  activeTenantCode: "10CA000001",
   suspendedTenantId: "22222222-2222-4222-8222-222222222222",
+  suspendedTenantCode: "10CA000002",
   tenantManagerUserId: "33333333-3333-4333-8333-333333333333",
   operatorUserId: "44444444-4444-4444-8444-444444444444",
   suspendedOperatorUserId: "55555555-5555-4555-8555-555555555555",
@@ -40,7 +42,7 @@ async function upsertLocation(data) {
   const existing = await prisma.location.findFirst({
     where: {
       tenantId: data.tenantId,
-      locationCode: data.locationCode,
+      OR: [{ id: data.id }, { locationCode: data.locationCode }],
     },
     select: { id: true },
   });
@@ -147,11 +149,13 @@ async function main() {
   await prisma.tenant.upsert({
     where: { id: seed.activeTenantId },
     update: {
+      tenantCode: seed.activeTenantCode,
       name: "Poolduck Local Active Tenant",
       status: "active",
     },
     create: {
       id: seed.activeTenantId,
+      tenantCode: seed.activeTenantCode,
       name: "Poolduck Local Active Tenant",
       status: "active",
     },
@@ -160,11 +164,13 @@ async function main() {
   await prisma.tenant.upsert({
     where: { id: seed.suspendedTenantId },
     update: {
+      tenantCode: seed.suspendedTenantCode,
       name: "Poolduck Local Suspended Tenant",
       status: "active",
     },
     create: {
       id: seed.suspendedTenantId,
+      tenantCode: seed.suspendedTenantCode,
       name: "Poolduck Local Suspended Tenant",
       status: "active",
     },
@@ -237,18 +243,18 @@ async function main() {
   await upsertLocation({
     id: seed.officeLocationId,
     tenantId: seed.activeTenantId,
-    locationCode: "LOCAL-OFFICE",
+    locationCode: "10CA1001",
     name: "Local Office",
-    type: "office",
+    type: "location",
     status: "active",
   });
 
   await upsertLocation({
     id: seed.suspendedLocationId,
     tenantId: seed.suspendedTenantId,
-    locationCode: "LOCAL-SUSPENDED",
+    locationCode: "5A5D0001",
     name: "Suspended Office",
-    type: "office",
+    type: "location",
     status: "active",
   });
 
@@ -287,9 +293,9 @@ async function main() {
   await upsertLocation({
     id: seed.schoolLocationId,
     tenantId: seed.activeTenantId,
-    locationCode: "LOCAL-SCHOOL",
+    locationCode: "10CA1002",
     name: "Local School",
-    type: "school",
+    type: "location",
     status: "active",
   });
 

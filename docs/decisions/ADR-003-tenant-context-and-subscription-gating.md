@@ -77,3 +77,7 @@
 - 新建实现类 Issue：登录校验顺序与错误码落地（tenant 不存在、用户不属于 tenant、密码错误）。
 - 新建测试类 Issue：覆盖管理员/普通用户、有效/过期/暂停订阅、跨租户访问异常场景。
 - 补充文档：在 `docs/api.md` 增加标准错误码与错误响应示例（后续实现阶段）。
+
+> 后续修订（2026-07-28）：ADR-007 已 Accepted，并在 #91 将登录入口中的公开 tenant 标识从内部
+> UUID `tenant_id` 替换为 `tenant_code`。登录成功后的内部 tenant scope、跨 tenant 默认拒绝和
+> 订阅门禁仍继续遵循本 ADR。

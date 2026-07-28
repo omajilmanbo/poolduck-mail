@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import HomePage, { historyItemToRecord, shouldPollHistory } from '../app/page';
 import type { ScanHistoryItem } from '../src/api/client';
@@ -21,6 +21,10 @@ describe('history workspace', () => {
     render(<HomePage />);
 
     expect(await screen.findByText('01K0ABC80001')).not.toBeNull();
+    const historyTable = screen.getByRole('table', { name: '扫码记录' });
+    expect(within(historyTable).getByRole('columnheader', { name: '人员名称' })).not.toBeNull();
+    expect(within(historyTable).queryByRole('columnheader', { name: 'location' })).toBeNull();
+    expect(within(historyTable).getByRole('cell', { name: 'History Person' })).not.toBeNull();
     expect(screen.getByTestId('scan-action').textContent).toContain('进入');
     expect(screen.queryByText(/2026-12-31/)).toBeNull();
     expect(screen.getByTestId('mail-status').textContent).toContain('已发送');
@@ -82,6 +86,13 @@ describe('history workspace', () => {
       status: 'unmapped',
     });
   });
+
+  it('uses a fallback when historical person name is unavailable', () => {
+    const item = historyItem('sent');
+    item.person_name = null;
+
+    expect(historyItemToRecord(item).personName).toBe('-');
+  });
 });
 
 function createWorkspaceFetch(
@@ -93,7 +104,7 @@ function createWorkspaceFetch(
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith('/api/auth/me')) {
-      return jsonResponse({ user: { user_id: 'user-1', tenant_id: 'tenant-1', email: 'operator@example.local', role: 'operator' } });
+      return jsonResponse({ user: { user_id: 'user-1', tenant_code: '10CA000001', email: 'operator@example.local', role: 'operator' } });
     }
     if (url.endsWith('/api/auth/refresh')) {
       if (!(history instanceof TypeError) && 'status' in history) {

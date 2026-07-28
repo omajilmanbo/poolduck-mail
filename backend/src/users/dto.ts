@@ -5,7 +5,6 @@ import {
   IsIn,
   IsOptional,
   IsString,
-  IsUUID,
   Matches,
   MaxLength,
   MinLength,
@@ -96,6 +95,10 @@ export class ResetOperatorPasswordDto {
 export class SetOperatorLocationAssignmentsDto {
   @IsArray()
   @ArrayUnique()
-  @IsUUID('4', { each: true })
+  @IsString({ each: true })
+  @Matches(
+    /^(?:[0-9A-HJKMNP-TV-Z]{8}|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i,
+    { each: true },
+  )
   location_ids!: string[];
 }

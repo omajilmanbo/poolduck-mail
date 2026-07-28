@@ -5,7 +5,7 @@
 - Base path: `/api`
 - Auth: browser uses HttpOnly cookies (`poolduck_access`, `poolduck_refresh`); Bearer access tokens remain accepted for non-browser local tooling
 - 所有业务接口默认在租户上下文中执行
-- tenant 隔离：登录时接收并校验 `tenant_id`；登录成功后业务接口使用 token/session 中的 `tenant_id`，不接受业务接口显式传入 `tenant_id`
+- tenant 隔离：登录时接收并校验公开 `tenant_code`，服务端解析为内部 UUID；登录成功后业务接口使用 token/session 中的内部 `tenant_id`，不接受业务接口显式传入或覆盖 `tenant_id`
 - 认证上下文：受保护接口通过后端 `JwtAuthGuard` 解析 token，并通过请求上下文注入 `tenant_id`、`user_id`、`role`；业务层通过统一上下文读取 tenant scope
 - 角色判断：MVP 最小角色集合为 `tenant_manager` / `operator`，受保护业务接口默认只允许这两类角色
 - 订阅状态统一：`trial` / `active` / `expired` / `suspended`
@@ -17,11 +17,13 @@
 ### POST `/api/auth/login`
 - 成功响应不向 JavaScript 返回 token；设置 HttpOnly Cookie，并返回 `expires_in=900` 与 `user`
 - access token 15 分钟；refresh token 7 天、每次刷新轮换；数据库仅保存 refresh token 哈希
-- 入参：`tenant_id`, `identifier`, `password`
+- 入参：`tenant_code`, `identifier`, `password`；`tenant_code` 为 10 位 Crockford Base32，输入会去除首尾空白并转为大写
 - 出参：`expires_in`, `user`；token 仅通过 HttpOnly Cookie 下发
 - token payload：`user_id`, `tenant_id`, `role`, `session_id`, `token_type`
 - access token 生命周期 15 分钟（`900` 秒），refresh token 7 天并轮换
-- 后续前端可缓存上次使用的 `tenant_id` 以降低登录复杂度；登录 API 仍必须显式提交并由后端校验 `tenant_id`
+- 前端可缓存上次使用的 `tenant_code` 以降低登录复杂度；登录 API 不再接受 UUID `tenant_id`
+- 仅回滚窗口可由运维显式设置 `AUTH_ACCEPT_LEGACY_TENANT_UUID=true` 临时双读 UUID；默认值为
+  `false`，正常 UI 永远不提交 UUID，恢复完成后必须立即关闭
 - identifier 含 `@` 时仅按小写规范邮箱查询；不含 `@` 时仅按小写 operator username 查询
 - 兼容窗口内仍接受旧 `email` 字段；若同时提供 `identifier` 与 `email`，规范值必须相同
 - tenant 不存在、身份不存在、账号停用或密码错误统一返回 HTTP 401 / `LOGIN_FAILED`；限流返回
@@ -30,7 +32,7 @@
 
 ```json
 {
-  "tenant_id": "11111111-1111-4111-8111-111111111111",
+  "tenant_code": "10CA000001",
   "identifier": "local-operator",
   "password": "example-password"
 }
@@ -41,7 +43,7 @@
   "expires_in": 900,
   "user": {
     "user_id": "33333333-3333-4333-8333-333333333333",
-    "tenant_id": "11111111-1111-4111-8111-111111111111",
+    "tenant_code": "10CA000001",
     "username": "local-operator",
     "email": null,
     "role": "operator"
@@ -58,7 +60,7 @@
 - 浏览器以 access Cookie 确认当前用户；access 过期时前端调用 refresh 后重试
 - 说明：获取当前登录用户信息
 - 租户上下文：以认证 Cookie（或本地工具 Bearer token）中的 `tenant_id` 为准，不接受客户端参数修改
-- 出参：`user.user_id`, `user.tenant_id`, `user.username`, `user.email`, `user.role`；operator email 可为
+- 出参：`user.user_id`, `user.tenant_code`, `user.username`, `user.email`, `user.role`；内部 `tenant_id` 不返回；operator email 可为
   `null`，tenant_manager username 为 `null`
 - 错误：未提供 token、token 无效或用户不存在时返回 `UNAUTHORIZED`
 
@@ -86,12 +88,12 @@
 ## 3. 扫码邮件核心流程 API
 
 ### GET `/api/locations`
-- 说明：获取当前 token tenant 可用的 location（办公室/校舍）列表，用于扫码邮件页面切换上下文
+- 说明：获取当前 token tenant 可用的地点列表，用于扫码邮件页面切换上下文
 - 租户上下文：仅使用认证会话中的 `tenant_id`
 - 权限：已登录用户（`tenant_manager` / `operator`）
 - 订阅要求：无（仅用于页面初始化）
 - location 授权：`tenant_manager` 返回本 tenant 全部 location；`operator` 只返回显式分配的 location。无 assignment 时返回空数组
-- 出参：`[{ location_id, location_code, location_name, type, is_active }]`
+- 出参：`[{ location_id, location_code, location_name, type, is_active }]`；`location_id` 与 `location_code` 均返回 8 位公开业务 ID，`type` 固定为 `location`，不返回内部 UUID
 - 错误：未认证时返回 `UNAUTHORIZED`
 
 ### GET `/api/locations/{location_id}/people`
@@ -108,14 +110,19 @@
 
 - `GET /api/locations/{location_id}/people/{person_id}`：`person_id` 使用公开 `person_code`；受控编辑时返回完整邮箱
 - `POST /api/locations/{location_id}/people`：入参仅 `person_name`, `email`；服务端生成 12 位 `person_code`，客户端提交 `person_code` / `scan_code` 会返回 `400`
-- `PATCH /api/locations/{location_id}/people/{person_id}`：仅允许更新姓名、邮箱和状态；不接受 `person_code`、`scan_code` 或 `location_id`
+- `PATCH /api/locations/{location_id}/people/{person_id}`：仅允许更新姓名、邮箱；不接受状态、`person_code`、`scan_code` 或 `location_id`
 - `DELETE /api/locations/{location_id}/people/{person_id}`：软停用，历史保留
+- `POST /api/locations/{location_id}/people/{person_id}/reactivate`：重新启用已停用人员；地点本身必须 active，人员 ID 与历史关联不变
 - 生成规则：前 7 位为 Unix 秒、后 5 位为安全随机值；数据库唯一冲突最多重试 5 次，耗尽返回 `PERSON_CODE_GENERATION_EXHAUSTED`
 
 ### 地点写接口
 
-- `POST /api/locations`、`PATCH /api/locations/{location_id}`、`DELETE /api/locations/{location_id}`：仅 `tenant_manager`
+- `POST /api/locations`：仅接收 `location_name`；服务端生成 8 位公开 ID，固定写入 `type=location`。提交 `location_id`、`location_code` 或 `type` 返回 `400`
+- `PATCH /api/locations/{location_id}`：仅允许修改 `location_name`；同 tenant 名称去除首尾空白后按大小写不敏感规则唯一
+- `DELETE /api/locations/{location_id}`：仅 `tenant_manager`，软停用
+- `POST /api/locations/{location_id}/reactivate`：仅 `tenant_manager`，重新启用已停用地点
 - DELETE 为软停用；停用后拒绝新扫描与人员映射写入，并把该地点 queued 邮件安全终止为 failed/`LOCATION_INACTIVE`
+- location ID 冲突最多重试 5 次，耗尽返回 `LOCATION_CODE_GENERATION_EXHAUSTED`；不存在、跨 tenant 或 operator 未授权统一返回 `LOCATION_NOT_FOUND`
 - 错误：`location_id` 非法或不属于当前 tenant 时返回 `LOCATION_NOT_FOUND`
 
 ### POST `/api/scan-events`
@@ -267,7 +274,7 @@
 
 - 权限：仅 `tenant_manager`；operator 自助访问返回 `ROLE_FORBIDDEN`
 - `GET /api/users/{user_id}/location-assignments`：查询当前 tenant operator 的显式 assignments，返回 `{ operator_id, locations }`
-- `PUT /api/users/{user_id}/location-assignments`：以 `{ "location_ids": ["<uuid>", ...] }` 原子替换全部 assignments；空数组表示撤销全部
+- `PUT /api/users/{user_id}/location-assignments`：以 `{ "location_ids": ["<8 位 location_code>", ...] }` 原子替换全部 assignments；空数组表示撤销全部
 - `DELETE /api/users/{user_id}/location-assignments/{location_id}`：撤销单个 assignment
 - 只能操作当前 tenant 的 `operator` 与 active location；重复 ID 返回 `400`，不存在、停用、伪造或跨 tenant location 统一返回 `ASSIGNABLE_LOCATION_NOT_FOUND`
 - assignment 设置与撤销写入审计，元数据只包含资源 ID 和计数，不包含邮箱、姓名或密码

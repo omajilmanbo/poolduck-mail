@@ -6,7 +6,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -15,7 +15,7 @@ import {
 export class CreateScanEventDto {
   @IsString()
   @IsNotEmpty()
-  @IsUUID()
+  @Matches(/^(?:[0-9A-HJKMNP-TV-Z]{8}|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i)
   location_id!: string;
 
   @IsString()
@@ -26,7 +26,8 @@ export class CreateScanEventDto {
 
 export class ListScanEventsDto {
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @Matches(/^(?:[0-9A-HJKMNP-TV-Z]{8}|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i)
   location_id?: string;
 
   @IsOptional()
@@ -61,7 +62,8 @@ export class ExportScanEventsDto {
   created_to!: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @Matches(/^(?:[0-9A-HJKMNP-TV-Z]{8}|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i)
   location_id?: string;
 
   @IsOptional()

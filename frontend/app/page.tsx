@@ -33,7 +33,7 @@ type ScanRecord = {
   scanCode: string;
   action: ScanAction;
   actionSource: ScanActionSource;
-  locationName: string;
+  personName: string;
   receivedAt: string;
   providerMessage?: string;
 };
@@ -46,7 +46,7 @@ export function historyItemToRecord(item: ScanHistoryItem): ScanRecord {
     scanCode: item.scan_code,
     action: item.action,
     actionSource: item.action_source,
-    locationName: item.location_name ?? '-',
+    personName: item.person_name ?? '-',
     receivedAt: item.received_at,
     providerMessage: item.mail_job?.error_message ?? undefined,
   };
@@ -94,7 +94,7 @@ export default function HomePage() {
   const api = useMemo(() => createApiClient(), []);
   const [token, setToken] = useState('');
   const [user, setUser] = useState<UserSummary | null>(null);
-  const [tenantId, setTenantId] = useState('');
+  const [tenantCode, setTenantCode] = useState('');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -262,7 +262,7 @@ export default function HomePage() {
 
     try {
       const response = await api.login({
-        tenant_id: tenantId.trim(),
+        tenant_code: tenantCode.trim().toUpperCase(),
         identifier: identifier.trim(),
         password,
       });
@@ -302,7 +302,9 @@ export default function HomePage() {
           scanCode: response.person_code,
           action: response.action,
           actionSource: response.action_source,
-          locationName: selectedLocation.location_name,
+          personName:
+            people.find((person) => person.person_code === response.person_code)
+              ?.person_name ?? '-',
           receivedAt: new Date().toISOString(),
           providerMessage: response.error_message ?? undefined,
         },
@@ -342,11 +344,19 @@ export default function HomePage() {
               </div>
 
               <label className="mb-4 block text-sm font-medium">
-                tenant_id
+                tenant_code
                 <input
-                  data-testid="tenant-id-input"
-                  value={tenantId}
-                  onChange={(event) => setTenantId(event.target.value)}
+                  data-testid="tenant-code-input"
+                  name="organization"
+                  autoCapitalize="characters"
+                  autoComplete="organization"
+                  maxLength={10}
+                  pattern="[0-9A-HJKMNP-TV-Z]{10}"
+                  placeholder="例如：10CA000001"
+                  value={tenantCode}
+                  onChange={(event) =>
+                    setTenantCode(event.target.value.toUpperCase())
+                  }
                   className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
                   required
                 />
@@ -573,10 +583,10 @@ export default function HomePage() {
               </button>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-left text-sm">
+              <table aria-label="扫码记录" className="w-full min-w-[760px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                   <tr>
-                    <th className="px-4 py-3">location</th>
+                    <th className="px-4 py-3">人员名称</th>
                     <th className="px-4 py-3">scan_code</th>
                     <th className="px-4 py-3">动作</th>
                     <th className="px-4 py-3">时间</th>
@@ -587,7 +597,7 @@ export default function HomePage() {
                 <tbody>
                   {records.map((record) => (
                     <tr key={record.scanEventId}>
-                      <td className="border-t border-slate-100 px-4 py-3">{record.locationName}</td>
+                      <td className="border-t border-slate-100 px-4 py-3">{record.personName}</td>
                       <td className="border-t border-slate-100 px-4 py-3 font-mono text-xs">{record.scanCode}</td>
                       <td className="border-t border-slate-100 px-4 py-3">
                         <span

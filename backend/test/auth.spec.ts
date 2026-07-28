@@ -24,6 +24,7 @@ describe('Auth API', () => {
   };
 
   const tenantId = '11111111-1111-4111-8111-111111111111';
+  const tenantCode = '10CA000001';
   const otherTenantId = '22222222-2222-4222-8222-222222222222';
   const userId = '33333333-3333-4333-8333-333333333333';
   const username = 'local-operator';
@@ -37,6 +38,7 @@ describe('Auth API', () => {
   });
 
   beforeEach(async () => {
+    delete process.env.AUTH_ACCEPT_LEGACY_TENANT_UUID;
     process.env.AUTH_LOGIN_MAX_PER_IP = '1000';
     process.env.AUTH_LOGIN_MAX_PER_TENANT = '1000';
     process.env.AUTH_LOGIN_MAX_PER_IDENTIFIER = '1000';
@@ -73,7 +75,7 @@ describe('Auth API', () => {
 
   it('logs in an email-less operator by normalized username and sets HttpOnly cookies', async () => {
     const passwordHash = await argon2.hash(password);
-    prisma.tenant.findUnique.mockResolvedValue({ id: tenantId });
+    prisma.tenant.findUnique.mockResolvedValue({ id: tenantId, tenantCode });
     prisma.user.findFirst.mockResolvedValue(
       operatorUser({ email: null, passwordHash }),
     );
@@ -82,7 +84,7 @@ describe('Auth API', () => {
     const response = await request(app.getHttpServer())
       .post('/api/auth/login')
       .send({
-        tenant_id: tenantId,
+        tenant_code: ' 10ca000001 ',
         identifier: ' LOCAL-OPERATOR ',
         password,
       })
@@ -98,10 +100,15 @@ describe('Auth API', () => {
     );
     expect(response.body.user).toEqual({
       user_id: userId,
-      tenant_id: tenantId,
+      tenant_code: tenantCode,
       username,
       email: null,
       role: 'operator',
+    });
+    expect(response.body.user.tenant_id).toBeUndefined();
+    expect(prisma.tenant.findUnique).toHaveBeenCalledWith({
+      where: { tenantCode },
+      select: { id: true, tenantCode: true },
     });
     expect(prisma.user.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -126,14 +133,14 @@ describe('Auth API', () => {
 
   it('logs in an operator by normalized optional email', async () => {
     const passwordHash = await argon2.hash(password);
-    prisma.tenant.findUnique.mockResolvedValue({ id: tenantId });
+    prisma.tenant.findUnique.mockResolvedValue({ id: tenantId, tenantCode });
     prisma.user.findFirst.mockResolvedValue(operatorUser({ passwordHash }));
     prisma.user.update.mockResolvedValue(undefined);
 
     await request(app.getHttpServer())
       .post('/api/auth/login')
       .send({
-        tenant_id: tenantId,
+        tenant_code: tenantCode,
         identifier: 'Operator@Example.Local',
         password,
       })
@@ -146,13 +153,56 @@ describe('Auth API', () => {
     );
   });
 
+  it('rejects UUID tenant login by default and malformed public tenant codes', async () => {
+    const legacyResponse = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({
+        tenant_id: tenantId,
+        identifier: username,
+        password,
+      })
+      .expect(401);
+    expect(legacyResponse.body).toMatchObject({ code: 'LOGIN_FAILED' });
+
+    await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({
+        tenant_code: 'INVALID-I',
+        identifier: username,
+        password,
+      })
+      .expect(400);
+
+    expect(prisma.tenant.findUnique).not.toHaveBeenCalled();
+    expect(prisma.user.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('allows UUID tenant login only during an explicit rollback window', async () => {
+    process.env.AUTH_ACCEPT_LEGACY_TENANT_UUID = 'true';
+    const passwordHash = await argon2.hash(password);
+    prisma.tenant.findUnique.mockResolvedValue({ id: tenantId, tenantCode });
+    prisma.user.findFirst.mockResolvedValue(operatorUser({ passwordHash }));
+    prisma.user.update.mockResolvedValue(undefined);
+
+    const response = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ tenant_id: tenantId, identifier: username, password })
+      .expect(201);
+
+    expect(response.body.user).toMatchObject({ tenant_code: tenantCode });
+    expect(prisma.tenant.findUnique).toHaveBeenCalledWith({
+      where: { id: tenantId },
+      select: { id: true, tenantCode: true },
+    });
+  });
+
   it('requires tenant_manager to log in by email', async () => {
-    prisma.tenant.findUnique.mockResolvedValue({ id: tenantId });
+    prisma.tenant.findUnique.mockResolvedValue({ id: tenantId, tenantCode });
     prisma.user.findFirst.mockResolvedValue(null);
 
     await request(app.getHttpServer())
       .post('/api/auth/login')
-      .send({ tenant_id: tenantId, identifier: 'tenant-manager', password })
+      .send({ tenant_code: tenantCode, identifier: 'tenant-manager', password })
       .expect(401);
 
     expect(prisma.user.findFirst).toHaveBeenCalledWith(
@@ -168,16 +218,21 @@ describe('Auth API', () => {
 
   it.each([
     ['tenant does not exist', null, null, password],
-    ['identity is in another tenant', { id: tenantId }, null, password],
+    [
+      'identity is in another tenant',
+      { id: tenantId, tenantCode },
+      null,
+      password,
+    ],
     [
       'password is wrong',
-      { id: tenantId },
+      { id: tenantId, tenantCode },
       operatorUser({ passwordHash: 'not-an-argon-hash' }),
       'wrong-password',
     ],
     [
       'user is disabled',
-      { id: tenantId },
+      { id: tenantId, tenantCode },
       operatorUser({ status: 'inactive' }),
       password,
     ],
@@ -190,7 +245,7 @@ describe('Auth API', () => {
       const response = await request(app.getHttpServer())
         .post('/api/auth/login')
         .send({
-          tenant_id: tenantId,
+          tenant_code: tenantCode,
           identifier: email,
           password: suppliedPassword,
         })
@@ -209,11 +264,11 @@ describe('Auth API', () => {
   it.each(['ｌocal-operator', 'admin'])(
     'rejects invalid or reserved username %s with the generic login error',
     async (identifier) => {
-      prisma.tenant.findUnique.mockResolvedValue({ id: tenantId });
+      prisma.tenant.findUnique.mockResolvedValue({ id: tenantId, tenantCode });
 
       const response = await request(app.getHttpServer())
         .post('/api/auth/login')
-        .send({ tenant_id: tenantId, identifier, password })
+        .send({ tenant_code: tenantCode, identifier, password })
         .expect(401);
 
       expect(response.body.code).toBe('LOGIN_FAILED');
@@ -223,14 +278,14 @@ describe('Auth API', () => {
 
   it('supports a matching legacy email field during the compatibility window', async () => {
     const passwordHash = await argon2.hash(password);
-    prisma.tenant.findUnique.mockResolvedValue({ id: tenantId });
+    prisma.tenant.findUnique.mockResolvedValue({ id: tenantId, tenantCode });
     prisma.user.findFirst.mockResolvedValue(operatorUser({ passwordHash }));
     prisma.user.update.mockResolvedValue(undefined);
 
     await request(app.getHttpServer())
       .post('/api/auth/login')
       .send({
-        tenant_id: tenantId,
+        tenant_code: tenantCode,
         identifier: 'Operator@Example.Local',
         email,
         password,
@@ -242,7 +297,7 @@ describe('Auth API', () => {
     const response = await request(app.getHttpServer())
       .post('/api/auth/login')
       .send({
-        tenant_id: tenantId,
+        tenant_code: tenantCode,
         identifier: username,
         email,
         password,
@@ -256,26 +311,26 @@ describe('Auth API', () => {
   it('rate limits a repeated tenant and identifier hash without revealing account state', async () => {
     process.env.AUTH_LOGIN_MAX_PER_IDENTIFIER = '2';
     process.env.AUTH_LOGIN_MAX_PER_COMPOSITE = '2';
-    prisma.tenant.findUnique.mockResolvedValue({ id: tenantId });
+    prisma.tenant.findUnique.mockResolvedValue({ id: tenantId, tenantCode });
     prisma.user.findFirst.mockResolvedValue(null);
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       await request(app.getHttpServer())
         .post('/api/auth/login')
-        .send({ tenant_id: tenantId, identifier: username, password })
+        .send({ tenant_code: tenantCode, identifier: username, password })
         .expect(401);
     }
 
     const response = await request(app.getHttpServer())
       .post('/api/auth/login')
-      .send({ tenant_id: tenantId, identifier: username, password })
+      .send({ tenant_code: tenantCode, identifier: username, password })
       .expect(429);
     expect(response.body).toMatchObject({ code: 'LOGIN_RATE_LIMITED' });
   });
 
   it('returns the current user from signed-token tenant context', async () => {
     const passwordHash = await argon2.hash(password);
-    prisma.tenant.findUnique.mockResolvedValue({ id: tenantId });
+    prisma.tenant.findUnique.mockResolvedValue({ id: tenantId, tenantCode });
     prisma.user.findFirst
       .mockResolvedValueOnce(managerUser({ passwordHash }))
       .mockResolvedValueOnce(managerUser());
@@ -284,7 +339,7 @@ describe('Auth API', () => {
     const agent = request.agent(app.getHttpServer());
     await agent
       .post('/api/auth/login')
-      .send({ tenant_id: tenantId, identifier: email, password })
+      .send({ tenant_code: tenantCode, identifier: email, password })
       .expect(201);
 
     await agent
@@ -294,7 +349,7 @@ describe('Auth API', () => {
       .expect({
         user: {
           user_id: userId,
-          tenant_id: tenantId,
+          tenant_code: tenantCode,
           username: null,
           email,
           role: 'tenant_manager',
@@ -341,13 +396,13 @@ describe('Auth API', () => {
 
   it('rotates the refresh token and revokes only the current session on logout', async () => {
     const passwordHash = await argon2.hash(password);
-    prisma.tenant.findUnique.mockResolvedValue({ id: tenantId });
+    prisma.tenant.findUnique.mockResolvedValue({ id: tenantId, tenantCode });
     prisma.user.findFirst.mockResolvedValue(operatorUser({ passwordHash }));
     prisma.user.update.mockResolvedValue(undefined);
     const agent = request.agent(app.getHttpServer());
     await agent
       .post('/api/auth/login')
-      .send({ tenant_id: tenantId, identifier: email, password })
+      .send({ tenant_code: tenantCode, identifier: email, password })
       .expect(201);
 
     const created = prisma.session.create.mock.calls[0][0].data;
@@ -390,6 +445,7 @@ describe('Auth API', () => {
       passwordHash: DUMMY_TEST_HASH,
       role: 'operator',
       status: 'active',
+      tenant: { tenantCode },
       ...overrides,
     };
   }
@@ -403,6 +459,7 @@ describe('Auth API', () => {
       passwordHash: DUMMY_TEST_HASH,
       role: 'tenant_manager',
       status: 'active',
+      tenant: { tenantCode },
       ...overrides,
     };
   }

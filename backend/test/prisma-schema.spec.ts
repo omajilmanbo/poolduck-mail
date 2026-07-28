@@ -70,6 +70,36 @@ const userIdentityRollbackPath = join(
   'rollback',
   '20260724030000_add_user_login_identities.sql',
 );
+const locationCodeMigrationPath = join(
+  __dirname,
+  '..',
+  'prisma',
+  'migrations',
+  '20260728000000_generate_location_codes',
+  'migration.sql',
+);
+const locationCodeRollbackPath = join(
+  __dirname,
+  '..',
+  'prisma',
+  'rollback',
+  '20260728000000_generate_location_codes.sql',
+);
+const tenantCodeMigrationPath = join(
+  __dirname,
+  '..',
+  'prisma',
+  'migrations',
+  '20260728010000_add_tenant_codes',
+  'migration.sql',
+);
+const tenantCodeRollbackPath = join(
+  __dirname,
+  '..',
+  'prisma',
+  'rollback',
+  '20260728010000_add_tenant_codes.sql',
+);
 
 describe('Prisma initial schema', () => {
   const schema = readFileSync(schemaPath, 'utf8');
@@ -94,6 +124,10 @@ describe('Prisma initial schema', () => {
     userIdentityRollbackPath,
     'utf8',
   );
+  const locationCodeMigration = readFileSync(locationCodeMigrationPath, 'utf8');
+  const locationCodeRollback = readFileSync(locationCodeRollbackPath, 'utf8');
+  const tenantCodeMigration = readFileSync(tenantCodeMigrationPath, 'utf8');
+  const tenantCodeRollback = readFileSync(tenantCodeRollbackPath, 'utf8');
 
   it('defines the MVP initial models', () => {
     for (const model of [
@@ -223,5 +257,57 @@ describe('Prisma initial schema', () => {
       'cannot roll back to email-only login while users without email exist',
     );
     expect(userIdentityRollback).not.toMatch(/DELETE\s+FROM\s+"users"/i);
+  });
+
+  it('backfills public location IDs and fixed types without rewriting UUID relations', () => {
+    expect(schema).toMatch(
+      /locationCode\s+String\s+@map\("location_code"\) @db\.VarChar\(8\)/,
+    );
+    expect(schema).toMatch(
+      /type\s+String\s+@default\("location"\) @db\.VarChar\(32\)/,
+    );
+    expect(schema).toContain('model LocationLegacyIdentifier');
+    expect(locationCodeMigration).toContain(
+      'INSERT INTO "location_legacy_identifiers"',
+    );
+    expect(locationCodeMigration).toContain(
+      'ORDER BY "created_at", "id"',
+    );
+    expect(locationCodeMigration).toContain(
+      "CHECK (\"location_code\" ~ '^[0-9A-HJKMNP-TV-Z]{8}$')",
+    );
+    expect(locationCodeMigration).toContain(
+      'SET "location_code" = candidate',
+    );
+    expect(locationCodeMigration).not.toMatch(
+      /UPDATE\s+"(?:person_mappings|scan_events|mail_jobs)"\s+SET\s+"location_id"/i,
+    );
+    expect(locationCodeRollback).toContain(
+      'SET "location_code" = legacy."legacy_code"',
+    );
+    expect(locationCodeRollback).toContain(
+      '"type" = legacy."legacy_type"',
+    );
+  });
+
+  it('backfills unique tenant codes while preserving UUID primary and foreign keys', () => {
+    expect(schema).toMatch(
+      /tenantCode\s+String\s+@unique @map\("tenant_code"\) @db\.VarChar\(10\)/,
+    );
+    expect(tenantCodeMigration).toContain('ORDER BY "created_at", "id"');
+    expect(tenantCodeMigration).toContain('FOR attempt IN 1..5 LOOP');
+    expect(tenantCodeMigration).toContain(
+      "CHECK (\"tenant_code\" ~ '^[0-9ABCDEFGHJKMNPQRSTVWXYZ]{10}$')",
+    );
+    expect(tenantCodeMigration).toContain(
+      'CREATE UNIQUE INDEX "tenants_tenant_code_key"',
+    );
+    expect(tenantCodeMigration).not.toMatch(
+      /UPDATE\s+"(?:users|subscriptions|locations|person_mappings|scan_events|mail_jobs)"\s+SET\s+"tenant_id"/i,
+    );
+    expect(tenantCodeRollback).toContain(
+      'DROP COLUMN IF EXISTS "tenant_code"',
+    );
+    expect(tenantCodeRollback).not.toMatch(/DELETE\s+FROM\s+"tenants"/i);
   });
 });
