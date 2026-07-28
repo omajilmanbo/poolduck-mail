@@ -34,6 +34,9 @@ export type LocationItem = {
   location_name: string;
   type: string;
   is_active: boolean;
+  deletion_status?: 'scheduled' | null;
+  deleted_at?: string | null;
+  purge_after?: string | null;
 };
 
 export type PersonMapping = {
@@ -43,6 +46,9 @@ export type PersonMapping = {
   scan_code: string;
   email_masked: string;
   is_active: boolean;
+  deletion_status?: 'scheduled' | null;
+  deleted_at?: string | null;
+  purge_after?: string | null;
 };
 
 export type PersonMappingDetail = PersonMapping & { location_id: string; email: string };
@@ -137,6 +143,11 @@ export type ManagedOperator = {
   updated_at: string;
 };
 
+export type OperatorLocationAssignments = {
+  operator_id: string;
+  locations: LocationItem[];
+};
+
 export type CreateOperatorInput = {
   username: string;
   email?: string | null;
@@ -153,7 +164,7 @@ export type UpdateOperatorInput = {
 
 type RequestOptions = {
   token?: string;
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   retry?: boolean;
   headers?: Record<string, string>;
@@ -328,9 +339,16 @@ export function createApiClient(config: ApiClientConfig = {}) {
         body,
       }),
     getLicense: (token: string) => request<LicenseCheck>('/api/license/check', { token }),
-    getLocations: (token: string) => request<LocationItem[]>('/api/locations', { token }),
-    getPeople: (token: string, locationId: string) =>
-      request<PersonMapping[]>(`/api/locations/${encodeURIComponent(locationId)}/people`, { token }),
+    getLocations: (token: string, includeDeleted = false) =>
+      request<LocationItem[]>(
+        `/api/locations${includeDeleted ? '?include_deleted=true' : ''}`,
+        { token },
+      ),
+    getPeople: (token: string, locationId: string, includeDeleted = false) =>
+      request<PersonMapping[]>(
+        `/api/locations/${encodeURIComponent(locationId)}/people${includeDeleted ? '?include_deleted=true' : ''}`,
+        { token },
+      ),
     getPerson: (locationId: string, personId: string) =>
       request<PersonMappingDetail>(`/api/locations/${encodeURIComponent(locationId)}/people/${encodeURIComponent(personId)}`),
     createPerson: (locationId: string, body: PersonMappingInput) =>
@@ -341,6 +359,10 @@ export function createApiClient(config: ApiClientConfig = {}) {
       request<PersonMappingDetail>(`/api/locations/${encodeURIComponent(locationId)}/people/${encodeURIComponent(personId)}`, { method: 'DELETE' }),
     reactivatePerson: (locationId: string, personId: string) =>
       request<PersonMappingDetail>(`/api/locations/${encodeURIComponent(locationId)}/people/${encodeURIComponent(personId)}/reactivate`, { method: 'POST' }),
+    schedulePersonDeletion: (locationId: string, personId: string) =>
+      request<PersonMappingDetail>(`/api/locations/${encodeURIComponent(locationId)}/people/${encodeURIComponent(personId)}/delete`, { method: 'POST' }),
+    restorePerson: (locationId: string, personId: string) =>
+      request<PersonMappingDetail>(`/api/locations/${encodeURIComponent(locationId)}/people/${encodeURIComponent(personId)}/restore`, { method: 'POST' }),
     createLocation: (body: LocationInput) => request<LocationItem>('/api/locations', { method: 'POST', body }),
     updateLocation: (locationId: string, body: Partial<LocationInput>) =>
       request<LocationItem>(`/api/locations/${encodeURIComponent(locationId)}`, { method: 'PATCH', body }),
@@ -348,6 +370,10 @@ export function createApiClient(config: ApiClientConfig = {}) {
       request<LocationItem>(`/api/locations/${encodeURIComponent(locationId)}`, { method: 'DELETE' }),
     reactivateLocation: (locationId: string) =>
       request<LocationItem>(`/api/locations/${encodeURIComponent(locationId)}/reactivate`, { method: 'POST' }),
+    scheduleLocationDeletion: (locationId: string) =>
+      request<LocationItem>(`/api/locations/${encodeURIComponent(locationId)}/delete`, { method: 'POST' }),
+    restoreLocation: (locationId: string) =>
+      request<LocationItem>(`/api/locations/${encodeURIComponent(locationId)}/restore`, { method: 'POST' }),
     getAuditLogs: (params = '') => request<AuditLogResponse>(`/api/audit-logs${params ? `?${params}` : ''}`),
     getUnmappedScans: (params = '') =>
       request<UnmappedScanCase[]>(`/api/unmapped-scans${params ? `?${params}` : ''}`),
@@ -379,6 +405,15 @@ export function createApiClient(config: ApiClientConfig = {}) {
       request<ManagedOperator>('/api/users', { method: 'POST', body }),
     updateUser: (userId: string, body: UpdateOperatorInput) =>
       request<ManagedOperator>(`/api/users/${encodeURIComponent(userId)}`, { method: 'PATCH', body }),
+    getUserLocationAssignments: (userId: string) =>
+      request<OperatorLocationAssignments>(
+        `/api/users/${encodeURIComponent(userId)}/location-assignments`,
+      ),
+    setUserLocationAssignments: (userId: string, locationIds: string[]) =>
+      request<OperatorLocationAssignments>(
+        `/api/users/${encodeURIComponent(userId)}/location-assignments`,
+        { method: 'PUT', body: { location_ids: locationIds } },
+      ),
     resetUserPassword: (userId: string, newPassword: string) =>
       request<{ user_id: string; status: string }>(
         `/api/users/${encodeURIComponent(userId)}/password`,

@@ -92,6 +92,9 @@ describe('Locations API', () => {
           location_name: 'Office A',
           type: 'office',
           is_active: true,
+          deletion_status: null,
+          deleted_at: null,
+          purge_after: null,
         },
         {
           location_id: 'school-b',
@@ -99,12 +102,16 @@ describe('Locations API', () => {
           location_name: 'School B',
           type: 'school',
           is_active: false,
+          deletion_status: null,
+          deleted_at: null,
+          purge_after: null,
         },
       ]);
 
     expect(prisma.location.findMany).toHaveBeenCalledWith({
       where: {
         tenantId,
+        status: { notIn: ['pending_delete', 'purged'] },
         operatorLocationAssignments: {
           some: { tenantId, operatorId: userId },
         },
@@ -116,6 +123,8 @@ describe('Locations API', () => {
         name: true,
         type: true,
         status: true,
+        deletedAt: true,
+        purgeAfter: true,
       },
     });
   });
@@ -156,6 +165,9 @@ describe('Locations API', () => {
         scan_code: '01K0ABC40001',
         email_masked: 'a***e@example.local',
         is_active: true,
+        deletion_status: null,
+        deleted_at: null,
+        purge_after: null,
       },
       {
         person_id: '01K0ABC40002',
@@ -164,6 +176,9 @@ describe('Locations API', () => {
         scan_code: '01K0ABC40002',
         email_masked: '*@example.local',
         is_active: false,
+        deletion_status: null,
+        deleted_at: null,
+        purge_after: null,
       },
     ]);
     expect(JSON.stringify(response.body)).not.toContain(
@@ -184,6 +199,7 @@ describe('Locations API', () => {
       where: {
         tenantId,
         locationId,
+        status: { notIn: ['pending_delete', 'purged'] },
       },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       select: {
@@ -191,6 +207,8 @@ describe('Locations API', () => {
         personName: true,
         email: true,
         status: true,
+        deletedAt: true,
+        purgeAfter: true,
       },
     });
   });

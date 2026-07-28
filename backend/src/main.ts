@@ -3,6 +3,8 @@ import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 
+export const CORS_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
+
 export function parseCorsOrigins(rawOrigin: string | undefined) {
   const origins = (rawOrigin ?? 'http://localhost:3000')
     .split(',')
@@ -24,7 +26,7 @@ export async function bootstrap() {
 
   app.enableCors({
     origin: corsOrigins,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: CORS_METHODS,
     allowedHeaders: [
       'Accept',
       'Authorization',

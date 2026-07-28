@@ -1,6 +1,10 @@
-import { parseCorsOrigins } from '../src/main';
+import { CORS_METHODS, parseCorsOrigins } from '../src/main';
 
 describe('CORS configuration', () => {
+  it('allows PUT requests used by atomic location assignment updates', () => {
+    expect(CORS_METHODS).toContain('PUT');
+  });
+
   it('allows the local frontend origin by default', () => {
     expect(parseCorsOrigins(undefined)).toEqual(['http://localhost:3000']);
   });

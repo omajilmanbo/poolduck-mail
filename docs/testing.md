@@ -203,6 +203,36 @@ Issue #60 后，本地 GUI 黑盒前应额外验证容器组形态：
 6. 用 tenant_manager 验证同一地点仍可正常读取，查询审计日志确认 set/revoke/denied 事件存在且不含姓名、邮箱、密码、token 或邮件正文。
 7. 在一次性数据库按文档顺序验证 `backend/prisma/rollback/20260724020000_add_operator_location_assignments.sql`，禁止在未备份、仍有写流量或未批准恢复旧宽权限时执行。
 
+### 4.9 Issue #97 operator-location 权限 UI 验证
+
+- 正常：用户列表显示每个 operator 的单个、多个或“未分配地点”状态；tenant_manager 可在“配置地点”弹窗勾选多个 active location，并通过一次 `PUT` 原子保存。
+- 小窗口：地点选择区在内容超高时独立滚动；在较小视口打开地点权限弹窗时，取消和保存按钮保持可见。动作码预览弹窗同样限制为当前视口高度，内容在弹窗内部滚动。
+- 撤销与边界：取消任一已分配地点时必须显示立即失效的影响确认；取消确认不发送请求，确认后列表立即更新。空选择表示撤销全部。
+- 停用地点：列表明确标识已有 inactive assignment；弹窗展示停用状态但不提供勾选入口，保存时只能提交 active location。
+- 权限与隔离：operator 不显示用户管理入口，直接访问页面会返回工作台，且不能调用 assignment API；跨 tenant、伪造和不存在地点仍由服务端统一拒绝。
+- 错误与网络：加载或保存失败显示安全提示，不把未成功的选择写入当前权限列表，也不缓存邮箱、密码、内部 UUID 或跨会话 assignment 数据。
+- 回归：保存后使用目标 operator 登录，地点选择器只显示服务端返回的 assignments；撤销后重新请求工作台、人员、历史与未映射页面均不能看到该地点。`trial` / `active` / `expired` / `suspended` 继续沿用现有订阅门禁，不由前端权限 UI 扩大。
+
+人工步骤：
+
+1. tenant_manager 打开“用户管理”，确认每个 operator 的“地点权限”列与 assignment API 一致。
+2. 为无权限 operator 同时勾选两个 active location 并保存，确认列表立即显示两个地点。
+3. 使用该 operator 登录，确认地点选择器只显示这两个地点；用户管理入口不可见，直接访问 `/users` 会返回工作台。
+4. tenant_manager 取消其中一个地点，确认弹出立即失效提示；先取消保存验证权限不变，再确认保存。
+5. 复用 operator 会话刷新工作台，确认被撤销地点立即消失且相关 API 返回 not-found；保留地点仍可正常使用。
+6. 停用一个地点后重新打开配置弹窗，确认其被标记为停用且不可新增勾选；模拟网络失败时确认列表不出现未保存变更。
+
+### 4.10 Issue #104 延迟删除与恢复
+
+- 人员与地点：active/inactive 均可安排删除，响应包含数据库时间生成的 `deleted_at` 与 14 天后的
+  `purge_after`；恢复必须还原删除前状态。
+- 界面：管理列表显示向上取整的剩余天数，恢复入口紧邻删除状态；小窗口下按钮仍可见。
+- 权限：地点删除/恢复仅 tenant_manager；人员删除/恢复沿用 operator-location assignment。
+- 业务门禁：待删除地点/人员不能扫码、写映射、新增 assignment 或发送 queued 邮件；历史仍可按授权读取。
+- 到期与并发：期限边界拒绝恢复；恢复与清理并发时只能有一方原子成功；重复清理不重复匿名化或审计。
+- 保留：终结清理匿名化当前地点名、人员姓名和邮箱并撤销 assignments，不删除 scan event、mail job、
+  unmapped case 或 audit log，公开 location/person code 不得复用。
+
 ## 5. Staging seed data
 
 Staging verification uses `npm run staging:seed` from `backend/`, or the container equivalent:

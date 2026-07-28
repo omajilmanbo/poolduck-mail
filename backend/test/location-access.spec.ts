@@ -19,6 +19,7 @@ describe('LocationAccessService', () => {
     expect(service.locationWhere(operator, { id: 'location-1' })).toEqual({
       id: 'location-1',
       tenantId: 'tenant-1',
+      status: { notIn: ['pending_delete', 'purged'] },
       operatorLocationAssignments: {
         some: { tenantId: 'tenant-1', operatorId: 'operator-1' },
       },
@@ -26,7 +27,23 @@ describe('LocationAccessService', () => {
     expect(service.locationWhere(manager, { id: 'location-1' })).toEqual({
       id: 'location-1',
       tenantId: 'tenant-1',
+      status: { notIn: ['pending_delete', 'purged'] },
     });
+  });
+
+  it('can retain tenant and assignment scope while including deleted locations for history', () => {
+    const service = new LocationAccessService({} as never, {} as never);
+    expect(service.resourceLocationWhere(operator, true)).toEqual({
+      location: {
+        is: {
+          tenantId: 'tenant-1',
+          operatorLocationAssignments: {
+            some: { tenantId: 'tenant-1', operatorId: 'operator-1' },
+          },
+        },
+      },
+    });
+    expect(service.resourceLocationWhere(manager, true)).toEqual({});
   });
 
   it('fails closed with the same not-found response and audits denied access', async () => {

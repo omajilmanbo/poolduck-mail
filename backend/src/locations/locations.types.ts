@@ -4,6 +4,9 @@ export type LocationResponse = {
   location_name: string;
   type: string;
   is_active: boolean;
+  deletion_status: 'scheduled' | null;
+  deleted_at: string | null;
+  purge_after: string | null;
 };
 
 export type PersonMappingResponse = {
@@ -13,6 +16,9 @@ export type PersonMappingResponse = {
   scan_code: string;
   email_masked: string;
   is_active: boolean;
+  deletion_status: 'scheduled' | null;
+  deleted_at: string | null;
+  purge_after: string | null;
 };
 
 export type PersonMappingDetailResponse = PersonMappingResponse & {

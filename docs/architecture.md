@@ -49,6 +49,9 @@
 - tenant UUID 继续作为内部主外键；登录入口仅用全局唯一 `tenant_code` 定位 tenant，解析后才用内部 UUID 查询用户并签发 session/token
 - location 保留 UUID 主键和所有历史外键；客户 API/UI 使用 tenant-scoped 的 8 位 Crockford Base32 `location_code`。共享访问层先按 token tenant 与 assignment 解析业务码，再用内部 UUID 查询或写入关联表
 - location 技术类型固定为 `location`。办公室、学校等未来分类不得复用 `type`，需要独立 ADR 与 `category` 字段
+- ADR-011 将人员与地点的删除建模为 `active|inactive -> pending_delete -> purged`。前两种状态进入
+  `pending_delete` 时保存原状态和数据库计算的 14 天期限；期限内可原子恢复，后台清理器到期后把当前
+  PII 匿名化并写审计。扫码、邮件和审计历史及其发送时快照不被级联删除
 
 ## 5. 认证与授权
 
@@ -115,6 +118,8 @@
 - 新人员的 `person_code` 是动作码内的公开定位符；扫码写接口只接受 ADR-008 的两张人员动作码，不接受裸 `person_code`、旧 `scan_code`、人工动作选择或按日次数推断
 - 既有扫码和邮件记录的动作标记为 `unknown` / `legacy_unknown`，历史查询不对旧数据反推进入或离开
 - 未映射扫码使用独立 `unmapped_scan_cases` 处理状态；修正映射与历史邮件重发解耦，当前不自动补发
+- 待删除地点立即停止扫码、人员写入、assignment 新增和 queued 邮件；历史读取仍按 tenant 与现有
+  operator assignment 授权。地点终结清理优先级高于其人员各自的期限，并撤销 operator assignments
 
 ## 10. 核心业务流程
 

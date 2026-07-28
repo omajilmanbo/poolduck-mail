@@ -165,6 +165,7 @@ describe('Scan Events API', () => {
           where: {
             id: locationId,
             tenantId,
+            status: { notIn: ['pending_delete', 'purged'] },
             operatorLocationAssignments: {
               some: { tenantId, operatorId: userId },
             },

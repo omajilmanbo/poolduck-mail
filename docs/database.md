@@ -249,6 +249,11 @@ Implementation notes:
 - Issue #99 回滚脚本为 `backend/prisma/rollback/20260724030000_add_user_login_identities.sql`。存在
   `email IS NULL` 的 operator 时脚本会停止；必须先保留 username-capable 版本并由 tenant_manager
   补齐邮箱，不得删除账号以完成回滚。
+- Issue #104 为 `locations` 与 `person_mappings` 增加 `deleted_at`、`purge_after`、
+  `deleted_from_status` 及到期扫描索引。`pending_delete` 记录保留 14 天；`purged` 记录保留不可复用的
+  公开业务 ID 和关系锚点，但地点名称、人员姓名和邮箱被匿名化。扫码、邮件、未映射和审计历史不删除。
+- `20260728020000_add_delayed_deletion` 仅增加可空列与索引，不回填或删除现有数据。该生命周期迁移
+  不提供破坏性 SQL 回滚；需要回滚应用时保留新增列，待恢复版本再次接管到期清理。
 - Core tenant-scoped indexes are included for users, devices, locations, person mappings, scan events, mail jobs, and audit logs.
 
 Local migration commands:

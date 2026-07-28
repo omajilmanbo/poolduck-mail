@@ -14,8 +14,12 @@ export class LocationAccessService {
   locationWhere(
     user: AuthenticatedUserResponse,
     extra: Prisma.LocationWhereInput = {},
+    includeDeleted = false,
   ): Prisma.LocationWhereInput {
     return {
+      ...(includeDeleted
+        ? {}
+        : { status: { notIn: ['pending_delete', 'purged'] } }),
       ...extra,
       tenantId: user.tenant_id,
       ...(user.role === 'tenant_manager'
@@ -31,12 +35,15 @@ export class LocationAccessService {
     };
   }
 
-  resourceLocationWhere(user: AuthenticatedUserResponse) {
+  resourceLocationWhere(
+    user: AuthenticatedUserResponse,
+    includeDeleted = false,
+  ) {
     return user.role === 'tenant_manager'
       ? {}
       : {
           location: {
-            is: this.locationWhere(user),
+            is: this.locationWhere(user, {}, includeDeleted),
           },
         };
   }
@@ -44,6 +51,7 @@ export class LocationAccessService {
   async assertLocation(
     user: AuthenticatedUserResponse,
     locationIdentifier: string,
+    includeDeleted = false,
   ): Promise<{ id: string; locationCode: string; status: string }> {
     const normalized = locationIdentifier.trim().toUpperCase();
     const isUuid =
@@ -51,20 +59,24 @@ export class LocationAccessService {
         locationIdentifier,
       );
     const location = await this.prisma.location.findFirst({
-      where: this.locationWhere(user, {
-        OR: [
-          { locationCode: normalized },
-          ...(isUuid ? [{ id: locationIdentifier }] : []),
-          {
-            legacyIdentifiers: {
-              some: {
-                tenantId: user.tenant_id,
-                legacyCode: normalized,
+      where: this.locationWhere(
+        user,
+        {
+          OR: [
+            { locationCode: normalized },
+            ...(isUuid ? [{ id: locationIdentifier }] : []),
+            {
+              legacyIdentifiers: {
+                some: {
+                  tenantId: user.tenant_id,
+                  legacyCode: normalized,
+                },
               },
             },
-          },
-        ],
-      }),
+          ],
+        },
+        includeDeleted,
+      ),
       select: { id: true, locationCode: true, status: true },
     });
     if (location) {

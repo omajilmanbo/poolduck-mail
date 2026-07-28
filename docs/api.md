@@ -93,7 +93,9 @@
 - 权限：已登录用户（`tenant_manager` / `operator`）
 - 订阅要求：无（仅用于页面初始化）
 - location 授权：`tenant_manager` 返回本 tenant 全部 location；`operator` 只返回显式分配的 location。无 assignment 时返回空数组
-- 出参：`[{ location_id, location_code, location_name, type, is_active }]`；`location_id` 与 `location_code` 均返回 8 位公开业务 ID，`type` 固定为 `location`，不返回内部 UUID
+- 管理页可传 `include_deleted=true` 查看尚在 14 天恢复期内的地点；普通调用排除
+  `pending_delete` / `purged`
+- 出参：`[{ location_id, location_code, location_name, type, is_active, deletion_status, deleted_at, purge_after }]`；`location_id` 与 `location_code` 均返回 8 位公开业务 ID，`type` 固定为 `location`，不返回内部 UUID
 - 错误：未认证时返回 `UNAUTHORIZED`
 
 ### GET `/api/locations/{location_id}/people`
@@ -102,7 +104,9 @@
 - 权限：已登录用户（`tenant_manager` / `operator`）
 - 订阅要求：无（仅用于映射预加载）
 - location 授权：`operator` 必须已被显式分配该 location；未分配、伪造或跨 tenant 的 `location_id` 与不存在地点统一返回 `LOCATION_NOT_FOUND`
-- 出参：`[{ person_id, person_code, person_name, scan_code, email_masked, is_active }]`；`person_id` 与兼容字段 `scan_code` 当前均返回 `person_code`，不返回内部 UUID
+- 管理页可传 `include_deleted=true` 查看尚在恢复期内的人员；普通调用排除
+  `pending_delete` / `purged`
+- 出参：`[{ person_id, person_code, person_name, scan_code, email_masked, is_active, deletion_status, deleted_at, purge_after }]`；`person_id` 与兼容字段 `scan_code` 当前均返回 `person_code`，不返回内部 UUID
 - 隐私：不返回完整邮箱地址
 - 人员读取与写入路径统一执行 operator-location 门禁；客户端提交的 location 参数不能扩大权限
 
@@ -113,6 +117,8 @@
 - `PATCH /api/locations/{location_id}/people/{person_id}`：仅允许更新姓名、邮箱；不接受状态、`person_code`、`scan_code` 或 `location_id`
 - `DELETE /api/locations/{location_id}/people/{person_id}`：软停用，历史保留
 - `POST /api/locations/{location_id}/people/{person_id}/reactivate`：重新启用已停用人员；地点本身必须 active，人员 ID 与历史关联不变
+- `POST /api/locations/{location_id}/people/{person_id}/delete`：安排 14 天后终结删除并立即停止业务使用
+- `POST /api/locations/{location_id}/people/{person_id}/restore`：期限内恢复为删除前的 active/inactive 状态；到期返回 `DELETION_RESTORE_EXPIRED`
 - 生成规则：前 7 位为 Unix 秒、后 5 位为安全随机值；数据库唯一冲突最多重试 5 次，耗尽返回 `PERSON_CODE_GENERATION_EXHAUSTED`
 
 ### 地点写接口
@@ -121,7 +127,10 @@
 - `PATCH /api/locations/{location_id}`：仅允许修改 `location_name`；同 tenant 名称去除首尾空白后按大小写不敏感规则唯一
 - `DELETE /api/locations/{location_id}`：仅 `tenant_manager`，软停用
 - `POST /api/locations/{location_id}/reactivate`：仅 `tenant_manager`，重新启用已停用地点
+- `POST /api/locations/{location_id}/delete`：仅 `tenant_manager`，安排 14 天后终结删除；立即终止 queued 邮件
+- `POST /api/locations/{location_id}/restore`：仅 `tenant_manager`，期限内恢复删除前状态；到期返回 `DELETION_RESTORE_EXPIRED`
 - DELETE 为软停用；停用后拒绝新扫描与人员映射写入，并把该地点 queued 邮件安全终止为 failed/`LOCATION_INACTIVE`
+- 终结清理由幂等后台任务按数据库时间执行：当前 PII 被匿名化、地点 assignments 被撤销，历史快照不删除
 - location ID 冲突最多重试 5 次，耗尽返回 `LOCATION_CODE_GENERATION_EXHAUSTED`；不存在、跨 tenant 或 operator 未授权统一返回 `LOCATION_NOT_FOUND`
 - 错误：`location_id` 非法或不属于当前 tenant 时返回 `LOCATION_NOT_FOUND`
 

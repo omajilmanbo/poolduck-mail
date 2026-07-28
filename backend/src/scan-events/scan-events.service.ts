@@ -62,7 +62,7 @@ export class ScanEventsService {
     query: ListScanEventsDto,
   ): Promise<ScanEventListResponse> {
     const selectedLocation = query.location_id
-      ? await this.locationAccess.assertLocation(user, query.location_id)
+      ? await this.locationAccess.assertLocation(user, query.location_id, true)
       : null;
 
     const cursor = this.decodeCursor(query.cursor);
@@ -70,7 +70,7 @@ export class ScanEventsService {
       tenantId: user.tenant_id,
       ...(selectedLocation ? { locationId: selectedLocation.id } : {}),
       ...(!query.location_id
-        ? this.locationAccess.resourceLocationWhere(user)
+        ? this.locationAccess.resourceLocationWhere(user, true)
         : {}),
       ...(query.created_from || query.created_to
         ? {
@@ -123,7 +123,7 @@ export class ScanEventsService {
       where: {
         id: scanEventId,
         tenantId: user.tenant_id,
-        ...this.locationAccess.resourceLocationWhere(user),
+        ...this.locationAccess.resourceLocationWhere(user, true),
       },
       select: this.historySelect(),
     });
@@ -140,7 +140,7 @@ export class ScanEventsService {
 
   async exportScanEvents(user: AuthenticatedUserResponse, query: ExportScanEventsDto) {
     const selectedLocation = query.location_id
-      ? await this.locationAccess.assertLocation(user, query.location_id)
+      ? await this.locationAccess.assertLocation(user, query.location_id, true)
       : null;
     const range = this.assertExportRange(query.created_from, query.created_to);
     const rows = await this.prisma.scanEvent.findMany({
@@ -149,7 +149,7 @@ export class ScanEventsService {
         createdAt: { gte: range.from, lte: range.to },
         ...(selectedLocation ? { locationId: selectedLocation.id } : {}),
         ...(!query.location_id
-          ? this.locationAccess.resourceLocationWhere(user)
+          ? this.locationAccess.resourceLocationWhere(user, true)
           : {}),
         ...(query.status === 'unmapped'
           ? { scanType: 'unmapped' }
