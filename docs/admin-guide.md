@@ -9,14 +9,24 @@
 
 ## 2. 租户管理
 
+`tenant_manager` 仅作用于自身 tenant，不是跨租户平台管理员。ADR-006 已 Accepted，平台操作由未来独立实现的 `platform_admin` 承担。
+
 - 查看租户列表与状态
 - 对违规或欠费租户执行 suspended 操作
 - 恢复租户前确认订阅状态正常
 
 ## 3. 用户与权限管理
 
-- 创建/禁用用户
-- 分配角色（root_admin/manager）
+- `tenant_manager` 可从工作台进入“用户管理”，列出、创建、修改 username/可选邮箱、启停和重置本
+  tenant 的 `operator`；`operator` 没有该入口，当前不能创建或管理其他 `tenant_manager`
+- operator username 为 3–32 位小写 ASCII 字母、数字、点、下划线或连字符，首尾为字母或数字；
+  `admin`、`root`、`operator` 等保留字不可使用。username 在 tenant 内唯一，邮箱可留空
+- 创建或重置密码由 `tenant_manager` 直接提交新密码；至少 8 位且必须同时包含英文字母和数字，可包含额外符号
+- 修改 username/email、禁用或重置密码会立即撤销目标 operator 的全部会话；API 响应和审计日志均不
+  包含身份原文、密码或密码哈希
+- 新建和既有 operator 默认没有 location 权限。tenant_manager 必须通过 assignment API 显式设置一个或多个 active location；空数组表示撤销全部，单地点也可单独撤销
+- assignment 撤销后，operator 的新扫码、人员映射写入、历史与未映射处理请求立即被拒绝，不需要等待 token 过期。当前前端分配页面属于 #97，本 Issue 仅提供服务端 API
+- 页面在停用与密码重置前要求确认；新密码提交后即从表单清除，后续应通过租户批准的安全渠道交付
 - 定期审查高权限账号
 
 ## 4. 订阅管理
@@ -27,6 +37,22 @@
 
 ## 5. 审计与合规
 
-- 定期导出审计日志
+- `tenant_manager` 可在审计页面按时间、动作查询当前租户日志并导出 CSV；单次导出时间范围不超过 31 天
+- 扫描与邮件历史也可按当前地点导出 CSV；邮箱仅以 `a***z@example.com` 形式部分脱敏
+- 审计与导出不得包含邮件正文、密码、token 或 provider secret；Production 审计日志保留 90 天
+
+## 6. 地点与人员停用
+
+- tenant_manager 新建地点时只填写名称；8 位地点 ID 由服务端生成，类型固定为 `location`，页面不再要求代码或 office/school 分类
+- 删除人员映射等同于将其设为 inactive，历史记录不删除
+- 已停用人员可在人员管理页“重新启用”；地点本身必须处于启用状态，重新启用不会改变人员 ID 或历史记录
+- 新增人员时由服务端生成不可编辑的 12 位 `person_code`；该人员使用 `PD1|ENTRY|<person_code>` 与 `PD1|EXIT|<person_code>` 两张动作码，管理员不得手工指定、复用人员 ID 或把裸人员码当作扫码写入值
+- 人员列表的“查看动作码”在受控浏览器内临时生成进入/离开 × 二维码/Code 128 共四张图片，支持单张 PNG 与四张图片 ZIP 下载。下载文件名仅使用 `person_code`、动作和格式；图片不得包含姓名、邮箱、tenant/location UUID 或内部人员 UUID，也不得上传到第三方图片服务或持久化
+- 进入与离开图片除颜色外还使用方向图形和显著文字区分，便于黑白打印和人工核对；人员 ID 缺失或格式非法时不得生成或下载，也不得回退到内部 UUID
+- 进入/离开由动作码显式决定，不设置操作员手动动作开关，也不按租户时区零点或每日扫码次数重置/推断
+- 邮件任务保存发送时的 tenant/location/person 名称与 `person_code` 快照。后续改名不改写历史；审计和普通日志不得记录完整邮箱、邮件正文或批量 UUID/人员码对应关系
+- 删除地点等同于将其设为 inactive；停止新扫描和映射写入，并把该地点仍在排队的邮件标记为安全终止
+- 已停用地点可由 tenant_manager 在地点管理页重新启用；该操作不依赖价格、套餐 allowance、付款或商业计费配置
+- `operator` 只能维护当前租户已显式授权地点内的人员映射；只有 `tenant_manager` 可新增、编辑、停用或启用地点
 - 关注 denied/fail 事件峰值
 - 发生安全事件时保全日志并升级处理

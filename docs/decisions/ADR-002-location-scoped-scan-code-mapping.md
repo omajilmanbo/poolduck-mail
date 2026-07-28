@@ -3,6 +3,8 @@
 - 状态：Accepted
 - 日期：2026-05-20
 - 相关 Issue：#2
+- 部分 supersede：ADR-009 已取代本 ADR 中的 MVP location 计费与补差规则；
+  location-scoped 扫码隔离决策继续有效。
 
 ## Context
 
@@ -14,11 +16,11 @@
 - 新增 `person_mappings` 表，承载在指定 `location` 下的 `scan_code -> person_name/email` 关系。
 - 约束扫码查询必须同时使用 `(tenant_id, location_id, scan_code)`，并为其建立唯一索引，禁止仅按 `scan_code` 全局查找。
 - `users` 明确为“可登录系统的管理员账号”，角色拆分为：
-  - `root_admin`：可编辑订阅、增减 location。
-  - `manager`：仅可编辑 `person_mappings`。
+  - `tenant_manager`：可管理 location；订阅权限按 ADR-006 为只读。
+  - `operator`：仅可编辑 `person_mappings`。
 - `subscriptions` 保持“租户级”模型，外键保持 `tenant_id`（每个 tenant 一条订阅配置）。
-- 计费策略在 MVP 采用“租户基础套餐 + location 数量用于后续计费扩展”的方式：当前不引入 location 级订阅拆分，避免先期 migration 与权限复杂度。
-- 当订阅周期中追加 location 数量时，采用与租户订阅 `end_at` 同步到期（co-term）并按剩余周期补差计费，避免多到期日并行。
+- 原计费提案要求 MVP 使用“租户基础套餐 + location 数量扩展”并对追加 location
+  co-term / proration；该部分已由 ADR-009 supersede，不再适用于 MVP。
 
 ## Alternatives considered
 
@@ -26,7 +28,8 @@
 - 使用 `schools` 单一命名：同样不覆盖办公室场景。
 - 统一命名为 `locations`：可覆盖办公室/学校，保留 `type` 区分，兼容后续扩展。
 - 订阅改为 location 级：可直接按 location 定价，但会增加订阅聚合判断、门禁实现与迁移成本。
-- 保持租户级订阅并按 location 数量计费：实现成本更低，能满足 MVP 快速落地；后续若有精细化计费再通过新 ADR 升级。
+- MVP 保持租户级订阅且不按 location 数量执行商业计费：当前由 ADR-009 采用；
+  未来商业化必须通过新的计费 ADR 和独立实现 Issue 引入。
 
 ## Consequences
 

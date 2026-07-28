@@ -20,7 +20,7 @@ describe('Auth tenant context', () => {
   const tenantId = '11111111-1111-4111-8111-111111111111';
   const otherTenantId = '22222222-2222-4222-8222-222222222222';
   const userId = '33333333-3333-4333-8333-333333333333';
-  const email = 'manager@example.local';
+  const email = 'operator@example.local';
   const endAt = new Date('2026-12-31T23:59:59.000Z');
 
   beforeAll(() => {
@@ -54,7 +54,7 @@ describe('Auth tenant context', () => {
     await app.close();
   });
 
-  it.each(['root_admin', 'manager'])(
+  it.each(['tenant_manager', 'operator'])(
     'protected APIs should allow the %s role through the shared auth context',
     async (role) => {
       prisma.user.findFirst.mockResolvedValue(currentUser(role));
@@ -92,7 +92,7 @@ describe('Auth tenant context', () => {
   });
 
   it('business APIs should use the JWT tenant context instead of forged tenant_id query values', async () => {
-    prisma.user.findFirst.mockResolvedValue(currentUser('manager'));
+    prisma.user.findFirst.mockResolvedValue(currentUser('operator'));
     prisma.subscription.findUnique.mockResolvedValue({
       status: 'active',
       plan: 'mvp',
@@ -102,7 +102,7 @@ describe('Auth tenant context', () => {
     await request(app.getHttpServer())
       .get('/api/license/check')
       .query({ tenant_id: otherTenantId })
-      .set('Authorization', `Bearer ${accessToken('manager')}`)
+      .set('Authorization', `Bearer ${accessToken('operator')}`)
       .expect(200);
 
     expect(prisma.user.findFirst).toHaveBeenCalledWith(
@@ -133,8 +133,10 @@ describe('Auth tenant context', () => {
     return {
       id: userId,
       tenantId,
+      username: role === 'operator' ? 'local-operator' : null,
       email,
       role,
+      status: 'active',
     };
   }
 });

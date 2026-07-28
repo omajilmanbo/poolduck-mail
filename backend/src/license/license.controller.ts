@@ -8,7 +8,7 @@ import { LicenseService } from './license.service';
 
 @Controller('api/license')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('root_admin', 'manager')
+@Roles('tenant_manager', 'operator')
 export class LicenseController {
   constructor(private readonly licenseService: LicenseService) {}
 

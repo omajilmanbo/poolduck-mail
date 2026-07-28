@@ -5,6 +5,7 @@ import {
   createScanEventBody,
   isSendAllowed,
   mailStatusLabel,
+  scanActionLabel,
 } from '../src/api/client';
 
 describe('frontend API client', () => {
@@ -33,13 +34,26 @@ describe('frontend API client', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const client = createApiClient({ baseUrl: 'http://api.local/' });
-    await client.createScanEvent('token-1', 'location-1', 'SCAN-001');
+    await client.createScanEvent(
+      'token-1',
+      'location-1',
+      'PD1|ENTRY|01K0ABC10001',
+      'scan-test-key-123',
+    );
 
     expect(fetchMock).toHaveBeenCalledWith(
       'http://api.local/api/scan-events',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify(createScanEventBody('location-1', 'SCAN-001')),
+        body: JSON.stringify(
+          createScanEventBody(
+            'location-1',
+            'PD1|ENTRY|01K0ABC10001',
+          ),
+        ),
+        headers: expect.objectContaining({
+          'Idempotency-Key': 'scan-test-key-123',
+        }),
       }),
     );
 
@@ -47,7 +61,7 @@ describe('frontend API client', () => {
     const body = JSON.parse(request.body as string) as Record<string, unknown>;
     expect(body).toEqual({
       location_id: 'location-1',
-      scan_code: 'SCAN-001',
+      scan_code: 'PD1|ENTRY|01K0ABC10001',
     });
     expect(body).not.toHaveProperty('tenant_id');
     expect(body).not.toHaveProperty('custom_message');
@@ -62,8 +76,8 @@ describe('frontend API client', () => {
 
     await expect(
       client.login({
-        tenant_id: '11111111-1111-4111-8111-111111111111',
-        email: 'manager@example.local',
+        tenant_code: '10CA000001',
+        identifier: 'local-operator',
         password: 'PoolduckLocal123!',
       }),
     ).rejects.toMatchObject({
@@ -75,8 +89,8 @@ describe('frontend API client', () => {
 
     await expect(
       client.login({
-        tenant_id: '11111111-1111-4111-8111-111111111111',
-        email: 'manager@example.local',
+        tenant_code: '10CA000001',
+        identifier: 'local-operator',
         password: 'PoolduckLocal123!',
       }),
     ).rejects.toBeInstanceOf(ApiNetworkError);
@@ -101,5 +115,11 @@ describe('workspace helpers', () => {
     expect(mailStatusLabel('queued')).toBe('发送中');
     expect(mailStatusLabel('sent')).toBe('已发送');
     expect(mailStatusLabel('failed')).toBe('发送失败');
+  });
+
+  it('uses explicit labels for persisted scan actions', () => {
+    expect(scanActionLabel('entry')).toBe('进入');
+    expect(scanActionLabel('exit')).toBe('离开');
+    expect(scanActionLabel('unknown')).toBe('动作未知');
   });
 });

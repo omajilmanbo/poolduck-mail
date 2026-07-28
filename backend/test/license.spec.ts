@@ -22,7 +22,7 @@ describe('License API', () => {
   const tenantId = '11111111-1111-4111-8111-111111111111';
   const otherTenantId = '22222222-2222-4222-8222-222222222222';
   const userId = '33333333-3333-4333-8333-333333333333';
-  const email = 'manager@example.local';
+  const email = 'operator@example.local';
   const endAt = new Date('2026-12-31T23:59:59.000Z');
 
   beforeAll(() => {
@@ -54,6 +54,7 @@ describe('License API', () => {
   });
 
   afterEach(async () => {
+    jest.useRealTimers();
     await app.close();
   });
 
@@ -108,6 +109,30 @@ describe('License API', () => {
     expect(prisma.subscription.findUnique).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['2026-07-22T08:59:59.999Z', true],
+    ['2026-07-22T09:00:00.000Z', false],
+  ])('treats end_at boundary %s as can_send=%s in UTC', async (now, canSend) => {
+    jest.useFakeTimers().setSystemTime(new Date(now));
+    prisma.user.findFirst.mockResolvedValue(currentUser());
+    const boundary = new Date('2026-07-22T09:00:00.000Z');
+    prisma.subscription.findUnique.mockResolvedValue({
+      status: 'active',
+      plan: 'mvp',
+      endAt: boundary,
+    });
+
+    const response = await request(app.getHttpServer())
+      .get('/api/license/check')
+      .set('Authorization', `Bearer ${accessToken()}`)
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      status: canSend ? 'active' : 'expired',
+      can_send: canSend,
+    });
+  });
+
   it('GET /api/license/check should ignore forged tenant_id query parameters', async () => {
     prisma.user.findFirst.mockResolvedValue(currentUser());
     prisma.subscription.findUnique.mockResolvedValue({
@@ -150,7 +175,7 @@ describe('License API', () => {
       sub: userId,
       user_id: userId,
       tenant_id: tenantId,
-      role: 'manager',
+      role: 'operator',
     });
   }
 
@@ -159,7 +184,8 @@ describe('License API', () => {
       id: userId,
       tenantId,
       email,
-      role: 'manager',
+      role: 'operator',
+      status: 'active',
     };
   }
 });

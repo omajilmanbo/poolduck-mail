@@ -211,7 +211,7 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T backe
 docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T \
   -e API_BASE_URL=http://reverse-proxy \
   -e API_SMOKE_TENANT_ID=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa \
-  -e API_SMOKE_EMAIL=staging-active-manager@example.local \
+  -e API_SMOKE_EMAIL=staging-active-operator@example.local \
   -e API_SMOKE_PASSWORD=PoolduckStaging123! \
   -e API_SMOKE_LOCATION_ID=dddddddd-dddd-4ddd-8ddd-dddddddddddd \
   -e API_SMOKE_SCAN_CODE=SCAN-STG-ACTIVE-001 \

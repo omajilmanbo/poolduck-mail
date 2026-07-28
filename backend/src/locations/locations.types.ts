@@ -8,8 +8,14 @@ export type LocationResponse = {
 
 export type PersonMappingResponse = {
   person_id: string;
+  person_code: string;
   person_name: string;
   scan_code: string;
   email_masked: string;
   is_active: boolean;
+};
+
+export type PersonMappingDetailResponse = PersonMappingResponse & {
+  location_id: string;
+  email: string;
 };

@@ -5,6 +5,7 @@ import { AuthenticatedRequest } from './auth.types';
 type RequestWithHeaders = AuthenticatedRequest & {
   headers: {
     authorization?: string;
+    cookie?: string;
   };
 };
 
@@ -16,6 +17,7 @@ export class JwtAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<RequestWithHeaders>();
     request.auth = await this.authService.authenticate(
       request.headers.authorization,
+      request.headers.cookie,
     );
 
     return true;

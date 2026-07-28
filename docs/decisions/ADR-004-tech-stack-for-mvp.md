@@ -45,7 +45,7 @@ MVP 技术栈统一如下：
 4. 认证与授权
    - 登录方式：tenant_id + username(email) + password
    - 密码存储：Argon2id 哈希
-   - 权限模型：RBAC（root_admin / manager）
+   - 权限模型：RBAC（tenant_manager / operator）
 
 5. 邮件 provider
    - MVP 默认 provider：Sandbox/Mock Mail Provider（仅记录发送请求与结果，不发真实邮件）
@@ -124,3 +124,6 @@ MVP 技术栈统一如下：
 > 历史编号说明（2026-05-27）：本节 Issue 编号反映 ADR 编写当时的计划，已不作为当前 Issue 映射。
 > 后续实际拆分为 #20 CI、#21 数据库迁移、#26 sandbox mail provider、#33 认证与租户上下文。
 > Issue 的当前 Scope 与状态以 GitHub Issue 为准；本说明只修正追溯口径，不改变本 ADR 的技术决策。
+>
+> 登录标识后续修订（2026-07-28）：ADR-007 已 Accepted；#91 将公开登录字段从 UUID
+> `tenant_id` 改为 10 位 `tenant_code`，JWT/session 内部 tenant UUID 与本 ADR 的多租户技术栈不变。

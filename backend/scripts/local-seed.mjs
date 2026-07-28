@@ -16,20 +16,25 @@ const prisma = new PrismaClient({ adapter });
 
 const seed = {
   activeTenantId: "11111111-1111-4111-8111-111111111111",
+  activeTenantCode: "10CA000001",
   suspendedTenantId: "22222222-2222-4222-8222-222222222222",
-  rootUserId: "33333333-3333-4333-8333-333333333333",
-  managerUserId: "44444444-4444-4444-8444-444444444444",
-  suspendedManagerUserId: "55555555-5555-4555-8555-555555555555",
+  suspendedTenantCode: "10CA000002",
+  tenantManagerUserId: "33333333-3333-4333-8333-333333333333",
+  operatorUserId: "44444444-4444-4444-8444-444444444444",
+  suspendedOperatorUserId: "55555555-5555-4555-8555-555555555555",
   officeLocationId: "66666666-6666-4666-8666-666666666666",
   schoolLocationId: "77777777-7777-4777-8777-777777777777",
+  suspendedLocationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   activeMappingId: "88888888-8888-4888-8888-888888888888",
   inactiveMappingId: "99999999-9999-4999-8999-999999999999",
   password: "PoolduckLocal123!",
-  rootEmail: "root-admin@example.local",
-  managerEmail: "manager@example.local",
-  suspendedManagerEmail: "suspended-manager@example.local",
-  activeScanCode: "SCAN-LOCAL-001",
-  inactiveScanCode: "SCAN-LOCAL-INACTIVE",
+  tenantManagerEmail: "tenant-manager@example.local",
+  operatorUsername: "local-operator",
+  operatorEmail: "operator@example.local",
+  suspendedOperatorUsername: "suspended-operator",
+  suspendedOperatorEmail: "suspended-operator@example.local",
+  activeScanCode: "01K0ABC10001",
+  inactiveScanCode: "01K0ABC10002",
   unmappedScanCode: "SCAN-LOCAL-UNMAPPED",
 };
 
@@ -37,7 +42,7 @@ async function upsertLocation(data) {
   const existing = await prisma.location.findFirst({
     where: {
       tenantId: data.tenantId,
-      locationCode: data.locationCode,
+      OR: [{ id: data.id }, { locationCode: data.locationCode }],
     },
     select: { id: true },
   });
@@ -59,20 +64,70 @@ async function upsertLocation(data) {
   });
 }
 
+async function upsertUser(data) {
+  const existingByIdentity = await prisma.user.findUnique({
+    where: data.username
+      ? {
+          tenantId_username: {
+            tenantId: data.tenantId,
+            username: data.username,
+          },
+        }
+      : {
+          tenantId_email: {
+            tenantId: data.tenantId,
+            email: data.email,
+          },
+        },
+    select: { id: true },
+  });
+  const existingById =
+    existingByIdentity ??
+    (await prisma.user.findUnique({
+      where: { id: data.id },
+      select: { id: true },
+    }));
+
+  if (existingById) {
+    return prisma.user.update({
+      where: { id: existingById.id },
+      data: {
+        tenantId: data.tenantId,
+        username: data.username ?? null,
+        email: data.email,
+        passwordHash: data.passwordHash,
+        role: data.role,
+        status: data.status,
+      },
+    });
+  }
+
+  return prisma.user.create({
+    data,
+  });
+}
+
 async function upsertPersonMapping(data) {
-  const existing = await prisma.personMapping.findFirst({
+  const existingByCode = await prisma.personMapping.findFirst({
     where: {
       tenantId: data.tenantId,
       locationId: data.locationId,
-      scanCode: data.scanCode,
+      personCode: data.personCode,
     },
     select: { id: true },
   });
+  const existing =
+    existingByCode ??
+    (await prisma.personMapping.findUnique({
+      where: { id: data.id },
+      select: { id: true },
+    }));
 
   if (existing) {
     return prisma.personMapping.update({
       where: { id: existing.id },
       data: {
+        personCode: data.personCode,
         scanCode: data.scanCode,
         personName: data.personName,
         email: data.email,
@@ -94,11 +149,13 @@ async function main() {
   await prisma.tenant.upsert({
     where: { id: seed.activeTenantId },
     update: {
+      tenantCode: seed.activeTenantCode,
       name: "Poolduck Local Active Tenant",
       status: "active",
     },
     create: {
       id: seed.activeTenantId,
+      tenantCode: seed.activeTenantCode,
       name: "Poolduck Local Active Tenant",
       status: "active",
     },
@@ -107,11 +164,13 @@ async function main() {
   await prisma.tenant.upsert({
     where: { id: seed.suspendedTenantId },
     update: {
+      tenantCode: seed.suspendedTenantCode,
       name: "Poolduck Local Suspended Tenant",
       status: "active",
     },
     create: {
       id: seed.suspendedTenantId,
+      tenantCode: seed.suspendedTenantCode,
       name: "Poolduck Local Suspended Tenant",
       status: "active",
     },
@@ -151,87 +210,92 @@ async function main() {
     },
   });
 
-  await prisma.user.upsert({
-    where: {
-      tenantId_email: {
-        tenantId: seed.activeTenantId,
-        email: seed.rootEmail,
-      },
-    },
-    update: {
-      passwordHash,
-      role: "root_admin",
-      status: "active",
-    },
-    create: {
-      id: seed.rootUserId,
-      tenantId: seed.activeTenantId,
-      email: seed.rootEmail,
-      passwordHash,
-      role: "root_admin",
-      status: "active",
-    },
+  await upsertUser({
+    id: seed.tenantManagerUserId,
+    tenantId: seed.activeTenantId,
+    username: null,
+    email: seed.tenantManagerEmail,
+    passwordHash,
+    role: "tenant_manager",
+    status: "active",
   });
 
-  await prisma.user.upsert({
-    where: {
-      tenantId_email: {
-        tenantId: seed.activeTenantId,
-        email: seed.managerEmail,
-      },
-    },
-    update: {
-      passwordHash,
-      role: "manager",
-      status: "active",
-    },
-    create: {
-      id: seed.managerUserId,
-      tenantId: seed.activeTenantId,
-      email: seed.managerEmail,
-      passwordHash,
-      role: "manager",
-      status: "active",
-    },
+  await upsertUser({
+    id: seed.operatorUserId,
+    tenantId: seed.activeTenantId,
+    username: seed.operatorUsername,
+    email: seed.operatorEmail,
+    passwordHash,
+    role: "operator",
+    status: "active",
   });
 
-  await prisma.user.upsert({
-    where: {
-      tenantId_email: {
-        tenantId: seed.suspendedTenantId,
-        email: seed.suspendedManagerEmail,
-      },
-    },
-    update: {
-      passwordHash,
-      role: "manager",
-      status: "active",
-    },
-    create: {
-      id: seed.suspendedManagerUserId,
-      tenantId: seed.suspendedTenantId,
-      email: seed.suspendedManagerEmail,
-      passwordHash,
-      role: "manager",
-      status: "active",
-    },
+  await upsertUser({
+    id: seed.suspendedOperatorUserId,
+    tenantId: seed.suspendedTenantId,
+    username: seed.suspendedOperatorUsername,
+    email: seed.suspendedOperatorEmail,
+    passwordHash,
+    role: "operator",
+    status: "active",
   });
 
   await upsertLocation({
     id: seed.officeLocationId,
     tenantId: seed.activeTenantId,
-    locationCode: "LOCAL-OFFICE",
+    locationCode: "10CA1001",
     name: "Local Office",
-    type: "office",
+    type: "location",
     status: "active",
+  });
+
+  await upsertLocation({
+    id: seed.suspendedLocationId,
+    tenantId: seed.suspendedTenantId,
+    locationCode: "5A5D0001",
+    name: "Suspended Office",
+    type: "location",
+    status: "active",
+  });
+
+  await prisma.operatorLocationAssignment.upsert({
+    where: {
+      tenantId_operatorId_locationId: {
+        tenantId: seed.activeTenantId,
+        operatorId: seed.operatorUserId,
+        locationId: seed.officeLocationId,
+      },
+    },
+    update: {},
+    create: {
+      tenantId: seed.activeTenantId,
+      operatorId: seed.operatorUserId,
+      locationId: seed.officeLocationId,
+    },
+  });
+
+  await prisma.operatorLocationAssignment.upsert({
+    where: {
+      tenantId_operatorId_locationId: {
+        tenantId: seed.suspendedTenantId,
+        operatorId: seed.suspendedOperatorUserId,
+        locationId: seed.suspendedLocationId,
+      },
+    },
+    update: {},
+    create: {
+      tenantId: seed.suspendedTenantId,
+      operatorId: seed.suspendedOperatorUserId,
+      locationId: seed.suspendedLocationId,
+    },
   });
 
   await upsertLocation({
     id: seed.schoolLocationId,
     tenantId: seed.activeTenantId,
-    locationCode: "LOCAL-SCHOOL",
+    locationCode: "10CA1002",
     name: "Local School",
-    type: "school",
+    type: "location",
     status: "active",
   });
 
@@ -240,6 +304,7 @@ async function main() {
     tenantId: seed.activeTenantId,
     locationId: seed.officeLocationId,
     scanCode: seed.activeScanCode,
+    personCode: seed.activeScanCode,
     personName: "Local Recipient",
     email: "local-recipient@example.local",
     status: "active",
@@ -250,6 +315,7 @@ async function main() {
     tenantId: seed.activeTenantId,
     locationId: seed.officeLocationId,
     scanCode: seed.inactiveScanCode,
+    personCode: seed.inactiveScanCode,
     personName: "Inactive Local Recipient",
     email: "inactive-recipient@example.local",
     status: "inactive",

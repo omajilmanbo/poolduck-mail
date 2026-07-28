@@ -8,6 +8,11 @@ import { LicenseModule } from './license/license.module';
 import { LocationsModule } from './locations/locations.module';
 import { MailJobsModule } from './mail-jobs/mail-jobs.module';
 import { ScanEventsModule } from './scan-events/scan-events.module';
+import { AuditModule } from './audit/audit.module';
+import { AuditApiModule } from './audit/audit-api.module';
+import { UnmappedScansModule } from './unmapped-scans/unmapped-scans.module';
+import { UsersModule } from './users/users.module';
+import { LocationAccessModule } from './location-access/location-access.module';
 
 @Module({
   imports: [
@@ -15,11 +20,16 @@ import { ScanEventsModule } from './scan-events/scan-events.module';
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
     }),
+    AuditModule,
+    LocationAccessModule,
     AuthModule,
+    AuditApiModule,
     LicenseModule,
     LocationsModule,
     MailJobsModule,
     ScanEventsModule,
+    UnmappedScansModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [

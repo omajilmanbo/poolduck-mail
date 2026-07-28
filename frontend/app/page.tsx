@@ -7,27 +7,59 @@ import {
   LocationItem,
   MailJobStatus,
   PersonMapping,
+  ScanAction,
+  ScanActionSource,
+  ScanHistoryItem,
   createApiClient,
   isSendAllowed,
   mailStatusLabel,
+  scanActionLabel,
 } from '../src/api/client';
 
-const TOKEN_STORAGE_KEY = 'poolduck.accessToken';
+const HISTORY_POLL_INTERVAL_MS = 2_000;
+const HISTORY_MAX_POLL_ATTEMPTS = 10;
 
 type UserSummary = {
-  email: string;
+  username: string | null;
+  email: string | null;
   role: string;
 };
 
 type ScanRecord = {
   scanEventId: string;
-  mailJobId: string;
-  mailSubject: string;
+  mailJobId: string | null;
+  mailSubject?: string;
   status: MailJobStatus;
   scanCode: string;
-  locationName: string;
+  action: ScanAction;
+  actionSource: ScanActionSource;
+  personName: string;
+  receivedAt: string;
   providerMessage?: string;
 };
+
+export function historyItemToRecord(item: ScanHistoryItem): ScanRecord {
+  return {
+    scanEventId: item.scan_event_id,
+    mailJobId: item.mail_job?.mail_job_id ?? null,
+    status: item.status,
+    scanCode: item.scan_code,
+    action: item.action,
+    actionSource: item.action_source,
+    personName: item.person_name ?? '-',
+    receivedAt: item.received_at,
+    providerMessage: item.mail_job?.error_message ?? undefined,
+  };
+}
+
+export function shouldPollHistory(records: ScanRecord[], attempts: number) {
+  return (
+    attempts < HISTORY_MAX_POLL_ATTEMPTS &&
+    records.some(
+      (record) => record.status === 'queued' || record.status === 'processing',
+    )
+  );
+}
 
 function formatDateTime(value?: string | null) {
   if (!value) {
@@ -62,8 +94,8 @@ export default function HomePage() {
   const api = useMemo(() => createApiClient(), []);
   const [token, setToken] = useState('');
   const [user, setUser] = useState<UserSummary | null>(null);
-  const [tenantId, setTenantId] = useState('');
-  const [email, setEmail] = useState('');
+  const [tenantCode, setTenantCode] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
@@ -76,14 +108,14 @@ export default function HomePage() {
   const [workspaceError, setWorkspaceError] = useState('');
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
-  const [sendingId, setSendingId] = useState('');
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyPollAttempts, setHistoryPollAttempts] = useState(0);
 
   const canSend = isSendAllowed(license);
   const selectedLocation = locations.find((location) => location.location_id === selectedLocationId);
 
   const clearSession = useCallback(
     (message?: string) => {
-      window.localStorage.removeItem(TOKEN_STORAGE_KEY);
       setToken('');
       setUser(null);
       setLicense(null);
@@ -107,12 +139,13 @@ export default function HomePage() {
           api.getLocations(accessToken),
         ]);
         setLicense(licenseResponse);
-        setLocations(locationResponse);
+        const activeLocations = locationResponse.filter((location) => location.is_active);
+        setLocations(activeLocations);
         setSelectedLocationId((current) => {
-          if (current && locationResponse.some((location) => location.location_id === current)) {
+          if (current && activeLocations.some((location) => location.location_id === current)) {
             return current;
           }
-          return locationResponse[0]?.location_id ?? '';
+          return activeLocations[0]?.location_id ?? '';
         });
       } catch (error) {
         if (error instanceof ApiError && error.status === 401) {
@@ -127,13 +160,42 @@ export default function HomePage() {
     [api, clearSession],
   );
 
+  const loadHistory = useCallback(
+    async (accessToken: string, locationId: string, background = false) => {
+      if (!background) {
+        setHistoryLoading(true);
+        setWorkspaceError('');
+      }
+      try {
+        const response = await api.getScanHistory(accessToken, locationId);
+        setRecords(response.items.map(historyItemToRecord));
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          clearSession('登录已失效，请重新登录');
+          return;
+        }
+        setWorkspaceError(getFriendlyError(error));
+      } finally {
+        if (!background) {
+          setHistoryLoading(false);
+        }
+      }
+    },
+    [api, clearSession],
+  );
+
   useEffect(() => {
-    const savedToken = window.localStorage.getItem(TOKEN_STORAGE_KEY);
-    if (savedToken) {
-      setToken(savedToken);
-      void loadWorkspace(savedToken);
-    }
-  }, [loadWorkspace]);
+    api.getMe().then((response) => {
+      const session = 'cookie-session';
+      setToken(session);
+      setUser({
+        username: response.user.username,
+        email: response.user.email,
+        role: response.user.role,
+      });
+      void loadWorkspace(session);
+    }).catch(() => clearSession());
+  }, [api, clearSession, loadWorkspace]);
 
   useEffect(() => {
     if (!token || !selectedLocationId) {
@@ -168,6 +230,31 @@ export default function HomePage() {
     };
   }, [api, clearSession, selectedLocationId, token]);
 
+  useEffect(() => {
+    if (!token || !selectedLocationId) {
+      setRecords([]);
+      return;
+    }
+    setHistoryPollAttempts(0);
+    void loadHistory(token, selectedLocationId);
+  }, [loadHistory, selectedLocationId, token]);
+
+  useEffect(() => {
+    if (
+      !token ||
+      !selectedLocationId ||
+      !shouldPollHistory(records, historyPollAttempts)
+    ) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setHistoryPollAttempts((current) => current + 1);
+      void loadHistory(token, selectedLocationId, true);
+    }, HISTORY_POLL_INTERVAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [historyPollAttempts, loadHistory, records, selectedLocationId, token]);
+
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoginLoading(true);
@@ -175,18 +262,19 @@ export default function HomePage() {
 
     try {
       const response = await api.login({
-        tenant_id: tenantId.trim(),
-        email: email.trim(),
+        tenant_code: tenantCode.trim().toUpperCase(),
+        identifier: identifier.trim(),
         password,
       });
-      window.localStorage.setItem(TOKEN_STORAGE_KEY, response.access_token);
-      setToken(response.access_token);
+      const session = 'cookie-session';
+      setToken(session);
       setUser({
+        username: response.user.username,
         email: response.user.email,
         role: response.user.role,
       });
       setPassword('');
-      await loadWorkspace(response.access_token);
+      await loadWorkspace(session);
     } catch (error) {
       setLoginError(getFriendlyError(error));
     } finally {
@@ -211,11 +299,18 @@ export default function HomePage() {
           mailJobId: response.mail_job_id,
           mailSubject: response.mail_subject,
           status: response.status,
-          scanCode: scanCode.trim(),
-          locationName: selectedLocation.location_name,
+          scanCode: response.person_code,
+          action: response.action,
+          actionSource: response.action_source,
+          personName:
+            people.find((person) => person.person_code === response.person_code)
+              ?.person_name ?? '-',
+          receivedAt: new Date().toISOString(),
+          providerMessage: response.error_message ?? undefined,
         },
         ...current,
       ]);
+      setHistoryPollAttempts(0);
       setScanCode('');
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
@@ -223,41 +318,9 @@ export default function HomePage() {
         return;
       }
       setWorkspaceError(getFriendlyError(error));
+      await loadHistory(token, selectedLocation.location_id, true);
     } finally {
       setScanLoading(false);
-    }
-  }
-
-  async function handleSend(record: ScanRecord) {
-    if (!token || !canSend || record.status === 'sent') {
-      return;
-    }
-
-    setSendingId(record.mailJobId);
-    setWorkspaceError('');
-
-    try {
-      const response = await api.sendMailJob(token, record.mailJobId);
-      setRecords((current) =>
-        current.map((item) =>
-          item.mailJobId === record.mailJobId
-            ? {
-                ...item,
-                status: response.status,
-                providerMessage:
-                  response.provider_result.provider_message_id ?? response.provider_result.error_message,
-              }
-            : item,
-        ),
-      );
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
-        clearSession('登录已失效，请重新登录');
-        return;
-      }
-      setWorkspaceError(getFriendlyError(error));
-    } finally {
-      setSendingId('');
     }
   }
 
@@ -281,23 +344,33 @@ export default function HomePage() {
               </div>
 
               <label className="mb-4 block text-sm font-medium">
-                tenant_id
+                tenant_code
                 <input
-                  data-testid="tenant-id-input"
-                  value={tenantId}
-                  onChange={(event) => setTenantId(event.target.value)}
+                  data-testid="tenant-code-input"
+                  name="organization"
+                  autoCapitalize="characters"
+                  autoComplete="organization"
+                  maxLength={10}
+                  pattern="[0-9A-HJKMNP-TV-Z]{10}"
+                  placeholder="例如：10CA000001"
+                  value={tenantCode}
+                  onChange={(event) =>
+                    setTenantCode(event.target.value.toUpperCase())
+                  }
                   className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
                   required
                 />
               </label>
 
               <label className="mb-4 block text-sm font-medium">
-                email
+                用户名/邮箱
                 <input
-                  data-testid="email-input"
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  data-testid="identifier-input"
+                  type="text"
+                  name="username"
+                  autoComplete="username"
+                  value={identifier}
+                  onChange={(event) => setIdentifier(event.target.value)}
                   className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
                   required
                 />
@@ -308,6 +381,7 @@ export default function HomePage() {
                 <input
                   data-testid="password-input"
                   type="password"
+                  autoComplete="current-password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
@@ -345,10 +419,25 @@ export default function HomePage() {
             <h1 className="text-2xl font-semibold">扫码工作台</h1>
           </div>
           <div className="flex items-center gap-3 text-sm">
-            <span className="hidden text-slate-500 sm:inline">{user?.email ?? '已登录'}</span>
+            <span className="hidden text-slate-500 sm:inline">
+              {user?.username ?? user?.email ?? '已登录'}
+            </span>
+            <a href="/people" className="rounded-md border border-slate-300 px-3 py-2 font-medium hover:bg-slate-50">
+              人员管理
+            </a>
+            <a href="/unmapped" className="rounded-md border border-slate-300 px-3 py-2 font-medium hover:bg-slate-50">
+              未映射扫码
+            </a>
+            {user?.role === 'tenant_manager' ? (
+              <>
+                <a href="/users" className="rounded-md border border-slate-300 px-3 py-2 font-medium hover:bg-slate-50">用户管理</a>
+                <a href="/locations" className="rounded-md border border-slate-300 px-3 py-2 font-medium hover:bg-slate-50">地点管理</a>
+                <a href="/audit" className="rounded-md border border-slate-300 px-3 py-2 font-medium hover:bg-slate-50">审计</a>
+              </>
+            ) : null}
             <button
               type="button"
-              onClick={() => clearSession()}
+              onClick={() => void api.logout().finally(() => clearSession())}
               className="rounded-md border border-slate-300 bg-white px-3 py-2 font-medium hover:bg-slate-50"
             >
               退出
@@ -374,14 +463,10 @@ export default function HomePage() {
                 {license?.status ?? 'loading'}
               </span>
             </div>
-            <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <dl className="mt-4 grid grid-cols-1 gap-3 text-sm">
               <div>
                 <dt className="text-slate-500">can_send</dt>
                 <dd className="font-semibold">{canSend ? 'true' : 'false'}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">end_at</dt>
-                <dd className="font-semibold">{formatDateTime(license?.end_at)}</dd>
               </div>
             </dl>
           </section>
@@ -440,7 +525,7 @@ export default function HomePage() {
           <form onSubmit={handleScan} className="rounded-md border border-slate-200 bg-white p-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-end">
               <label className="flex-1 text-sm font-semibold">
-                scan_code
+                人员动作码
                 <input
                   data-testid="scan-code-input"
                   value={scanCode}
@@ -448,6 +533,7 @@ export default function HomePage() {
                   className="mt-2 w-full rounded-md border border-slate-300 px-3 py-3 font-mono text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
                   disabled={!canSend || workspaceLoading}
                   autoFocus
+                  placeholder="PD1|ENTRY|<person_code> 或 PD1|EXIT|<person_code>"
                 />
               </label>
               <button
@@ -465,28 +551,75 @@ export default function HomePage() {
           </form>
 
           <section className="rounded-md border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 px-4 py-3">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
               <h2 className="text-base font-semibold">扫码记录</h2>
+              {user?.role === 'tenant_manager' && selectedLocationId ? (
+                <div className="flex gap-2">
+                  <button type="button" className="rounded-md border border-slate-300 px-3 py-2 text-xs" onClick={() => {
+                    const to = new Date();
+                    const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    const params = new URLSearchParams({ created_from: from.toISOString(), created_to: to.toISOString(), location_id: selectedLocationId });
+                    void api.exportScanEvents(params.toString());
+                  }}>导出扫描</button>
+                  <button type="button" className="rounded-md border border-slate-300 px-3 py-2 text-xs" onClick={() => {
+                    const to = new Date();
+                    const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    const params = new URLSearchParams({ created_from: from.toISOString(), created_to: to.toISOString(), location_id: selectedLocationId });
+                    void api.exportMailJobs(params.toString());
+                  }}>导出邮件</button>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                data-testid="history-refresh"
+                disabled={historyLoading || !selectedLocationId}
+                onClick={() => {
+                  setHistoryPollAttempts(0);
+                  void loadHistory(token, selectedLocationId);
+                }}
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                {historyLoading ? '加载中' : '刷新'}
+              </button>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-left text-sm">
+              <table aria-label="扫码记录" className="w-full min-w-[760px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                   <tr>
-                    <th className="px-4 py-3">location</th>
+                    <th className="px-4 py-3">人员名称</th>
                     <th className="px-4 py-3">scan_code</th>
+                    <th className="px-4 py-3">动作</th>
+                    <th className="px-4 py-3">时间</th>
                     <th className="px-4 py-3">mail_job</th>
                     <th className="px-4 py-3">状态</th>
-                    <th className="px-4 py-3">发送</th>
                   </tr>
                 </thead>
                 <tbody>
                   {records.map((record) => (
                     <tr key={record.scanEventId}>
-                      <td className="border-t border-slate-100 px-4 py-3">{record.locationName}</td>
+                      <td className="border-t border-slate-100 px-4 py-3">{record.personName}</td>
                       <td className="border-t border-slate-100 px-4 py-3 font-mono text-xs">{record.scanCode}</td>
                       <td className="border-t border-slate-100 px-4 py-3">
-                        <div className="font-mono text-xs">{record.mailJobId}</div>
-                        <div className="mt-1 max-w-md truncate text-xs text-slate-500">{record.mailSubject}</div>
+                        <span
+                          data-testid="scan-action"
+                          title={record.actionSource}
+                          className={`rounded-md px-2 py-1 text-xs font-semibold ${
+                            record.action === 'entry'
+                              ? 'bg-sky-100 text-sky-800'
+                              : record.action === 'exit'
+                                ? 'bg-violet-100 text-violet-800'
+                                : 'bg-slate-200 text-slate-700'
+                          }`}
+                        >
+                          {scanActionLabel(record.action)}
+                        </span>
+                      </td>
+                      <td className="border-t border-slate-100 px-4 py-3 text-xs">{formatDateTime(record.receivedAt)}</td>
+                      <td className="border-t border-slate-100 px-4 py-3">
+                        <div className="font-mono text-xs">{record.mailJobId ?? '-'}</div>
+                        {record.mailSubject ? (
+                          <div className="mt-1 max-w-md truncate text-xs text-slate-500">{record.mailSubject}</div>
+                        ) : null}
                         {record.providerMessage ? (
                           <div className="mt-1 max-w-md truncate text-xs text-slate-500">{record.providerMessage}</div>
                         ) : null}
@@ -497,7 +630,7 @@ export default function HomePage() {
                           className={`rounded-md px-2 py-1 text-xs font-semibold ${
                             record.status === 'sent'
                               ? 'bg-emerald-100 text-emerald-800'
-                              : record.status === 'failed'
+                              : record.status === 'failed' || record.status === 'unmapped'
                                 ? 'bg-red-100 text-red-700'
                                 : 'bg-amber-100 text-amber-800'
                           }`}
@@ -505,22 +638,15 @@ export default function HomePage() {
                           {mailStatusLabel(record.status)}
                         </span>
                       </td>
-                      <td className="border-t border-slate-100 px-4 py-3">
-                        <button
-                          data-testid="send-mail-button"
-                          type="button"
-                          disabled={!canSend || record.status === 'sent' || sendingId === record.mailJobId}
-                          onClick={() => void handleSend(record)}
-                          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                        >
-                          {sendingId === record.mailJobId ? '发送中' : '触发发送'}
-                        </button>
-                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              {!records.length ? <p className="px-4 py-8 text-sm text-slate-500">暂无扫码记录</p> : null}
+              {!records.length ? (
+                <p className="px-4 py-8 text-sm text-slate-500">
+                  {historyLoading ? '正在加载扫码记录…' : '暂无扫码记录'}
+                </p>
+              ) : null}
             </div>
           </section>
         </section>

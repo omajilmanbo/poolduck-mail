@@ -23,90 +23,95 @@ const expiredEndAt = new Date("2025-12-31T23:59:59.000Z");
 const tenants = [
   {
     id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    tenantCode: "5A6E000001",
     name: "Poolduck Staging Active Tenant",
     subscriptionStatus: "active",
-    manager: {
+    operator: {
       id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-      email: "staging-active-manager@example.local",
+      username: "staging-active-operator",
+      email: "staging-active-operator@example.local",
     },
-    root: {
+    tenantManager: {
       id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-      email: "staging-active-root@example.local",
+      email: "staging-active-tenant-manager@example.local",
     },
     location: {
       id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-      code: "STG-ACTIVE-OFFICE",
+      code: "5A6E0001",
       name: "Staging Active Office",
-      type: "office",
+      type: "location",
     },
     mapping: {
       id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-      scanCode: "SCAN-STG-ACTIVE-001",
+      scanCode: "01K0ABC20001",
       personName: "Staging Active Recipient",
       email: "staging-active-recipient@example.local",
     },
   },
   {
     id: "11111112-1112-4112-8112-111111111112",
+    tenantCode: "5A6E000002",
     name: "Poolduck Staging Suspended Tenant",
     subscriptionStatus: "suspended",
-    manager: {
+    operator: {
       id: "22222223-2223-4223-8223-222222222223",
-      email: "staging-suspended-manager@example.local",
+      username: "staging-suspended-operator",
+      email: "staging-suspended-operator@example.local",
     },
-    root: {
+    tenantManager: {
       id: "33333334-3334-4334-8334-333333333334",
-      email: "staging-suspended-root@example.local",
+      email: "staging-suspended-tenant-manager@example.local",
     },
     location: {
       id: "44444445-4445-4445-8445-444444444445",
-      code: "STG-SUSPENDED-OFFICE",
+      code: "5A6E0002",
       name: "Staging Suspended Office",
-      type: "office",
+      type: "location",
     },
     mapping: {
       id: "55555556-5556-4556-8556-555555555556",
-      scanCode: "SCAN-STG-SUSPENDED-001",
+      scanCode: "01K0ABC20002",
       personName: "Staging Suspended Recipient",
       email: "staging-suspended-recipient@example.local",
     },
   },
   {
     id: "66666667-6667-4667-8667-666666666667",
+    tenantCode: "5A6E000003",
     name: "Poolduck Staging Expired Tenant",
     subscriptionStatus: "expired",
-    manager: {
+    operator: {
       id: "77777778-7778-4778-8778-777777777778",
-      email: "staging-expired-manager@example.local",
+      username: "staging-expired-operator",
+      email: "staging-expired-operator@example.local",
     },
-    root: {
+    tenantManager: {
       id: "88888889-8889-4889-8889-888888888889",
-      email: "staging-expired-root@example.local",
+      email: "staging-expired-tenant-manager@example.local",
     },
     location: {
       id: "99999990-9990-4990-8990-999999999990",
-      code: "STG-EXPIRED-OFFICE",
+      code: "5A6E0003",
       name: "Staging Expired Office",
-      type: "office",
+      type: "location",
     },
     mapping: {
       id: "abababab-abab-4bab-8bab-abababababab",
-      scanCode: "SCAN-STG-EXPIRED-001",
+      scanCode: "01K0ABC20003",
       personName: "Staging Expired Recipient",
       email: "staging-expired-recipient@example.local",
     },
   },
 ];
 
-async function upsertUser({ id, tenantId, email, passwordHash, role }) {
+async function upsertUser({ id, tenantId, username = null, email, passwordHash, role }) {
   return prisma.user.upsert({
-    where: {
-      tenantId_email: {
-        tenantId,
-        email,
-      },
-    },
+    where: username
+      ? { tenantId_username: { tenantId, username } }
+      : { tenantId_email: { tenantId, email } },
     update: {
+      username,
+      email,
       passwordHash,
       role,
       status: "active",
@@ -114,6 +119,7 @@ async function upsertUser({ id, tenantId, email, passwordHash, role }) {
     create: {
       id,
       tenantId,
+      username,
       email,
       passwordHash,
       role,
@@ -126,7 +132,7 @@ async function upsertLocation({ id, tenantId, code, name, type }) {
   const existing = await prisma.location.findFirst({
     where: {
       tenantId,
-      locationCode: code,
+      OR: [{ id }, { locationCode: code }],
     },
     select: { id: true },
   });
@@ -163,19 +169,26 @@ async function upsertPersonMapping({
   personName,
   email,
 }) {
-  const existing = await prisma.personMapping.findFirst({
+  const existingByCode = await prisma.personMapping.findFirst({
     where: {
       tenantId,
       locationId,
-      scanCode,
+      personCode: scanCode,
     },
     select: { id: true },
   });
+  const existing =
+    existingByCode ??
+    (await prisma.personMapping.findUnique({
+      where: { id },
+      select: { id: true },
+    }));
 
   if (existing) {
     return prisma.personMapping.update({
       where: { id: existing.id },
       data: {
+        personCode: scanCode,
         scanCode,
         personName,
         email,
@@ -189,6 +202,7 @@ async function upsertPersonMapping({
       id,
       tenantId,
       locationId,
+      personCode: scanCode,
       scanCode,
       personName,
       email,
@@ -215,11 +229,13 @@ async function seedTenant(tenant, passwordHash) {
   await prisma.tenant.upsert({
     where: { id: tenant.id },
     update: {
+      tenantCode: tenant.tenantCode,
       name: tenant.name,
       status: "active",
     },
     create: {
       id: tenant.id,
+      tenantCode: tenant.tenantCode,
       name: tenant.name,
       status: "active",
     },
@@ -241,22 +257,38 @@ async function seedTenant(tenant, passwordHash) {
   });
 
   await upsertUser({
-    ...tenant.root,
+    ...tenant.tenantManager,
     tenantId: tenant.id,
     passwordHash,
-    role: "root_admin",
+    role: "tenant_manager",
   });
 
   await upsertUser({
-    ...tenant.manager,
+    ...tenant.operator,
     tenantId: tenant.id,
     passwordHash,
-    role: "manager",
+    role: "operator",
   });
 
   await upsertLocation({
     ...tenant.location,
     tenantId: tenant.id,
+  });
+
+  await prisma.operatorLocationAssignment.upsert({
+    where: {
+      tenantId_operatorId_locationId: {
+        tenantId: tenant.id,
+        operatorId: tenant.operator.id,
+        locationId: tenant.location.id,
+      },
+    },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      operatorId: tenant.operator.id,
+      locationId: tenant.location.id,
+    },
   });
 
   await upsertPersonMapping({
@@ -279,10 +311,11 @@ async function main() {
       {
         password,
         tenants: tenants.map((tenant) => ({
-          tenant_id: tenant.id,
+          tenant_code: tenant.tenantCode,
           subscription_status: tenant.subscriptionStatus,
-          manager_email: tenant.manager.email,
-          root_email: tenant.root.email,
+          operator_username: tenant.operator.username,
+          operator_email: tenant.operator.email,
+          tenant_manager_email: tenant.tenantManager.email,
           location_id: tenant.location.id,
           scan_code: tenant.mapping.scanCode,
         })),
