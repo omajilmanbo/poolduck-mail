@@ -1,7 +1,11 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { ManagedOperator, createApiClient } from '../../src/api/client';
+import {
+  LocationItem,
+  ManagedOperator,
+  createApiClient,
+} from '../../src/api/client';
 
 const PASSWORD_PATTERN = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 const USERNAME_PATTERN = /^[a-z0-9](?:[a-z0-9._-]{1,30}[a-z0-9])?$/;
@@ -40,6 +44,8 @@ function formatTime(value: string | null) {
 export default function UsersPage() {
   const api = useMemo(() => createApiClient(), []);
   const [rows, setRows] = useState<ManagedOperator[]>([]);
+  const [locations, setLocations] = useState<LocationItem[]>([]);
+  const [assignments, setAssignments] = useState<Record<string, LocationItem[]>>({});
   const [authorized, setAuthorized] = useState(false);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -49,12 +55,32 @@ export default function UsersPage() {
   const [editingEmail, setEditingEmail] = useState('');
   const [resettingId, setResettingId] = useState('');
   const [resetPassword, setResetPassword] = useState('');
+  const [assignmentEditingId, setAssignmentEditingId] = useState('');
+  const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
 
   const reload = useCallback(async () => {
-    setRows(await api.getUsers());
+    const [operators, tenantLocations] = await Promise.all([
+      api.getUsers(),
+      api.getLocations('cookie-session'),
+    ]);
+    const assignmentResponses = await Promise.all(
+      operators.map((operator) =>
+        api.getUserLocationAssignments(operator.user_id),
+      ),
+    );
+    setRows(operators);
+    setLocations(tenantLocations);
+    setAssignments(
+      Object.fromEntries(
+        assignmentResponses.map((response) => [
+          response.operator_id,
+          response.locations,
+        ]),
+      ),
+    );
   }, [api]);
 
   const showError = useCallback((cause: unknown) => {
@@ -186,6 +212,67 @@ export default function UsersPage() {
     }
   }
 
+  function openAssignmentEditor(row: ManagedOperator) {
+    const currentAssignments = assignments[row.user_id] ?? [];
+    setAssignmentEditingId(row.user_id);
+    setSelectedLocationIds(
+      currentAssignments
+        .filter((location) => location.is_active)
+        .map((location) => location.location_id),
+    );
+    setError('');
+    setNotice('');
+  }
+
+  function toggleLocation(locationId: string) {
+    setSelectedLocationIds((current) =>
+      current.includes(locationId)
+        ? current.filter((id) => id !== locationId)
+        : [...current, locationId],
+    );
+  }
+
+  async function saveLocationAssignments(row: ManagedOperator) {
+    const currentAssignments = assignments[row.user_id] ?? [];
+    const removedAssignments = currentAssignments.filter(
+      (location) => !selectedLocationIds.includes(location.location_id),
+    );
+    if (
+      removedAssignments.length > 0 &&
+      !window.confirm(
+        `撤销 ${removedAssignments.map((location) => location.location_name).join('、')} 后，` +
+          `${row.username} 对这些地点的新扫码、人员写入、历史和未映射处理请求会立即被拒绝。确认保存？`,
+      )
+    ) {
+      return;
+    }
+
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await api.setUserLocationAssignments(
+        row.user_id,
+        selectedLocationIds,
+      );
+      setAssignments((current) => ({
+        ...current,
+        [row.user_id]: response.locations,
+      }));
+      setAssignmentEditingId('');
+      setSelectedLocationIds([]);
+      setNotice(
+        removedAssignments.length > 0
+          ? '地点权限已更新；被撤销地点的后续请求会立即被拒绝'
+          : '地点权限已更新',
+      );
+    } catch (cause) {
+      showError(cause);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!authorized) {
     return <main className="min-h-screen bg-stone-100 p-6">正在验证权限…</main>;
   }
@@ -282,6 +369,7 @@ export default function UsersPage() {
                 <th className="p-3">角色</th>
                 <th className="p-3">状态</th>
                 <th className="p-3">最后登录</th>
+                <th className="p-3">地点权限</th>
                 <th className="p-3">操作</th>
               </tr>
             </thead>
@@ -317,6 +405,35 @@ export default function UsersPage() {
                   <td className="p-3">{row.role}</td>
                   <td className="p-3">{row.status === 'active' ? '启用' : '停用'}</td>
                   <td className="p-3">{formatTime(row.last_login_at)}</td>
+                  <td className="min-w-52 p-3">
+                    {(assignments[row.user_id] ?? []).length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {(assignments[row.user_id] ?? []).map((location) => (
+                          <span
+                            key={location.location_id}
+                            className={`rounded px-2 py-1 text-xs ${
+                              location.is_active
+                                ? 'bg-emerald-50 text-emerald-800'
+                                : 'bg-slate-200 text-slate-600'
+                            }`}
+                          >
+                            {location.location_name}
+                            {location.is_active ? '' : '（已停用）'}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-slate-500">未分配地点</span>
+                    )}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => openAssignmentEditor(row)}
+                      className="mt-2 text-emerald-700 disabled:text-slate-400"
+                    >
+                      配置地点
+                    </button>
+                  </td>
                   <td className="min-w-80 p-3">
                     {editingId === row.user_id ? (
                       <>
@@ -402,11 +519,99 @@ export default function UsersPage() {
                 </tr>
               ))}
               {rows.length === 0 ? (
-                <tr><td colSpan={6} className="p-6 text-center text-slate-500">暂无 operator</td></tr>
+                <tr><td colSpan={7} className="p-6 text-center text-slate-500">暂无 operator</td></tr>
               ) : null}
             </tbody>
           </table>
         </section>
+        {assignmentEditingId ? (() => {
+          const row = rows.find((item) => item.user_id === assignmentEditingId);
+          if (!row) return null;
+          const currentAssignments = assignments[row.user_id] ?? [];
+          const inactiveLocations = locations.filter((location) => !location.is_active);
+          return (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="location-assignment-title"
+              className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-2 sm:items-center sm:p-4"
+            >
+              <section className="flex max-h-[calc(100dvh-1rem)] w-full max-w-lg flex-col overflow-hidden rounded-lg bg-white shadow-xl sm:max-h-[calc(100dvh-2rem)]">
+                <header className="shrink-0 px-4 pt-4 sm:px-5 sm:pt-5">
+                  <h2 id="location-assignment-title" className="text-lg font-semibold">
+                    配置 {row.username} 的地点权限
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    仅可分配当前租户的启用地点。保存后，operator 的后续请求立即使用新权限。
+                  </p>
+                </header>
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+                <fieldset>
+                  <legend className="mb-2 text-sm font-medium">可分配地点</legend>
+                  <div
+                    className="max-h-[min(40dvh,20rem)] space-y-2 overflow-y-auto overscroll-contain pr-1"
+                    data-testid="assignable-location-list"
+                  >
+                    {locations.filter((location) => location.is_active).map((location) => (
+                      <label key={location.location_id} className="flex items-center gap-2 rounded border p-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedLocationIds.includes(location.location_id)}
+                          onChange={() => toggleLocation(location.location_id)}
+                        />
+                        <span className="min-w-0 break-words">{location.location_name}</span>
+                        <span className="ml-auto shrink-0 font-mono text-xs text-slate-500">{location.location_code}</span>
+                      </label>
+                    ))}
+                    {locations.every((location) => !location.is_active) ? (
+                      <p className="text-sm text-slate-500">当前没有可分配的启用地点。</p>
+                    ) : null}
+                  </div>
+                </fieldset>
+                {inactiveLocations.length > 0 ? (
+                  <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-3 text-sm">
+                    <p className="font-medium">已停用地点（不可新增分配）</p>
+                    <ul className="mt-2 space-y-1 text-slate-600">
+                      {inactiveLocations.map((location) => {
+                        const isAssigned = currentAssignments.some(
+                          (assigned) => assigned.location_id === location.location_id,
+                        );
+                        return (
+                          <li key={location.location_id}>
+                            {location.location_name}
+                            {isAssigned ? '：当前仍有旧分配，保存时将撤销' : ''}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : null}
+                </div>
+                <footer className="flex shrink-0 justify-end gap-3 border-t bg-white px-4 py-3 sm:px-5">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setAssignmentEditingId('');
+                      setSelectedLocationIds([]);
+                    }}
+                    className="rounded border px-4 py-2"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void saveLocationAssignments(row)}
+                    className="rounded bg-emerald-700 px-4 py-2 text-white disabled:bg-slate-300"
+                  >
+                    保存地点权限
+                  </button>
+                </footer>
+              </section>
+            </div>
+          );
+        })() : null}
       </div>
     </main>
   );

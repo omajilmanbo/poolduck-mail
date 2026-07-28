@@ -33,7 +33,7 @@ export class MailJobsService {
     query: ListMailJobsDto,
   ): Promise<MailJobListResponse> {
     const selectedLocation = query.location_id
-      ? await this.locationAccess.assertLocation(user, query.location_id)
+      ? await this.locationAccess.assertLocation(user, query.location_id, true)
       : null;
 
     const cursor = this.decodeCursor(query.cursor);
@@ -42,7 +42,7 @@ export class MailJobsService {
       ...(query.status ? { status: query.status } : {}),
       ...(selectedLocation ? { locationId: selectedLocation.id } : {}),
       ...(!query.location_id
-        ? this.locationAccess.resourceLocationWhere(user)
+        ? this.locationAccess.resourceLocationWhere(user, true)
         : {}),
       ...(query.created_from || query.created_to
         ? {
@@ -89,7 +89,7 @@ export class MailJobsService {
       where: {
         id: mailJobId,
         tenantId: user.tenant_id,
-        ...this.locationAccess.resourceLocationWhere(user),
+        ...this.locationAccess.resourceLocationWhere(user, true),
       },
       select: this.historySelect(),
     });
@@ -104,7 +104,7 @@ export class MailJobsService {
 
   async exportMailJobs(user: AuthenticatedUserResponse, query: ExportMailJobsDto) {
     const selectedLocation = query.location_id
-      ? await this.locationAccess.assertLocation(user, query.location_id)
+      ? await this.locationAccess.assertLocation(user, query.location_id, true)
       : null;
     const range = this.assertExportRange(query.created_from, query.created_to);
     const rows = await this.prisma.mailJob.findMany({
@@ -114,7 +114,7 @@ export class MailJobsService {
         ...(query.status ? { status: query.status } : {}),
         ...(selectedLocation ? { locationId: selectedLocation.id } : {}),
         ...(!query.location_id
-          ? this.locationAccess.resourceLocationWhere(user)
+          ? this.locationAccess.resourceLocationWhere(user, true)
           : {}),
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],

@@ -14,17 +14,20 @@ describe('Location and person mapping management', () => {
   let locationCodeGenerator: LocationCodeGenerator;
   let prisma: {
     $transaction: jest.Mock;
+    $queryRaw: jest.Mock;
     user: { findFirst: jest.Mock };
     location: {
       findFirst: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
+      updateMany: jest.Mock;
     };
     locationLegacyIdentifier: { findFirst: jest.Mock };
     personMapping: {
       findFirst: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
+      updateMany: jest.Mock;
     };
     mailJob: { updateMany: jest.Mock };
     auditLog: { create: jest.Mock };
@@ -43,17 +46,20 @@ describe('Location and person mapping management', () => {
   beforeEach(async () => {
     prisma = {
       $transaction: jest.fn(async (callback: (tx: typeof prisma) => unknown) => callback(prisma)),
+      $queryRaw: jest.fn().mockResolvedValue([{ now: new Date('2026-07-28T00:00:00.000Z') }]),
       user: { findFirst: jest.fn() },
       location: {
         findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       locationLegacyIdentifier: { findFirst: jest.fn().mockResolvedValue(null) },
       personMapping: {
         findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       mailJob: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
       auditLog: { create: jest.fn().mockResolvedValue(undefined) },
@@ -310,6 +316,139 @@ describe('Location and person mapping management', () => {
         is_active: true,
       }),
     );
+  });
+
+  it('schedules and restores a person deletion within the 14-day window', async () => {
+    authenticate('operator');
+    const deletedAt = new Date('2026-07-28T00:00:00.000Z');
+    const purgeAfter = new Date('2026-08-11T00:00:00.000Z');
+    prisma.location.findFirst.mockResolvedValue({
+      id: locationId,
+      locationCode: 'ABCD1234',
+      status: 'active',
+    });
+    prisma.personMapping.findFirst
+      .mockResolvedValueOnce({
+        id: personId,
+        personCode,
+        status: 'inactive',
+      })
+      .mockResolvedValueOnce({
+        ...personRow('pending_delete'),
+        id: personId,
+        personCode,
+        deletedFromStatus: 'inactive',
+        purgeAfter,
+      });
+    prisma.personMapping.update
+      .mockResolvedValueOnce({
+        ...personRow('pending_delete'),
+        deletedAt,
+        purgeAfter,
+      });
+
+    const scheduled = await request(app.getHttpServer())
+      .post(`/api/locations/ABCD1234/people/${personCode}/delete`)
+      .set('Authorization', `Bearer ${token('operator')}`)
+      .expect(201);
+    expect(scheduled.body).toMatchObject({
+      person_id: personCode,
+      is_active: false,
+      deletion_status: 'scheduled',
+      deleted_at: deletedAt.toISOString(),
+      purge_after: purgeAfter.toISOString(),
+    });
+    expect(prisma.personMapping.update).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'pending_delete',
+          deletedFromStatus: 'inactive',
+          deletedAt,
+          purgeAfter,
+        }),
+      }),
+    );
+
+    const restored = await request(app.getHttpServer())
+      .post(`/api/locations/ABCD1234/people/${personCode}/restore`)
+      .set('Authorization', `Bearer ${token('operator')}`)
+      .expect(201);
+    expect(restored.body).toMatchObject({
+      person_id: personCode,
+      is_active: false,
+      deletion_status: null,
+    });
+    expect(prisma.personMapping.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: 'pending_delete',
+          purgeAfter: { gt: deletedAt },
+        }),
+        data: {
+          status: 'inactive',
+          deletedAt: null,
+          purgeAfter: null,
+          deletedFromStatus: null,
+        },
+      }),
+    );
+  });
+
+  it('allows only tenant_manager to schedule a location deletion and rejects restore at the deadline', async () => {
+    authenticate('operator');
+    await request(app.getHttpServer())
+      .post('/api/locations/ABCD1234/delete')
+      .set('Authorization', `Bearer ${token('operator')}`)
+      .expect(403);
+
+    authenticate('tenant_manager');
+    const deletedAt = new Date('2026-07-28T00:00:00.000Z');
+    const purgeAfter = new Date('2026-08-11T00:00:00.000Z');
+    prisma.location.findFirst
+      .mockResolvedValueOnce({
+        id: locationId,
+        locationCode: 'ABCD1234',
+        status: 'active',
+      })
+      .mockResolvedValueOnce({
+        id: locationId,
+        locationCode: 'ABCD1234',
+        status: 'pending_delete',
+        deletedFromStatus: 'active',
+        purgeAfter: deletedAt,
+      });
+    prisma.location.update.mockResolvedValue({
+      ...locationRow('pending_delete'),
+      deletedAt,
+      purgeAfter,
+    });
+
+    const scheduled = await request(app.getHttpServer())
+      .post('/api/locations/ABCD1234/delete')
+      .set('Authorization', `Bearer ${token('tenant_manager')}`)
+      .expect(201);
+    expect(scheduled.body).toMatchObject({
+      location_id: 'ABCD1234',
+      deletion_status: 'scheduled',
+      purge_after: purgeAfter.toISOString(),
+    });
+    expect(prisma.mailJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          status: 'failed',
+          errorMessage: 'LOCATION_PENDING_DELETION',
+        },
+      }),
+    );
+
+    const expired = await request(app.getHttpServer())
+      .post('/api/locations/ABCD1234/restore')
+      .set('Authorization', `Bearer ${token('tenant_manager')}`)
+      .expect(409);
+    expect(expired.body).toMatchObject({
+      code: 'DELETION_RESTORE_EXPIRED',
+    });
   });
 
   function authenticate(role: string) {

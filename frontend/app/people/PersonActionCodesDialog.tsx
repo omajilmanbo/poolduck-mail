@@ -67,12 +67,12 @@ export default function PersonActionCodesDialog({
   return (
     <div
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/60 p-2 sm:items-center sm:p-4"
       onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
       role="dialog"
     >
-      <section className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
-        <header className="mb-4 flex items-start justify-between gap-4">
+      <section className="flex max-h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-xl sm:max-h-[calc(100dvh-2rem)]">
+        <header className="flex shrink-0 items-start justify-between gap-4 px-4 pb-4 pt-4 sm:px-5 sm:pt-5">
           <div>
             <h2 className="text-xl font-semibold">人员进入/离开动作码</h2>
             <p className="mt-1 font-mono text-sm text-slate-600">{personCode || '人员 ID 缺失'}</p>
@@ -80,6 +80,7 @@ export default function PersonActionCodesDialog({
           <button aria-label="关闭动作码预览" className="rounded border px-3 py-1.5" onClick={onClose}>关闭</button>
         </header>
 
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-5 sm:pb-5">
         <p className="mb-4 text-sm text-slate-600">
           图片仅包含动作和人员 ID，不包含姓名、邮箱、tenant/location UUID，也不会上传或持久化。
         </p>
@@ -116,6 +117,7 @@ export default function PersonActionCodesDialog({
             </div>
           </>
         ) : null}
+        </div>
       </section>
     </div>
   );

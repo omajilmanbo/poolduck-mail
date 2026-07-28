@@ -91,6 +91,9 @@ model Location {
   name                        String                       @db.VarChar(255)
   type                        String                       @default("location") @db.VarChar(32)
   status                      String                       @default("active") @db.VarChar(32)
+  deletedAt                   DateTime?                    @map("deleted_at")
+  purgeAfter                  DateTime?                    @map("purge_after")
+  deletedFromStatus           String?                      @map("deleted_from_status") @db.VarChar(32)
   createdAt                   DateTime                     @default(now()) @map("created_at")
   updatedAt                   DateTime                     @updatedAt @map("updated_at")
   tenant                      Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
@@ -104,6 +107,7 @@ model Location {
   @@unique([tenantId, locationCode])
   @@unique([tenantId, id])
   @@index([tenantId, name])
+  @@index([purgeAfter, status])
   @@map("locations")
 }
 
@@ -146,6 +150,9 @@ model PersonMapping {
   personName String      @map("person_name") @db.VarChar(255)
   email      String      @db.VarChar(255)
   status     String      @default("active") @db.VarChar(32)
+  deletedAt DateTime?    @map("deleted_at")
+  purgeAfter DateTime?   @map("purge_after")
+  deletedFromStatus String? @map("deleted_from_status") @db.VarChar(32)
   createdAt  DateTime    @default(now()) @map("created_at")
   updatedAt  DateTime    @updatedAt @map("updated_at")
   tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
@@ -155,6 +162,7 @@ model PersonMapping {
 
   @@unique([tenantId, locationId, scanCode])
   @@index([tenantId, locationId, status, updatedAt])
+  @@index([purgeAfter, status])
   @@map("person_mappings")
 }
 

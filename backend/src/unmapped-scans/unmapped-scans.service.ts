@@ -16,14 +16,14 @@ export class UnmappedScansService {
 
   async list(user: AuthenticatedUserResponse, query: ListUnmappedScansDto) {
     const selectedLocation = query.location_id
-      ? await this.locationAccess.assertLocation(user, query.location_id)
+      ? await this.locationAccess.assertLocation(user, query.location_id, true)
       : null;
     const rows = await this.prisma.unmappedScanCase.findMany({
       where: {
         tenantId: user.tenant_id,
         ...(selectedLocation ? { locationId: selectedLocation.id } : {}),
         ...(!query.location_id
-          ? this.locationAccess.resourceLocationWhere(user)
+          ? this.locationAccess.resourceLocationWhere(user, true)
           : {}),
         ...(query.status ? { status: query.status } : {}),
       },
@@ -39,7 +39,7 @@ export class UnmappedScansService {
       where: {
         id: caseId,
         tenantId: user.tenant_id,
-        ...this.locationAccess.resourceLocationWhere(user),
+        ...this.locationAccess.resourceLocationWhere(user, true),
       },
       select: this.select(),
     });

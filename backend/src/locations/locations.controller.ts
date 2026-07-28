@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -28,8 +29,14 @@ export class LocationsController {
   constructor(private readonly locationsService: LocationsService) {}
 
   @Get()
-  async list(@CurrentUser() user: AuthenticatedUserResponse) {
-    return this.locationsService.listLocations(user);
+  async list(
+    @CurrentUser() user: AuthenticatedUserResponse,
+    @Query('include_deleted') includeDeleted?: string,
+  ) {
+    return this.locationsService.listLocations(
+      user,
+      includeDeleted === 'true',
+    );
   }
 
   @Post()
@@ -69,12 +76,35 @@ export class LocationsController {
     return this.locationsService.setLocationStatus(user, locationId, 'active');
   }
 
+  @Post(':location_id/delete')
+  @Roles('tenant_manager')
+  scheduleLocationDeletion(
+    @CurrentUser() user: AuthenticatedUserResponse,
+    @Param('location_id') locationId: string,
+  ) {
+    return this.locationsService.scheduleLocationDeletion(user, locationId);
+  }
+
+  @Post(':location_id/restore')
+  @Roles('tenant_manager')
+  restoreLocation(
+    @CurrentUser() user: AuthenticatedUserResponse,
+    @Param('location_id') locationId: string,
+  ) {
+    return this.locationsService.restoreLocation(user, locationId);
+  }
+
   @Get(':location_id/people')
   async people(
     @CurrentUser() user: AuthenticatedUserResponse,
     @Param('location_id') locationId: string,
+    @Query('include_deleted') includeDeleted?: string,
   ) {
-    return this.locationsService.listPeople(user, locationId);
+    return this.locationsService.listPeople(
+      user,
+      locationId,
+      includeDeleted === 'true',
+    );
   }
 
   @Get(':location_id/people/:person_id')
@@ -121,5 +151,27 @@ export class LocationsController {
     @Param('person_id') personId: string,
   ) {
     return this.locationsService.setPersonStatus(user, locationId, personId, 'active');
+  }
+
+  @Post(':location_id/people/:person_id/delete')
+  schedulePersonDeletion(
+    @CurrentUser() user: AuthenticatedUserResponse,
+    @Param('location_id') locationId: string,
+    @Param('person_id') personId: string,
+  ) {
+    return this.locationsService.schedulePersonDeletion(
+      user,
+      locationId,
+      personId,
+    );
+  }
+
+  @Post(':location_id/people/:person_id/restore')
+  restorePerson(
+    @CurrentUser() user: AuthenticatedUserResponse,
+    @Param('location_id') locationId: string,
+    @Param('person_id') personId: string,
+  ) {
+    return this.locationsService.restorePerson(user, locationId, personId);
   }
 }

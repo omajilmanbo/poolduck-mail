@@ -26,6 +26,7 @@ import { PersonCodeGenerator } from './person-code.generator';
 
 const LOCATION_CODE_CREATE_ATTEMPTS = 5;
 const PERSON_CODE_CREATE_ATTEMPTS = 5;
+const DELETION_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class LocationsService {
@@ -39,9 +40,20 @@ export class LocationsService {
 
   async listLocations(
     user: AuthenticatedUserResponse,
+    includeDeleted = false,
   ): Promise<LocationResponse[]> {
     const locations = await this.prisma.location.findMany({
-      where: this.locationAccess.locationWhere(user),
+      where:
+        user.role === 'tenant_manager'
+          ? {
+              tenantId: user.tenant_id,
+              status: includeDeleted
+                ? { not: 'purged' }
+                : { notIn: ['pending_delete', 'purged'] },
+            }
+          : this.locationAccess.locationWhere(user, {
+              status: { notIn: ['pending_delete', 'purged'] },
+            }),
       orderBy: [{ name: 'asc' }, { createdAt: 'asc' }],
       select: {
         id: true,
@@ -49,21 +61,18 @@ export class LocationsService {
         name: true,
         type: true,
         status: true,
+        deletedAt: true,
+        purgeAfter: true,
       },
     });
 
-    return locations.map((location) => ({
-      location_id: location.locationCode,
-      location_code: location.locationCode,
-      location_name: location.name,
-      type: location.type,
-      is_active: location.status === 'active',
-    }));
+    return locations.map((location) => this.toLocationResponse(location));
   }
 
   async listPeople(
     user: AuthenticatedUserResponse,
     locationId: string,
+    includeDeleted = false,
   ): Promise<PersonMappingResponse[]> {
     const location = await this.assertLocation(user, locationId);
 
@@ -71,6 +80,9 @@ export class LocationsService {
       where: {
         tenantId: user.tenant_id,
         locationId: location.id,
+        status: includeDeleted
+          ? { not: 'purged' }
+          : { notIn: ['pending_delete', 'purged'] },
       },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       select: {
@@ -78,17 +90,12 @@ export class LocationsService {
         personName: true,
         email: true,
         status: true,
+        deletedAt: true,
+        purgeAfter: true,
       },
     });
 
-    return people.map((person) => ({
-      person_id: person.personCode,
-      person_code: person.personCode,
-      person_name: person.personName,
-      scan_code: person.personCode,
-      email_masked: this.maskEmail(person.email),
-      is_active: person.status === 'active',
-    }));
+    return people.map((person) => this.toPersonResponse(person));
   }
 
   async getPerson(
@@ -113,16 +120,7 @@ export class LocationsService {
         message: '人员映射不存在或不属于当前租户/location',
       });
     }
-    return {
-      person_id: person.personCode,
-      person_code: person.personCode,
-      location_id: location.locationCode,
-      person_name: person.personName,
-      scan_code: person.personCode,
-      email: person.email,
-      email_masked: this.maskEmail(person.email),
-      is_active: person.status === 'active',
-    };
+    return this.toPersonDetail(person, location.locationCode);
   }
 
   async createPerson(
@@ -276,6 +274,147 @@ export class LocationsService {
     return this.toPersonDetail(person, location.locationCode);
   }
 
+  async schedulePersonDeletion(
+    user: AuthenticatedUserResponse,
+    locationIdentifier: string,
+    personId: string,
+  ): Promise<PersonMappingDetailResponse> {
+    const location = await this.assertLocation(user, locationIdentifier, true);
+    const existing = await this.prisma.personMapping.findFirst({
+      where: {
+        tenantId: user.tenant_id,
+        locationId: location.id,
+        personCode: this.normalizePersonCode(personId),
+        status: { not: 'purged' },
+      },
+      select: {
+        id: true,
+        personCode: true,
+        status: true,
+      },
+    });
+    if (!existing) {
+      throw new NotFoundException({
+        code: 'PERSON_MAPPING_NOT_FOUND',
+        message: '人员映射不存在或不属于当前租户/location',
+      });
+    }
+    if (existing.status === 'pending_delete') {
+      throw new ConflictException({
+        code: 'PERSON_DELETION_ALREADY_SCHEDULED',
+        message: '人员已经进入待删除状态',
+      });
+    }
+    const now = await this.databaseNow();
+    const person = await this.prisma.personMapping.update({
+      where: { id: existing.id },
+      data: {
+        status: 'pending_delete',
+        deletedAt: now,
+        purgeAfter: new Date(now.getTime() + DELETION_RETENTION_MS),
+        deletedFromStatus: existing.status,
+      },
+      select: {
+        personCode: true,
+        locationId: true,
+        personName: true,
+        email: true,
+        status: true,
+        deletedAt: true,
+        purgeAfter: true,
+      },
+    });
+    await this.auditMutation(
+      user,
+      'person_mapping.deletion_scheduled',
+      person.personCode,
+      location.locationCode,
+    );
+    return this.toPersonDetail(person, location.locationCode);
+  }
+
+  async restorePerson(
+    user: AuthenticatedUserResponse,
+    locationIdentifier: string,
+    personId: string,
+  ): Promise<PersonMappingDetailResponse> {
+    const location = await this.assertLocation(user, locationIdentifier, true);
+    const now = await this.databaseNow();
+    const existing = await this.prisma.personMapping.findFirst({
+      where: {
+        tenantId: user.tenant_id,
+        locationId: location.id,
+        personCode: this.normalizePersonCode(personId),
+        status: 'pending_delete',
+      },
+      select: {
+        id: true,
+        personCode: true,
+        locationId: true,
+        personName: true,
+        email: true,
+        deletedFromStatus: true,
+        purgeAfter: true,
+      },
+    });
+    if (!existing) {
+      throw new NotFoundException({
+        code: 'PERSON_MAPPING_NOT_FOUND',
+        message: '人员映射不存在或不属于当前租户/location',
+      });
+    }
+    if (!existing.purgeAfter || existing.purgeAfter <= now) {
+      await this.audit.record({
+        tenantId: user.tenant_id,
+        actorUserId: user.user_id,
+        action: 'person_mapping.restore_expired',
+        resourceType: 'person_mapping',
+        resourceId: existing.personCode,
+        result: 'denied',
+        metadata: { location_id: location.locationCode },
+      });
+      throw new ConflictException({
+        code: 'DELETION_RESTORE_EXPIRED',
+        message: '14 天恢复期限已结束，无法恢复',
+      });
+    }
+    const restoredStatus =
+      existing.deletedFromStatus === 'inactive' ? 'inactive' : 'active';
+    const claimed = await this.prisma.personMapping.updateMany({
+      where: {
+        id: existing.id,
+        tenantId: user.tenant_id,
+        status: 'pending_delete',
+        purgeAfter: { gt: now },
+      },
+      data: {
+        status: restoredStatus,
+        deletedAt: null,
+        purgeAfter: null,
+        deletedFromStatus: null,
+      },
+    });
+    if (claimed.count !== 1) {
+      throw new ConflictException({
+        code: 'DELETION_RESTORE_EXPIRED',
+        message: '14 天恢复期限已结束，无法恢复',
+      });
+    }
+    const restored = {
+      ...existing,
+      status: restoredStatus,
+      deletedAt: null,
+      purgeAfter: null,
+    };
+    await this.auditMutation(
+      user,
+      'person_mapping.restored',
+      restored.personCode,
+      location.locationCode,
+    );
+    return this.toPersonDetail(restored, location.locationCode);
+  }
+
   async createLocation(
     user: AuthenticatedUserResponse,
     dto: CreateLocationDto,
@@ -422,6 +561,155 @@ export class LocationsService {
     return this.toLocationResponse(location);
   }
 
+  async scheduleLocationDeletion(
+    user: AuthenticatedUserResponse,
+    locationIdentifier: string,
+  ): Promise<LocationResponse> {
+    const normalized = locationIdentifier.trim().toUpperCase();
+    const existing = await this.prisma.location.findFirst({
+      where: {
+        tenantId: user.tenant_id,
+        locationCode: normalized,
+        status: { not: 'purged' },
+      },
+      select: {
+        id: true,
+        locationCode: true,
+        status: true,
+      },
+    });
+    if (!existing) {
+      throw new NotFoundException({
+        code: 'LOCATION_NOT_FOUND',
+        message: 'location不存在或不属于当前租户',
+      });
+    }
+    if (existing.status === 'pending_delete') {
+      throw new ConflictException({
+        code: 'LOCATION_DELETION_ALREADY_SCHEDULED',
+        message: '地点已经进入待删除状态',
+      });
+    }
+    const now = await this.databaseNow();
+    const location = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.location.update({
+        where: { id: existing.id },
+        data: {
+          status: 'pending_delete',
+          deletedAt: now,
+          purgeAfter: new Date(now.getTime() + DELETION_RETENTION_MS),
+          deletedFromStatus: existing.status,
+        },
+        select: {
+          id: true,
+          locationCode: true,
+          name: true,
+          type: true,
+          status: true,
+          deletedAt: true,
+          purgeAfter: true,
+        },
+      });
+      await tx.mailJob.updateMany({
+        where: {
+          tenantId: user.tenant_id,
+          status: 'queued',
+          scanEvent: { is: { locationId: existing.id } },
+        },
+        data: {
+          status: 'failed',
+          errorMessage: 'LOCATION_PENDING_DELETION',
+        },
+      });
+      return updated;
+    });
+    await this.auditMutation(
+      user,
+      'location.deletion_scheduled',
+      location.locationCode,
+      location.locationCode,
+    );
+    return this.toLocationResponse(location);
+  }
+
+  async restoreLocation(
+    user: AuthenticatedUserResponse,
+    locationIdentifier: string,
+  ): Promise<LocationResponse> {
+    const normalized = locationIdentifier.trim().toUpperCase();
+    const now = await this.databaseNow();
+    const existing = await this.prisma.location.findFirst({
+      where: {
+        tenantId: user.tenant_id,
+        locationCode: normalized,
+        status: 'pending_delete',
+      },
+      select: {
+        id: true,
+        locationCode: true,
+        name: true,
+        type: true,
+        deletedFromStatus: true,
+        purgeAfter: true,
+      },
+    });
+    if (!existing) {
+      throw new NotFoundException({
+        code: 'LOCATION_NOT_FOUND',
+        message: 'location不存在或不属于当前租户',
+      });
+    }
+    if (!existing.purgeAfter || existing.purgeAfter <= now) {
+      await this.audit.record({
+        tenantId: user.tenant_id,
+        actorUserId: user.user_id,
+        action: 'location.restore_expired',
+        resourceType: 'location',
+        resourceId: existing.locationCode,
+        result: 'denied',
+      });
+      throw new ConflictException({
+        code: 'DELETION_RESTORE_EXPIRED',
+        message: '14 天恢复期限已结束，无法恢复',
+      });
+    }
+    const restoredStatus =
+      existing.deletedFromStatus === 'inactive' ? 'inactive' : 'active';
+    const claimed = await this.prisma.location.updateMany({
+      where: {
+        id: existing.id,
+        tenantId: user.tenant_id,
+        status: 'pending_delete',
+        purgeAfter: { gt: now },
+      },
+      data: {
+        status: restoredStatus,
+        deletedAt: null,
+        purgeAfter: null,
+        deletedFromStatus: null,
+      },
+    });
+    if (claimed.count !== 1) {
+      throw new ConflictException({
+        code: 'DELETION_RESTORE_EXPIRED',
+        message: '14 天恢复期限已结束，无法恢复',
+      });
+    }
+    const location = {
+      ...existing,
+      status: restoredStatus,
+      deletedAt: null,
+      purgeAfter: null,
+    };
+    await this.auditMutation(
+      user,
+      'location.restored',
+      location.locationCode,
+      location.locationCode,
+    );
+    return this.toLocationResponse(location);
+  }
+
   private maskEmail(email: string): string {
     const [localPart, domain] = email.split('@');
 
@@ -457,16 +745,35 @@ export class LocationsService {
     personName: string;
     email: string;
     status: string;
+    deletedAt?: Date | null;
+    purgeAfter?: Date | null;
   }, publicLocationId = person.locationId): PersonMappingDetailResponse {
+    return {
+      ...this.toPersonResponse(person),
+      location_id: publicLocationId,
+      email: person.email,
+    };
+  }
+
+  private toPersonResponse(person: {
+    personCode: string;
+    personName: string;
+    email: string;
+    status: string;
+    deletedAt?: Date | null;
+    purgeAfter?: Date | null;
+  }): PersonMappingResponse {
     return {
       person_id: person.personCode,
       person_code: person.personCode,
-      location_id: publicLocationId,
       person_name: person.personName,
       scan_code: person.personCode,
-      email: person.email,
       email_masked: this.maskEmail(person.email),
       is_active: person.status === 'active',
+      deletion_status:
+        person.status === 'pending_delete' ? 'scheduled' : null,
+      deleted_at: person.deletedAt?.toISOString() ?? null,
+      purge_after: person.purgeAfter?.toISOString() ?? null,
     };
   }
 
@@ -476,6 +783,8 @@ export class LocationsService {
     name: string;
     type: string;
     status: string;
+    deletedAt?: Date | null;
+    purgeAfter?: Date | null;
   }): LocationResponse {
     return {
       location_id: location.locationCode,
@@ -483,6 +792,10 @@ export class LocationsService {
       location_name: location.name,
       type: location.type,
       is_active: location.status === 'active',
+      deletion_status:
+        location.status === 'pending_delete' ? 'scheduled' : null,
+      deleted_at: location.deletedAt?.toISOString() ?? null,
+      purge_after: location.purgeAfter?.toISOString() ?? null,
     };
   }
 
@@ -535,10 +848,25 @@ export class LocationsService {
     return {
       tenantId,
       locationId,
+      status: { notIn: ['pending_delete', 'purged'] },
       ...(isUuid
         ? { OR: [{ personCode }, { id: identifier }] }
         : { personCode }),
     };
+  }
+
+  private async databaseNow(): Promise<Date> {
+    const rows = await this.prisma.$queryRaw<Array<{ now: Date }>>(
+      Prisma.sql`SELECT CURRENT_TIMESTAMP AS now`,
+    );
+    const now = rows[0]?.now;
+    if (!now) {
+      throw new ServiceUnavailableException({
+        code: 'DATABASE_TIME_UNAVAILABLE',
+        message: '无法读取数据库时间，请稍后重试',
+      });
+    }
+    return now;
   }
 
   private async auditMutation(

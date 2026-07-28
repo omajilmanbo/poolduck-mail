@@ -75,8 +75,10 @@
 
 - Backend 容器通过 Compose service name `postgres` 连接 PostgreSQL，容器内 `DATABASE_URL` 为 `postgresql://...@postgres:5432/...`。
 - Frontend 浏览器端默认使用 `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001`，该值在 Docker build 时写入 Next.js 客户端 bundle。
-- Backend CORS 默认允许 `http://localhost:3000`，对应宿主机浏览器访问 Frontend 的 origin。
+- Backend CORS 默认允许 `http://localhost:3000`，对应宿主机浏览器访问 Frontend 的 origin；允许的方法包含用户地点权限原子更新所需的 `PUT`。
 - Backend 启动命令会先执行 `npm run db:deploy`，再执行 `npm run start`。
+- Backend 默认每分钟按数据库时间扫描一批到期的人员/地点删除任务。仅在受控维护窗口可设置
+  `DELETION_PURGE_PROCESSOR_ENABLED=false` 暂停清理；恢复服务时必须移除该设置，任务会幂等补跑。
 - MVP 邮件 provider 默认保持 `MAIL_PROVIDER=mock`，不会接入真实邮件服务。
 
 常用操作：
@@ -483,3 +485,5 @@ Safety rules:
 - Agents must stop if the target database or secret source is unclear.
 - `20260724020000_add_operator_location_assignments` 是 fail-closed migration：不回填任何现有 operator。部署后先由 tenant_manager 使用 assignment API 授权合成/批准的地点，再执行 operator smoke；不得通过 SQL 批量默认授权全部地点。
 - 回滚 #96 时先停止写入并回滚应用，再运行 `backend/prisma/rollback/20260724020000_add_operator_location_assignments.sql`。旧应用会恢复此前“operator 可访问 tenant 全部地点”的宽权限行为，执行前必须获得安全负责人确认。
+- `20260728020000_add_delayed_deletion` 不删除或回填现有记录。发布后确认 migration 已应用、清理器启动且
+  使用数据库时间；应用回滚时保留新增列，避免丢失尚在 14 天恢复期内的生命周期状态。

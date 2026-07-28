@@ -8,11 +8,12 @@ const expectedMailStatus = process.env.E2E_EXPECT_MAIL_STATUS ?? 'sent';
 async function login(page: Page, input: {
   tenantCode: string;
   identifier: string;
+  password?: string;
 }) {
   await page.goto('/');
   await page.getByTestId('tenant-code-input').fill(input.tenantCode);
   await page.getByTestId('identifier-input').fill(input.identifier);
-  await page.getByTestId('password-input').fill(password);
+  await page.getByTestId('password-input').fill(input.password ?? password);
   await page.getByTestId('login-submit').click();
   await expect(page.getByRole('heading', { name: '扫码工作台' })).toBeVisible();
 }
@@ -128,6 +129,14 @@ test('operator can create, edit, deactivate and reactivate a person mapping', as
   await expect(inactiveRow).toContainText('停用');
   page.once('dialog', (dialog) => dialog.accept());
   await inactiveRow.getByRole('button', { name: '重新启用' }).click();
+  const reactivatedRow = page.getByRole('row').filter({ hasText: personCode });
+  await expect(reactivatedRow).toContainText('启用');
+  page.once('dialog', (dialog) => dialog.accept());
+  await reactivatedRow.getByRole('button', { name: '删除', exact: true }).click();
+  const pendingRow = page.getByRole('row').filter({ hasText: personCode });
+  await expect(pendingRow).toContainText('待删除（剩余 14 天）');
+  await expect(pendingRow.getByRole('button', { name: '恢复' })).toBeVisible();
+  await pendingRow.getByRole('button', { name: '恢复' }).click();
   await expect(page.getByRole('row').filter({ hasText: personCode })).toContainText('启用');
 });
 
@@ -154,6 +163,14 @@ test('tenant_manager can manage locations while operator has no location navigat
   await expect(inactiveRow).toContainText('停用');
   page.once('dialog', (dialog) => dialog.accept());
   await inactiveRow.getByRole('button', { name: '重新启用' }).click();
+  const reactivatedRow = page.getByRole('row').filter({ hasText: code });
+  await expect(reactivatedRow).toContainText('启用');
+  page.once('dialog', (dialog) => dialog.accept());
+  await reactivatedRow.getByRole('button', { name: '删除', exact: true }).click();
+  const pendingRow = page.getByRole('row').filter({ hasText: code });
+  await expect(pendingRow).toContainText('待删除（剩余 14 天）');
+  await expect(pendingRow.getByRole('button', { name: '恢复' })).toBeVisible();
+  await pendingRow.getByRole('button', { name: '恢复' }).click();
   await expect(page.getByRole('row').filter({ hasText: code })).toContainText('启用');
 });
 
@@ -188,4 +205,62 @@ test('tenant_manager manages operators while operator has no user-management ent
   page.once('dialog', (dialog) => dialog.accept());
   await row.getByRole('button', { name: '停用' }).click();
   await expect(page.getByRole('row').filter({ hasText: username })).toContainText('停用');
+});
+
+test('tenant_manager assigns and revokes operator location access from user management', async ({ page }) => {
+  await login(page, { tenantCode: activeTenantCode, identifier: 'tenant-manager@example.local' });
+  await page.getByRole('link', { name: '用户管理' }).click();
+
+  const suffix = Date.now().toString();
+  const username = `e2e-assignment-${suffix}`;
+  const operatorPassword = 'E2Eassign123';
+  await page.getByTestId('create-user-username').fill(username);
+  await page.getByTestId('create-user-password').fill(operatorPassword);
+  await page.getByTestId('create-user-submit').click();
+
+  let row = page.getByRole('row').filter({ hasText: username });
+  await page.setViewportSize({ width: 900, height: 480 });
+  await row.getByRole('button', { name: '配置地点' }).click();
+  let dialog = page.getByRole('dialog');
+  const saveButton = dialog.getByRole('button', { name: '保存地点权限' });
+  await expect(saveButton).toBeVisible();
+  const saveButtonBox = await saveButton.boundingBox();
+  expect(saveButtonBox?.y ?? 480).toBeLessThan(480);
+  await dialog.getByRole('checkbox', { name: /Local Office/ }).check();
+  await dialog.getByRole('checkbox', { name: /Local School/ }).check();
+  await saveButton.click();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(row).toContainText('Local Office');
+  await expect(row).toContainText('Local School');
+
+  await page.getByRole('link', { name: '返回工作台' }).click();
+  await page.getByRole('button', { name: '退出' }).click();
+  await login(page, {
+    tenantCode: activeTenantCode,
+    identifier: username,
+    password: operatorPassword,
+  });
+  await expect(page.getByTestId('location-select')).toContainText('Local Office');
+  await expect(page.getByTestId('location-select')).toContainText('Local School');
+
+  await page.getByRole('button', { name: '退出' }).click();
+  await login(page, { tenantCode: activeTenantCode, identifier: 'tenant-manager@example.local' });
+  await page.getByRole('link', { name: '用户管理' }).click();
+  row = page.getByRole('row').filter({ hasText: username });
+  await row.getByRole('button', { name: '配置地点' }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByRole('checkbox', { name: /Local School/ }).uncheck();
+  page.once('dialog', (confirmation) => confirmation.accept());
+  await dialog.getByRole('button', { name: '保存地点权限' }).click();
+  await expect(page.getByRole('status')).toContainText('被撤销地点的后续请求会立即被拒绝');
+
+  await page.getByRole('link', { name: '返回工作台' }).click();
+  await page.getByRole('button', { name: '退出' }).click();
+  await login(page, {
+    tenantCode: activeTenantCode,
+    identifier: username,
+    password: operatorPassword,
+  });
+  await expect(page.getByTestId('location-select')).toContainText('Local Office');
+  await expect(page.getByTestId('location-select')).not.toContainText('Local School');
 });
