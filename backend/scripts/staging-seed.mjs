@@ -105,18 +105,35 @@ const tenants = [
 ];
 
 async function upsertUser({ id, tenantId, username = null, email, passwordHash, role }) {
-  return prisma.user.upsert({
+  const existingByIdentity = await prisma.user.findUnique({
     where: username
       ? { tenantId_username: { tenantId, username } }
       : { tenantId_email: { tenantId, email } },
-    update: {
-      username,
-      email,
-      passwordHash,
-      role,
-      status: "active",
-    },
-    create: {
+    select: { id: true },
+  });
+  const existing =
+    existingByIdentity ??
+    (await prisma.user.findUnique({
+      where: { id },
+      select: { id: true },
+    }));
+
+  if (existing) {
+    return prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        tenantId,
+        username,
+        email,
+        passwordHash,
+        role,
+        status: "active",
+      },
+    });
+  }
+
+  return prisma.user.create({
+    data: {
       id,
       tenantId,
       username,
