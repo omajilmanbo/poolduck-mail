@@ -15,14 +15,14 @@
 
 | 资源类别 | 用途 | Local | Staging | Production | 关键参数/标识（非敏感） | 保存位置 | 负责人 | 备注 |
 |---|---|---|---|---|---|---|---|---|
-| Frontend Hosting | 前端页面托管 | Local process/Compose (`localhost:3000`) | OCI VM / Compose / Nginx reverse proxy | TBD | URL / 域名 / 部署平台 | `docs/inventory/` | 人工指定 | 当前 public-IP HTTP，仅内部验证 |
-| Backend API Hosting | API 服务托管 | Local process/Compose (`localhost:3001`) | OCI VM / Compose / Nginx reverse proxy | TBD | Base URL / Runtime / Region | `docs/inventory/` | 人工指定 | 与 Frontend 同 VM、不同容器 |
+| Frontend Hosting | 前端页面托管 | Local process/Compose (`localhost:3000`) | OCI VM / Compose / Caddy HTTPS reverse proxy | TBD | URL / 域名 / 部署平台 | `docs/inventory/` | 人工指定 | `https://app.poolducktest.com` |
+| Backend API Hosting | API 服务托管 | Local process/Compose (`localhost:3001`) | OCI VM / Compose / Caddy HTTPS reverse proxy | TBD | Base URL / Runtime / Region | `docs/inventory/` | 人工指定 | 与 Frontend 同源、同 VM、不同容器 |
 | PostgreSQL | 业务数据存储 | Docker Compose / PostgreSQL 16 / `5432` | 同一 Staging VM 内独立 PostgreSQL 16 容器 | 独立实例（TBD） | engine/version/port/instance-id | `docs/inventory/` | 人工指定 | 禁止跨环境共用数据库或数据 |
 | Mail Provider | 邮件发送能力 | sandbox/mock provider | mock provider（当前） | TBD（正式链路） | provider name / account alias | `docs/inventory/` | 人工指定 | Staging 禁止真实客户投递 |
 | Log & Monitoring | 日志、指标、告警 | 本地日志 | 容器日志；集中日志与指标待补齐 | 集中日志、指标、告警（TBD） | service name / project id | `docs/inventory/` | 人工指定 | #39 已定义策略；实际集成另行实施 |
 | Backup | 备份与恢复 | 可选（本地快照） | 备份策略（TBD） | 备份策略（TBD） | schedule / retention / storage | `docs/inventory/` | 人工指定 | 不记录真实存储凭据 |
 | Deployment Method | 发布方式 | 手工启动（dev） | cloud-init 仅做 bootstrap；人工批准后由操作者/Agent 执行 Compose Runbook，目标为幂等部署脚本 | CI/CD（TBD） | workflow name / runner / approval | `docs/inventory/` | 人工指定 | ADR-005；`workflow_dispatch` 尚未实施 |
-| DNS & TLS | 域名与证书 | N/A | 未配置；当前 public-IP HTTP | TBD | domain / cert source / expiry owner | `docs/inventory/` | 人工指定 | #86；扩大测试范围前补齐 |
+| DNS & TLS | 域名与证书 | N/A | `app.poolducktest.com` / Caddy / Let's Encrypt HTTP-01 | TBD | domain / cert source / expiry owner | `docs/inventory/` | 人工指定 | ADR-012；Caddy `/data` 持久化证书和 ACME 状态 |
 
 ## 3. 变更记录建议
 

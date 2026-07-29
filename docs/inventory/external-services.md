@@ -9,9 +9,9 @@
 | CI/CD | GitHub Actions | 构建、测试、发布流程 | Yes | Yes | Yes | Repo workflow + Secrets | 人工指定 | 与 `docs/workflow.md` 对齐 |
 | Database | PostgreSQL | 业务数据存储 | Yes（本地） | Yes（独立实例） | Yes（独立实例） | Infra config + Secrets | 人工指定 | 版本建议 16 |
 | Mail Provider | Sandbox/Mock（MVP） | 邮件任务验证 | Yes | Yes | TBD | Secret Manager / Config | 人工指定 | 生产 provider 待决策 |
-| DNS | TBD | 域名解析 | No | TBD | TBD | DNS 控制台 | 人工指定 | 未定平台先填 TBD |
-| TLS Certificate | TBD | HTTPS 证书 | No | TBD | TBD | 证书服务控制台 | 人工指定 | 证书续期责任需明确 |
-| Hosting Platform | TBD | 前后端托管 | Local machine | TBD | TBD | 平台控制台 + IaC（如有） | 人工指定 | 可使用脱敏项目名 |
+| DNS | Domain provider | `app.poolducktest.com` 解析 | No | Yes | TBD | DNS 控制台 | 人工指定 | 仅保存 A record，不把 provider 凭据放到 VM |
+| TLS Certificate | Let's Encrypt | Staging HTTPS 证书 | No | Yes | TBD | Caddy `/data` volume | 人工指定 | Caddy 通过 HTTP-01 自动签发与续期 |
+| Hosting Platform | OCI Always Free | 前后端托管 | Local machine | Yes | TBD | OCI Console + IaC | 人工指定 | Staging 单 VM + Docker Compose |
 | Monitoring/Logging | TBD | 日志、指标、告警 | Local logs | TBD | TBD | 平台配置 + Secrets | 人工指定 | 生产需告警通道 |
 | Backup Storage | TBD | 备份文件存储 | Optional | TBD | TBD | 存储控制台 + Secrets | 人工指定 | 不记录真实存储 key |
 

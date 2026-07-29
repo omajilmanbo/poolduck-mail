@@ -96,32 +96,28 @@ docker compose version
 
 ### 2.4 域名、DNS 与 TLS
 
-有域名时的确认方法：
+当前 Staging 域名与 TLS 确认方法：
 
-1. 确认 Staging 子域名，例如 `stg.example.com`。
-2. 在 DNS 管理界面添加或确认 A record 指向 VM public IP。
+1. 确认 `app.poolducktest.com` 的 A record 指向当前 Staging VM public IP。
+2. 确认 OCI NSG 和主机防火墙允许已批准来源访问 TCP `80`/`443`；不得扩大来源 CIDR。
 3. 等待 DNS 生效。
-4. 从本地验证解析结果。
+4. 从批准来源验证 DNS、HTTP 跳转、HTTPS 证书和健康端点。
 
 示例命令：
 
 ```bash
-nslookup stg.example.com
-curl -I http://stg.example.com
-curl -I https://stg.example.com
+nslookup app.poolducktest.com
+curl -I http://app.poolducktest.com
+curl -I https://app.poolducktest.com
+curl -fsS https://app.poolducktest.com/health
 ```
-
-无域名时的临时方法：
-
-1. 记录 VM public IP。
-2. 仅用于内部 HTTP 验证。
-3. 不购买新域名，不创建付费 DNS zone。
 
 通过标准：
 
-- 有域名时，DNS 指向 Staging VM public IP。
-- HTTPS 使用 Caddy 或 Nginx + certbot 取得证书。
-- 无域名时，文档和部署记录必须标注“临时 IP 验证，未启用正式 HTTPS”。
+- DNS 指向当前 Staging VM public IP。
+- Caddy 使用 Let's Encrypt ACME HTTP-01 取得有效的单域名证书；不使用 wildcard 或 DNS provider 凭据。
+- HTTP 业务请求跳转到 HTTPS；`/healthz`、`/health` 和 `/api/*` 路由保持可用。
+- 证书、私钥和 ACME 状态只保存在 Caddy named volume，不写入仓库或部署日志。
 
 ### 2.5 Secrets 存放位置
 
@@ -286,7 +282,9 @@ ssh -i .secrets\staging\id_ed25519 ubuntu@<staging-public-ip> "chmod 600 <stagin
 - `MAIL_PROVIDER=mock` 或 `MAIL_PROVIDER=sandbox`
 - `MAIL_MOCK_SEND_RESULT=success`
 - `LOG_LEVEL=info`
-- `CORS_ORIGIN=<staging-frontend-origin>`
+- `API_BASE_URL=https://app.poolducktest.com`
+- `NEXT_PUBLIC_API_BASE_URL=https://app.poolducktest.com`
+- `CORS_ORIGIN=https://app.poolducktest.com`
 - `TENANT_CONTEXT_ENFORCED=true`
 
 ### 3.4 构建和启动服务
@@ -299,11 +297,13 @@ ssh -i .secrets\staging\id_ed25519 ubuntu@<staging-public-ip> "chmod 600 <stagin
 - `postgres`
 
 当前 `MAIL_PROVIDER=mock` 时不需要独立 `mail-sandbox` 服务；只有后续明确引入 sandbox 容器时才新增该服务。
+Caddy 使用固定版本镜像，`caddy-data` 保存证书私钥和 ACME 状态，`caddy-config` 保存运行时配置；不得使用 `docker compose down -v` 清理这些卷。
 
 执行命令：
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.staging.yml config
+docker run --rm -v "$PWD/deploy/staging/caddy:/etc/caddy:ro" caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 docker compose -f docker-compose.yml -f docker-compose.staging.yml build
 docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
 docker compose -f docker-compose.yml -f docker-compose.staging.yml ps
@@ -333,13 +333,25 @@ docker compose exec backend npm run staging:seed
 基础检查：
 
 ```bash
-curl -fsS <staging-backend-url>/health
-curl -fsS <staging-frontend-url>/healthz
+curl -I http://app.poolducktest.com
+curl -fsS https://app.poolducktest.com/health
+curl -fsS https://app.poolducktest.com/healthz
+docker compose -f docker-compose.yml -f docker-compose.staging.yml logs --since=15m reverse-proxy
+echo | openssl s_client -connect app.poolducktest.com:443 -servername app.poolducktest.com 2>/dev/null \
+  | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
 ```
 
-业务检查按 `docs/testing.md` 的 Staging smoke 清单执行；最近一次证据见 `docs/testing/staging-smoke-2026-07-07.md`。若后续清单新增尚未实现的 API，记录为“实现未完成”，不要改用真实数据绕过。
+业务检查按 `docs/testing.md` 的 Staging smoke 清单执行；部署记录保存在 `docs/testing/staging-smoke-<date>.md`。同时确认响应包含已批准的安全头、登录 Cookie 带 `Secure`，并从外部验证 `3000`、`3001`、`5432` 不可访问。若后续清单新增尚未实现的 API，记录为“实现未完成”，不要改用真实数据绕过。
 
-### 3.7 部署记录
+### 3.7 HTTPS 回滚
+
+1. 停止外部测试并记录维护窗口。
+2. 保留数据库备份与 Caddy named volumes，不执行 `down -v`。
+3. 将应用代码和 `.env` 一起回退到上一个已验证 commit；旧 HTTP 配置只能恢复内部验证状态，不能继续作为扩大测试后的长期入口。
+4. 运行 `docker compose config`、`up -d --build`、migration/seed 与 smoke，确认回滚结果。
+5. 若问题仅为证书签发，优先修复 DNS、80/443、ACME challenge 或 Caddy 数据卷，不回滚数据库。
+
+### 3.8 部署记录
 
 每次部署、恢复或重新部署后记录：
 
@@ -389,10 +401,12 @@ curl -fsS <staging-frontend-url>/healthz
 - [ ] Terraform state 与 OCI Console 对齐。
 - [ ] Staging VM 可 SSH 登录。
 - [ ] Docker / Docker Compose 可用。
-- [ ] 域名或临时 IP 验证方式已确认。
+- [ ] `app.poolducktest.com` 的 DNS、有效证书和 HTTP→HTTPS 跳转已确认。
 - [ ] Secrets 存放位置已确认，且未写入仓库。
 - [ ] Staging DB 独立，不含真实客户数据。
 - [ ] `MAIL_PROVIDER` 为 `mock` 或 `sandbox`。
 - [ ] 发布触发方式已人工确认。
 - [ ] Smoke test 已执行或明确记录为实现未完成。
+- [ ] `3000`、`3001`、`5432` 未向公网开放，Web/SSH 来源 CIDR 未扩大。
+- [ ] Caddy `/data` 与 `/config` named volumes 存在且未被清理。
 - [ ] 日志不含真实 PII、生产 secret 或完整邮件凭据。

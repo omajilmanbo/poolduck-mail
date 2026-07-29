@@ -11,7 +11,7 @@
 | APP_ENV | 运行环境标识 | `local` | `staging` | `production` | No | 与部署环境一致 |
 | APP_PORT | Backend 监听端口 | `3001` | `127.0.0.1:3001`（宿主机绑定） | `TBD` | No | Staging 由反向代理访问 |
 | FRONTEND_PORT | Frontend 本地端口 | `3000` | `127.0.0.1:3000`（宿主机绑定） | `TBD` | No | Staging 由反向代理访问 |
-| API_BASE_URL | 前端访问 API 地址 | `http://localhost:3001` | `http://<staging-public-ip>`（当前） | `TBD` | No | Staging 真实 IP 不在基线表维护 |
+| API_BASE_URL | 前端访问 API 地址 | `http://localhost:3001` | `https://app.poolducktest.com` | `TBD` | No | Staging 使用同源 HTTPS |
 | POSTGRES_DB | PostgreSQL 数据库名 | `poolduck_mail` | `poolduck_mail_staging` | `TBD` | No | 与环境隔离 |
 | POSTGRES_USER | Local PostgreSQL 用户名 | `poolduck_local` | `Secret/Placeholder` | `Secret/Placeholder` | Yes | Local 为示例值，不用于真实环境 |
 | POSTGRES_PASSWORD | Local PostgreSQL 密码 | `poolduck_local_password` | `Secret` | `Secret` | Yes | Local 为示例值，不用于真实环境 |
@@ -22,7 +22,7 @@
 | MAIL_PROVIDER | 邮件 provider 类型 | `mock` | `sandbox` | `TBD` | No | MVP 优先 sandbox/mock |
 | MAIL_FROM_ADDRESS | 发件地址标识 | `no-reply@example.local` | `Secret/Placeholder` | `Secret/Placeholder` | Yes | 不写真实邮箱账号凭据 |
 | LOG_LEVEL | 日志级别 | `debug` | `info` | `info` | No | 按环境调整 |
-| CORS_ORIGIN | CORS 白名单 | `http://localhost:3000` | `http://<staging-public-ip>`（当前） | `TBD` | No | 多域名时用逗号分隔（示例） |
+| CORS_ORIGIN | CORS 白名单 | `http://localhost:3000` | `https://app.poolducktest.com` | `TBD` | No | 禁止通配 origin |
 | TENANT_CONTEXT_ENFORCED | 租户上下文强制开关 | `true` | `true` | `true` | No | 避免跨租户访问 |
 
 ## 2. 维护规则
@@ -40,9 +40,9 @@ This section refines the Staging column for the current OCI Always Free MVP desi
 | `APP_ENV` | `staging` | No | Yes | Fixed value. |
 | `APP_PORT` | `3001` | No | Yes | May change only if a reverse proxy/container mapping requires it. |
 | `FRONTEND_PORT` | `3000` | No | Yes | May change only if a reverse proxy/container mapping requires it. |
-| `API_BASE_URL` | `http://<staging-public-ip>` before domain; HTTPS base URL after domain | No | Yes | Nginx routes public traffic. |
+| `API_BASE_URL` | `https://app.poolducktest.com` | No | Yes | Caddy routes public traffic on the same origin. |
 | `NEXT_PUBLIC_API_BASE_URL` | Same public base URL as `API_BASE_URL` | No | Yes | Current frontend code reads this variable. |
-| `CORS_ORIGIN` | `http://<staging-public-ip>` before domain; HTTPS frontend URL after domain | No | Yes | Wildcard CORS is not allowed. |
+| `CORS_ORIGIN` | `https://app.poolducktest.com` | No | Yes | Wildcard CORS is not allowed. |
 | `POSTGRES_DB` | `poolduck_mail_staging` or implementation-specific Staging DB name | No | Yes | Real DB name may be local-only if it exposes tenant/account details. |
 | `POSTGRES_USER` | `Secret/Placeholder` | Yes | Yes | Do not commit real user names if considered sensitive. |
 | `POSTGRES_PASSWORD` | `Secret` | Yes | Yes | Store outside the repo. |
