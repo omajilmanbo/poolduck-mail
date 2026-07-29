@@ -75,7 +75,12 @@
    - OCI NSG、主机防火墙和 Compose 共同保证公网仅开放应用 `80`/`443`。
    - SSH 继续只允许人工批准的管理员 CIDR。
    - Frontend `3000`、Backend `3001` 和 PostgreSQL `5432` 不得向公网开放。
-   - 本 ADR 不决定外部测试人员的允许来源；公开访问、固定 CIDR allowlist 或外部身份代理必须在实施 #86 前由人工单独批准。
+   - 本 ADR 不单独决定外部测试人员的允许来源；公开访问、固定 CIDR allowlist 或外部身份代理必须由人工单独批准。
+   - 2026-07-29，人工批准 OCI Staging 的 TCP `80`/`443` 来源为 `0.0.0.0/0`。该批准仅覆盖
+     `app.poolducktest.com` 的 Caddy 入口；SSH 继续使用管理员 CIDR，`3000`、`3001`、`5432`
+     继续不向公网开放。
+   - TLS 只保护传输中的机密性和完整性，不替代登录限流、认证、RBAC、tenant 隔离、漏洞修复、
+     日志审查或资源监控。Staging 继续只使用合成数据和 mock/sandbox 邮件。
 
 9. 安全头
    - Caddy 负责统一设置 `X-Content-Type-Options`、防 iframe 策略和 `Referrer-Policy`。

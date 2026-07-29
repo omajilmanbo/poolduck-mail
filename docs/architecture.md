@@ -30,7 +30,7 @@
 - Staging Compose 使用固定版本 Caddy 取代 Nginx；Caddy 是唯一绑定宿主机 `80`/`443` 的应用容器。
 - Caddy 通过 Let's Encrypt ACME HTTP-01 签发和续期证书；`/data` 与 `/config` 使用独立 named volume 持久化，证书私钥和 ACME 状态不进入 Git。
 - `/api/*` 与 `/health` 保留原路径转发到 Backend，其他请求转发到 Frontend。Caddy 不参与认证、授权或 tenant scope 判定。
-- Frontend、Backend、PostgreSQL 的宿主机端口继续只绑定 loopback；OCI NSG 的 Web 来源范围沿用人工批准的固定 CIDR，不由本变更扩大。
+- Frontend、Backend、PostgreSQL 的宿主机端口继续只绑定 loopback；经 2026-07-29 人工批准，OCI NSG 仅将 Caddy 的 TCP `80`/`443` 对公网开放，SSH 仍限制为管理员 CIDR。
 - Production 的 TLS、CDN/WAF、负载均衡和发布方式仍须独立 ADR/Issue 决定。
 
 ## 2. 前端层

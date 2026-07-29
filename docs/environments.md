@@ -52,7 +52,7 @@ Staging is an internal verification environment. It validates configuration, dep
 - The OCI Always Free Staging entry is `https://app.poolducktest.com` through Caddy.
 - HTTP port `80` serves ACME HTTP-01 and redirects application traffic to HTTPS.
 - Frontend and Backend container ports `3000` / `3001` stay bound to loopback on the VM and are not the public entry.
-- OCI NSG access remains restricted to the human-approved source CIDR; this document does not authorize public ingress.
+- By human approval on 2026-07-29, OCI NSG allows public TCP `80`/`443` only for the Caddy entry. SSH remains restricted to the administrator CIDR, and `3000` / `3001` / `5432` remain non-public.
 
 ### 6.2 Isolation rules
 

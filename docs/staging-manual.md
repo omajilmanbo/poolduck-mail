@@ -99,7 +99,7 @@ docker compose version
 当前 Staging 域名与 TLS 确认方法：
 
 1. 确认 `app.poolducktest.com` 的 A record 指向当前 Staging VM public IP。
-2. 确认 OCI NSG 和主机防火墙允许已批准来源访问 TCP `80`/`443`；不得扩大来源 CIDR。
+2. 确认 OCI NSG 和主机防火墙按 2026-07-29 人工批准允许公网访问 TCP `80`/`443`；SSH 仍仅允许管理员 CIDR。
 3. 等待 DNS 生效。
 4. 从批准来源验证 DNS、HTTP 跳转、HTTPS 证书和健康端点。
 
@@ -407,6 +407,6 @@ echo | openssl s_client -connect app.poolducktest.com:443 -servername app.pooldu
 - [ ] `MAIL_PROVIDER` 为 `mock` 或 `sandbox`。
 - [ ] 发布触发方式已人工确认。
 - [ ] Smoke test 已执行或明确记录为实现未完成。
-- [ ] `3000`、`3001`、`5432` 未向公网开放，Web/SSH 来源 CIDR 未扩大。
+- [ ] 公网仅可达 Caddy 的 TCP `80`/`443`；`3000`、`3001`、`5432` 不可达，SSH 仍限制为管理员 CIDR。
 - [ ] Caddy `/data` 与 `/config` named volumes 存在且未被清理。
 - [ ] 日志不含真实 PII、生产 secret 或完整邮件凭据。
