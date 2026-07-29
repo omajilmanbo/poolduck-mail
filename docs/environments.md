@@ -14,7 +14,7 @@
 | 数据类型 | 本地测试数据 | 非真实客户数据 | 真实业务数据 |
 | 数据库 | 本地 PostgreSQL（Compose） | Staging VM 内 PostgreSQL 16 容器（与 Production 隔离） | 独立 Production DB |
 | Mail Provider | Mock/Sandbox | Sandbox（独立账号） | 正式 Provider（非 sandbox-only） |
-| 域名与协议 | localhost（HTTP） | 当前 public IP（HTTP，仅内部验证）；目标为域名（HTTPS） | 正式域名（HTTPS） |
+| 域名与协议 | localhost（HTTP） | `app.poolducktest.com`（Caddy + Let's Encrypt HTTPS） | 正式域名（HTTPS，待独立决策） |
 | Secrets | 本地 `.env` | 当前 VM 本地 `.env`（仓库外）；目标为 Staging secrets store | Production secrets store |
 | 日志监控 | 本地日志 | 当前容器日志；集中日志与基础监控待补齐 | 集中日志+监控+告警 |
 | 变更风险 | 低 | 中 | 高 |
@@ -47,13 +47,12 @@
 
 Staging is an internal verification environment. It validates configuration, deployment steps, tenant isolation, subscription gates, scan-to-mail-job flow, and sandbox/mock mail behavior before Production exists.
 
-### 6.1 Access model before a domain exists
+### 6.1 Current access model
 
-- The initial OCI Always Free Staging environment may be accessed by the compute instance public IP.
-- Current temporary public entry: `http://<staging-public-ip>` through the Nginx reverse proxy.
+- The OCI Always Free Staging entry is `https://app.poolducktest.com` through Caddy.
+- HTTP port `80` serves ACME HTTP-01 and redirects application traffic to HTTPS.
 - Frontend and Backend container ports `3000` / `3001` stay bound to loopback on the VM and are not the public entry.
-- When a Staging domain and TLS are available, switch to HTTPS URLs and update `CORS_ORIGIN`, `API_BASE_URL`, and `NEXT_PUBLIC_API_BASE_URL`.
-- Lack of a domain does not block Staging design, but any workflow that requires HTTPS must stop until DNS/TLS is available.
+- By human approval on 2026-07-29, OCI NSG allows public TCP `80`/`443` only for the Caddy entry. SSH remains restricted to the administrator CIDR, and `3000` / `3001` / `5432` remain non-public.
 
 ### 6.2 Isolation rules
 
@@ -70,9 +69,9 @@ Staging is an internal verification environment. It validates configuration, dep
 | `APP_ENV` | `staging` | No | Fixed environment marker. |
 | `APP_PORT` | `3001` unless the host reverse proxy changes it | No | Backend listener. |
 | `FRONTEND_PORT` | `3000` unless the host reverse proxy changes it | No | Frontend listener. |
-| `API_BASE_URL` | `http://<staging-public-ip>` before domain; HTTPS base URL after domain | No | Nginx routes API requests. |
+| `API_BASE_URL` | `https://app.poolducktest.com` | No | Caddy routes API requests on the same origin. |
 | `NEXT_PUBLIC_API_BASE_URL` | Same public base URL used by the frontend | No | Required by the current frontend client. |
-| `CORS_ORIGIN` | `http://<staging-public-ip>` before domain; HTTPS frontend URL after domain | No | Do not use wildcard origins. |
+| `CORS_ORIGIN` | `https://app.poolducktest.com` | No | Do not use wildcard origins. |
 | `DATABASE_URL` | Secret Staging PostgreSQL URL | Yes | Isolated Staging database only. |
 | `JWT_SECRET` | Generated Staging-only secret | Yes | Do not reuse Local or Production. |
 | `REFRESH_TOKEN_SECRET` | Generated Staging-only secret | Yes | Do not reuse Local or Production. |

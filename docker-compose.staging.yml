@@ -2,13 +2,16 @@ name: poolduck-mail-staging
 
 services:
   reverse-proxy:
-    image: nginx:1.27-alpine
+    image: caddy:2.11.4-alpine
     container_name: poolduck-mail-staging-proxy
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
     volumes:
-      - ./deploy/staging/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/staging/caddy:/etc/caddy:ro
+      - caddy-data:/data
+      - caddy-config:/config
     depends_on:
       backend:
         condition: service_healthy
@@ -18,9 +21,13 @@ services:
       test:
         [
           "CMD-SHELL",
-          "wget -qO- http://127.0.0.1/healthz >/dev/null 2>&1 && wget -qO- http://127.0.0.1/health >/dev/null 2>&1",
+          "wget -qO- http://127.0.0.1:2019/config/ >/dev/null 2>&1",
         ]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 10s
+
+volumes:
+  caddy-data:
+  caddy-config:

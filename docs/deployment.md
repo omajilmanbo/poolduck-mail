@@ -146,20 +146,19 @@
 - 当前由人工批准后，操作者或 Agent 通过 SSH 执行 Compose 部署命令；部署后执行 smoke test
 - 已接受的目标方案是把命令链收敛为幂等部署脚本，触发仍保留人工审批；详见 ADR-005
 - 验证订阅、权限、扫码链路
-- Staging 已采用与 Local 相同的容器组基线部署到 OCI 服务器，并通过 override 增加 Nginx reverse proxy。
-- Staging 仍需后续 Issue 补齐域名/TLS、备份、监控与正式 secrets store；当前 secrets 位于 VM 的仓库外 `.env`。
+- Staging 已采用与 Local 相同的容器组基线部署到 OCI 服务器，并通过 override 增加 Caddy HTTPS reverse proxy。
+- Staging 域名和证书由 ADR-012 / Issue #107 落地；备份策略、集中监控与正式 secrets store 仍由独立 Issue 跟进，当前 secrets 位于 VM 的仓库外 `.env`。
 - Staging 环境变量必须替换为 staging 专用值，不能直接复用 `.env.example` 中的示例 secrets。
 
-### 5.1 MVP public-IP deployment entry (Issue #58)
+### 5.1 Staging HTTPS deployment entry（ADR-012 / Issue #107）
 
-When no Staging domain exists, the MVP Staging deployment uses the OCI compute public IP over HTTP port `80`.
-The deployment keeps PostgreSQL, Backend, and Frontend bound to VM localhost ports and exposes only the `reverse-proxy` service publicly.
+The Staging entry is `https://app.poolducktest.com`. Caddy is the only application container that binds host ports `80` and `443`; port `80` is retained for ACME HTTP-01 and HTTP-to-HTTPS redirects. PostgreSQL, Backend, and Frontend remain bound to VM loopback and are not public entries.
 
 Deployment files:
 
 - `docker-compose.yml`: shared Local/Staging container baseline.
-- `docker-compose.staging.yml`: Staging override that adds the Nginx reverse proxy.
-- `deploy/staging/nginx.conf`: routes `/` to Frontend, `/api/*` and `/health` to Backend.
+- `docker-compose.staging.yml`: Staging override that adds fixed-version Caddy and persistent `/data` and `/config` volumes.
+- `deploy/staging/caddy/Caddyfile`: explicitly uses Let's Encrypt ACME HTTP-01, routes `/api/*` and `/health` to Backend, and routes all other requests to Frontend.
 
 Required Staging `.env` shape on the VM:
 
@@ -168,9 +167,9 @@ APP_ENV=staging
 APP_PORT=127.0.0.1:3001
 FRONTEND_PORT=127.0.0.1:3000
 POSTGRES_PORT=127.0.0.1:5432
-API_BASE_URL=http://<staging-public-ip>
-NEXT_PUBLIC_API_BASE_URL=http://<staging-public-ip>
-CORS_ORIGIN=http://<staging-public-ip>
+API_BASE_URL=https://app.poolducktest.com
+NEXT_PUBLIC_API_BASE_URL=https://app.poolducktest.com
+CORS_ORIGIN=https://app.poolducktest.com
 MAIL_PROVIDER=mock
 MAIL_MOCK_SEND_RESULT=success
 TENANT_CONTEXT_ENFORCED=true
@@ -191,6 +190,8 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
 docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T backend npm run staging:seed
 docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T -e API_BASE_URL=http://reverse-proxy backend npm run smoke:api
 ```
+
+Before `up`, back up the Staging database and validate both the Compose model and Caddyfile. After `up`, verify the HTTPS certificate, HTTP redirect, security headers, `/healthz`, `/health`, API smoke, browser login, and that public ports `3000`, `3001`, and `5432` remain unreachable. Do not run `docker compose down -v`: the Caddy data volume contains the certificate private key and ACME state.
 
 `npm run staging:seed` writes only synthetic `.example.local` data and is idempotent. It prepares fixed active, suspended, and expired tenants for Staging verification:
 
@@ -327,9 +328,9 @@ AUTH_LOGIN_MAX_PER_IP=60
 AUTH_LOGIN_MAX_PER_TENANT=100
 AUTH_LOGIN_MAX_PER_IDENTIFIER=10
 AUTH_LOGIN_MAX_PER_COMPOSITE=8
-API_BASE_URL=http://<new-staging-public-ip>
-NEXT_PUBLIC_API_BASE_URL=http://<new-staging-public-ip>
-CORS_ORIGIN=http://<new-staging-public-ip>
+API_BASE_URL=https://app.poolducktest.com
+NEXT_PUBLIC_API_BASE_URL=https://app.poolducktest.com
+CORS_ORIGIN=https://app.poolducktest.com
 MAIL_PROVIDER=mock
 MAIL_MOCK_SEND_RESULT=success
 MAIL_FROM_ADDRESS=no-reply@example.local

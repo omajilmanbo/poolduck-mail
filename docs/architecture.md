@@ -24,6 +24,15 @@
 - 人工 Runbook 永久保留，用于脚本失败、恢复、排障和回滚。
 - `workflow_dispatch` 属于后续独立 Issue；当前不启用无审批自动发布。
 
+### 1.3 Staging HTTPS 边缘入口（ADR-012）
+
+- OCI Staging 仅以 `https://app.poolducktest.com` 作为 Frontend 与 Backend API 的同源公开入口。
+- Staging Compose 使用固定版本 Caddy 取代 Nginx；Caddy 是唯一绑定宿主机 `80`/`443` 的应用容器。
+- Caddy 通过 Let's Encrypt ACME HTTP-01 签发和续期证书；`/data` 与 `/config` 使用独立 named volume 持久化，证书私钥和 ACME 状态不进入 Git。
+- `/api/*` 与 `/health` 保留原路径转发到 Backend，其他请求转发到 Frontend。Caddy 不参与认证、授权或 tenant scope 判定。
+- Frontend、Backend、PostgreSQL 的宿主机端口继续只绑定 loopback；经 2026-07-29 人工批准，OCI NSG 仅将 Caddy 的 TCP `80`/`443` 对公网开放，SSH 仍限制为管理员 CIDR。
+- Production 的 TLS、CDN/WAF、负载均衡和发布方式仍须独立 ADR/Issue 决定。
+
 ## 2. 前端层
 
 - 登录页、扫码录入页、任务状态页、管理页

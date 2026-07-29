@@ -19,22 +19,27 @@ MVP 服务间通信方向统一为：
 - Backend API：`http://localhost:3001`
 - PostgreSQL：`localhost:5432`（仅本地开发链路）
 
-### Staging / Production（示例约定）
+### Staging
 
-- Frontend：`https://<env-domain>`（443）
-- Backend API：`https://api.<env-domain>`（443）
+- Frontend 与 Backend API：`https://app.poolducktest.com`（同源 443）
+- Caddy：宿主机 `80`/`443`；`80` 仅用于 ACME HTTP-01 与 HTTPS 跳转
+- Frontend / Backend：宿主机 `127.0.0.1:3000` / `127.0.0.1:3001`
 - PostgreSQL：不对公网开放，仅允许 Backend 所在网络访问（5432 内网）
+
+### Production（待独立决策）
+
+- 域名、TLS、CDN/WAF、负载均衡和 API 域名策略不从 Staging 推导。
 
 ## 3. 域名与 HTTPS
 
-1. Staging 与 Production 必须使用各自独立域名。
-2. Staging 与 Production 的前后端访问必须通过 HTTPS。
+1. Staging 使用 `app.poolducktest.com`；Production 必须使用独立域名。
+2. Staging 的前端与 API 通过 Caddy 的同源 HTTPS 入口访问。
 3. Local 可使用 HTTP 进行开发调试。
 
 ## 4. API Base URL 约定
 
 - Local 前端默认调用：`http://localhost:3001`
-- Staging 前端调用：`https://api.staging.<domain>`
+- Staging 前端调用：`https://app.poolducktest.com`
 - Production 前端调用：`https://api.<domain>`
 
 ## 5. CORS 基本策略

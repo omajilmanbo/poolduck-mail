@@ -1,0 +1,34 @@
+app.poolducktest.com {
+	tls {
+		issuer acme {
+			dir https://acme-v02.api.letsencrypt.org/directory
+			test_dir https://acme-staging-v02.api.letsencrypt.org/directory
+			disable_tlsalpn_challenge
+		}
+	}
+
+	request_body {
+		max_size 1MB
+	}
+
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Content-Security-Policy "frame-ancestors 'none'"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Strict-Transport-Security "max-age=86400"
+	}
+
+	handle /api/* {
+		reverse_proxy backend:3001
+	}
+
+	handle /health {
+		reverse_proxy backend:3001
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
