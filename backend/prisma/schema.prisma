@@ -11,6 +11,8 @@ model Tenant {
   tenantCode                  String                       @unique @map("tenant_code") @db.VarChar(10)
   name                        String                       @db.VarChar(255)
   status                      String                       @default("active") @db.VarChar(32)
+  locationLimit               Int                          @map("location_limit")
+  platformVersion             Int                          @default(1) @map("platform_version")
   createdAt                   DateTime                     @default(now()) @map("created_at")
   updatedAt                   DateTime                     @updatedAt @map("updated_at")
   users                       User[]
@@ -25,6 +27,8 @@ model Tenant {
   unmappedScanCases           UnmappedScanCase[]
   scanIdempotencies           ScanRequestIdempotency[]
   operatorLocationAssignments OperatorLocationAssignment[]
+  platformAuditLogs           PlatformAuditLog[]
+  platformIdempotencies       PlatformTenantIdempotency[]
 
   @@map("tenants")
 }
@@ -37,6 +41,7 @@ model User {
   passwordHash                String                       @map("password_hash") @db.VarChar(255)
   role                        String                       @db.VarChar(32)
   status                      String                       @default("active") @db.VarChar(32)
+  mustChangePassword          Boolean                      @default(false) @map("must_change_password")
   lastLoginAt                 DateTime?                    @map("last_login_at")
   createdAt                   DateTime                     @default(now()) @map("created_at")
   updatedAt                   DateTime                     @updatedAt @map("updated_at")
@@ -61,6 +66,7 @@ model Subscription {
   status    String   @db.VarChar(32)
   startAt   DateTime @map("start_at")
   endAt     DateTime @map("end_at")
+  version   Int      @default(1)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
@@ -112,13 +118,13 @@ model Location {
 }
 
 model LocationLegacyIdentifier {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId     String   @map("tenant_id") @db.Uuid
-  locationId   String   @map("location_id") @db.Uuid
-  legacyCode   String   @map("legacy_code") @db.VarChar(128)
-  legacyType   String   @map("legacy_type") @db.VarChar(32)
-  createdAt    DateTime @default(now()) @map("created_at")
-  location     Location @relation(fields: [tenantId, locationId], references: [tenantId, id], onDelete: Cascade)
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  locationId String   @map("location_id") @db.Uuid
+  legacyCode String   @map("legacy_code") @db.VarChar(128)
+  legacyType String   @map("legacy_type") @db.VarChar(32)
+  createdAt  DateTime @default(now()) @map("created_at")
+  location   Location @relation(fields: [tenantId, locationId], references: [tenantId, id], onDelete: Cascade)
 
   @@unique([tenantId, legacyCode])
   @@index([tenantId, locationId])
@@ -142,23 +148,23 @@ model OperatorLocationAssignment {
 }
 
 model PersonMapping {
-  id         String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId   String      @map("tenant_id") @db.Uuid
-  locationId String      @map("location_id") @db.Uuid
-  personCode String      @unique @map("person_code") @db.VarChar(12)
-  scanCode   String      @map("scan_code") @db.VarChar(128)
-  personName String      @map("person_name") @db.VarChar(255)
-  email      String      @db.VarChar(255)
-  status     String      @default("active") @db.VarChar(32)
-  deletedAt DateTime?    @map("deleted_at")
-  purgeAfter DateTime?   @map("purge_after")
-  deletedFromStatus String? @map("deleted_from_status") @db.VarChar(32)
-  createdAt  DateTime    @default(now()) @map("created_at")
-  updatedAt  DateTime    @updatedAt @map("updated_at")
-  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  location   Location    @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  scanEvents ScanEvent[]
-  mailJobs   MailJob[]
+  id                String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String      @map("tenant_id") @db.Uuid
+  locationId        String      @map("location_id") @db.Uuid
+  personCode        String      @unique @map("person_code") @db.VarChar(12)
+  scanCode          String      @map("scan_code") @db.VarChar(128)
+  personName        String      @map("person_name") @db.VarChar(255)
+  email             String      @db.VarChar(255)
+  status            String      @default("active") @db.VarChar(32)
+  deletedAt         DateTime?   @map("deleted_at")
+  purgeAfter        DateTime?   @map("purge_after")
+  deletedFromStatus String?     @map("deleted_from_status") @db.VarChar(32)
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+  tenant            Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location          Location    @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  scanEvents        ScanEvent[]
+  mailJobs          MailJob[]
 
   @@unique([tenantId, locationId, scanCode])
   @@index([tenantId, locationId, status, updatedAt])
@@ -305,4 +311,72 @@ model Session {
   @@index([tenantId, userId, revokedAt])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+model PlatformAdmin {
+  id                  String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email               String                      @unique @db.VarChar(254)
+  passwordHash        String                      @map("password_hash") @db.VarChar(255)
+  status              String                      @default("active") @db.VarChar(32)
+  identityVersion     Int                         @default(1) @map("identity_version")
+  lastLoginAt         DateTime?                   @map("last_login_at")
+  createdAt           DateTime                    @default(now()) @map("created_at")
+  updatedAt           DateTime                    @updatedAt @map("updated_at")
+  sessions            PlatformSession[]
+  auditLogs           PlatformAuditLog[]
+  tenantIdempotencies PlatformTenantIdempotency[]
+
+  @@index([status])
+  @@map("platform_admins")
+}
+
+model PlatformSession {
+  id                      String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  platformAdminId         String        @map("platform_admin_id") @db.Uuid
+  identityVersionSnapshot Int           @map("identity_version_snapshot")
+  refreshTokenHash        String        @map("refresh_token_hash") @db.VarChar(64)
+  expiresAt               DateTime      @map("expires_at")
+  revokedAt               DateTime?     @map("revoked_at")
+  lastUsedAt              DateTime?     @map("last_used_at")
+  createdAt               DateTime      @default(now()) @map("created_at")
+  updatedAt               DateTime      @updatedAt @map("updated_at")
+  platformAdmin           PlatformAdmin @relation(fields: [platformAdminId], references: [id], onDelete: Restrict)
+
+  @@index([platformAdminId, revokedAt])
+  @@index([expiresAt])
+  @@map("platform_sessions")
+}
+
+model PlatformAuditLog {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  platformAdminId String?        @map("platform_admin_id") @db.Uuid
+  targetTenantId  String?        @map("target_tenant_id") @db.Uuid
+  requestId       String?        @map("request_id") @db.VarChar(128)
+  action          String         @db.VarChar(128)
+  resourceType    String         @map("resource_type") @db.VarChar(128)
+  resourceId      String         @map("resource_id") @db.VarChar(128)
+  result          String         @db.VarChar(32)
+  metadataJson    Json           @default("{}") @map("metadata_json") @db.JsonB
+  createdAt       DateTime       @default(now()) @map("created_at")
+  platformAdmin   PlatformAdmin? @relation(fields: [platformAdminId], references: [id], onDelete: SetNull)
+  targetTenant    Tenant?        @relation(fields: [targetTenantId], references: [id], onDelete: SetNull)
+
+  @@index([platformAdminId, createdAt])
+  @@index([targetTenantId, createdAt])
+  @@map("platform_audit_logs")
+}
+
+model PlatformTenantIdempotency {
+  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  keyHash            String        @unique @map("key_hash") @db.VarChar(64)
+  requestFingerprint String        @map("request_fingerprint") @db.VarChar(64)
+  platformAdminId    String        @map("platform_admin_id") @db.Uuid
+  tenantId           String        @unique @map("tenant_id") @db.Uuid
+  expiresAt          DateTime      @map("expires_at")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  platformAdmin      PlatformAdmin @relation(fields: [platformAdminId], references: [id], onDelete: Restrict)
+
+  @@index([expiresAt])
+  @@map("platform_tenant_idempotency")
 }

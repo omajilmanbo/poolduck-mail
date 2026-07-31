@@ -367,6 +367,36 @@ echo | openssl s_client -connect app.poolducktest.com:443 -servername app.pooldu
 | 测试结果 | `pass` / `blocked` / `failed` |
 | 阻塞项 | `<none-or-details>` |
 
+### 3.9 Platform control plane 初始化、恢复与紧急关闭（ADR-013）
+
+本节仅是受控 Runbook。每次 Staging 执行都需要单独人工批准目标、备份窗口、合成
+`.example.local` 邮箱和 Secret 注入方式；不得将值粘贴到命令历史、Issue 或日志。
+
+1. 先备份 Staging 数据库，保存完整 migration plan，并确认没有无关资源替换。
+2. 在 Staging `.env` 通过受控流程注入不同于 tenant JWT 的
+   `PLATFORM_JWT_SECRET`、`PLATFORM_REFRESH_TOKEN_SECRET` 和至少 32 字符的
+   `PLATFORM_PROVISIONING_SECRET`；重建 Backend 后先确认 tenant 工作台回归正常。
+3. 执行 `npm.cmd run db:deploy`，核对 tenant 行数、未 purged location 行数及
+   `location_limit=max(1, current_count)` 的 backfill 统计。
+4. 仅通过不会回显值的运行时环境注入 `PLATFORM_ADMIN_EMAIL` /
+   `PLATFORM_ADMIN_PASSWORD`，执行 `npm.cmd run platform:admin -- bootstrap`。重复 bootstrap
+   必须失败，数据库必须仍只有一个 active platform_admin。
+5. 合成验证必须显式 opt-in：`PLATFORM_SYNTHETIC_SEED=true`、测试邮箱必须以
+   `.example.local` 结尾、测试密码运行时注入；执行 `npm.cmd run platform:seed` 两次并核对幂等。
+6. 执行平台 API smoke 和 Frontend E2E，验证独立 Cookie/audience、租户原子创建与重放、
+   四种 subscription、额度拒绝、暂停/恢复、Session 撤销和脱敏审计。输出只记录通过/失败与内部
+   request ID，不记录密码、token、完整邮箱或业务 PII。
+7. 日常轮换执行 `platform:admin -- rotate`；紧急禁用执行 `-- disable`；受控恢复执行
+   `-- recover`。三者都必须撤销全部既有平台 Session。
+8. 紧急关闭平台 UI/API 时，先在 Caddy/入口层阻断 `/platform*` 与 `/api/platform/*`，再移除
+   Backend 的平台 Secret 并重建 Backend；不要停止 tenant Frontend/Backend。确认现有 tenant
+   工作台继续按原 subscription/权限运行。
+9. 回滚顺序：先关闭平台入口，再回滚应用；数据库 guarded rollback 只有在不存在平台身份、
+   平台审计、平台开通 tenant 和 `must_change_password=true` 状态时才允许执行。否则保留扩展表/
+   字段或先导出归档，禁止用删表伪造回滚。
+
+截至 Issues #110–#113 的本地完成范围，本 Runbook 尚未在 Staging 执行。
+
 ## 4. 部署脚本与 workflow_dispatch 后续步骤
 
 无审批自动部署不在当前范围内。按 ADR-005，后续应先实现部署脚本，再评估 `workflow_dispatch`：

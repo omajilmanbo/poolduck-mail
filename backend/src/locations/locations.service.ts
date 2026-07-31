@@ -420,36 +420,88 @@ export class LocationsService {
     dto: CreateLocationDto,
   ): Promise<LocationResponse> {
     const name = dto.location_name.trim();
-    await this.assertLocationNameAvailable(user.tenant_id, name);
     for (
       let attempt = 1;
       attempt <= LOCATION_CODE_CREATE_ATTEMPTS;
       attempt += 1
     ) {
       const locationCode = this.locationCodeGenerator.generate();
-      const legacyCollision =
-        await this.prisma.locationLegacyIdentifier.findFirst({
-          where: { tenantId: user.tenant_id, legacyCode: locationCode },
-          select: { id: true },
-        });
-      if (legacyCollision) continue;
       try {
-        const location = await this.prisma.location.create({
-          data: {
-            tenantId: user.tenant_id,
-            locationCode,
-            name,
-            type: 'location',
-            status: 'active',
-          },
-          select: {
-            id: true,
-            locationCode: true,
-            name: true,
-            type: true,
-            status: true,
-          },
+        const location = await this.prisma.$transaction(async (tx) => {
+          await tx.$executeRaw(
+            Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${user.tenant_id}, 0))`,
+          );
+          const [tenant, usage, duplicate, legacyCollision, codeCollision] =
+            await Promise.all([
+              tx.tenant.findUnique({
+                where: { id: user.tenant_id },
+                select: { locationLimit: true },
+              }),
+              tx.location.count({
+                where: {
+                  tenantId: user.tenant_id,
+                  status: { not: 'purged' },
+                },
+              }),
+              tx.location.findFirst({
+                where: {
+                  tenantId: user.tenant_id,
+                  name: { equals: name, mode: 'insensitive' },
+                },
+                select: { id: true },
+              }),
+              tx.locationLegacyIdentifier.findFirst({
+                where: {
+                  tenantId: user.tenant_id,
+                  legacyCode: locationCode,
+                },
+                select: { id: true },
+              }),
+              tx.location.findFirst({
+                where: {
+                  tenantId: user.tenant_id,
+                  locationCode,
+                },
+                select: { id: true },
+              }),
+            ]);
+          if (!tenant) {
+            throw new NotFoundException({
+              code: 'TENANT_NOT_FOUND',
+              message: 'tenant 不存在',
+            });
+          }
+          if (usage >= tenant.locationLimit) {
+            throw new ConflictException({
+              code: 'LOCATION_LIMIT_REACHED',
+              message: '地点数量已达到当前额度',
+            });
+          }
+          if (duplicate) {
+            throw new ConflictException({
+              code: 'LOCATION_NAME_CONFLICT',
+              message: '当前租户已存在同名地点',
+            });
+          }
+          if (legacyCollision || codeCollision) return null;
+          return tx.location.create({
+            data: {
+              tenantId: user.tenant_id,
+              locationCode,
+              name,
+              type: 'location',
+              status: 'active',
+            },
+            select: {
+              id: true,
+              locationCode: true,
+              name: true,
+              type: true,
+              status: true,
+            },
+          });
         });
+        if (!location) continue;
         await this.auditMutation(
           user,
           'location.created',
@@ -458,6 +510,21 @@ export class LocationsService {
         );
         return this.toLocationResponse(location);
       } catch (error) {
+        if (
+          error instanceof ConflictException &&
+          (error.getResponse() as { code?: string }).code ===
+            'LOCATION_LIMIT_REACHED'
+        ) {
+          await this.audit.record({
+            tenantId: user.tenant_id,
+            actorUserId: user.user_id,
+            action: 'location.create',
+            resourceType: 'location',
+            resourceId: user.tenant_id,
+            result: 'denied',
+            metadata: { reason: 'LOCATION_LIMIT_REACHED' },
+          });
+        }
         if (!this.isUniqueConflict(error)) throw error;
       }
     }

@@ -30,6 +30,13 @@ export class RolesGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const role = request.auth?.role;
 
+    if (request.auth?.must_change_password) {
+      throw new ForbiddenException({
+        code: 'PASSWORD_CHANGE_REQUIRED',
+        message: '首次登录必须先修改临时密码',
+      });
+    }
+
     if (role && requiredRoles.includes(role as UserRole)) {
       return true;
     }

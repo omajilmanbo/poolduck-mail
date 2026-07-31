@@ -266,6 +266,11 @@ export default function HomePage() {
         identifier: identifier.trim(),
         password,
       });
+      if (response.user.must_change_password) {
+        setPassword('');
+        window.location.assign('/change-password');
+        return;
+      }
       const session = 'cookie-session';
       setToken(session);
       setUser({

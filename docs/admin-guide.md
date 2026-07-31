@@ -2,18 +2,40 @@
 
 ## 1. 管理员职责
 
-- 管理租户基础信息
-- 管理用户账号与角色
-- 查看订阅状态与到期时间
-- 处理关键告警（登录失败、发信失败、越权尝试）
+- `platform_admin`：tenantless 平台最高权限，人工创建/暂停/恢复 tenant，创建首个
+  `tenant_manager`，修改 subscription 与 `location_limit`
+- `tenant_manager`：仅管理自身 tenant 的 operator、location、人员、历史与审计，只读查看订阅
+- `operator`：仅操作明确授权 location 内的人员、扫码与历史
+- 处理关键告警（登录失败、Session 重放、平台写入失败、发信失败、越权尝试）
 
-## 2. 租户管理
+## 2. 平台控制面
 
-`tenant_manager` 仅作用于自身 tenant，不是跨租户平台管理员。ADR-006 已 Accepted，平台操作由未来独立实现的 `platform_admin` 承担。
+ADR-006/ADR-013 已 Accepted；运行时已由 #110–#112 在本地实现。platform_admin 使用独立
+`/platform/login`、`/platform` UI、`/api/platform/*` API 和 Session，不输入 tenant_code，
+也不复用 tenant_manager/operator 工作台。
 
-- 查看租户列表与状态
-- 对违规或欠费租户执行 suspended 操作
-- 恢复租户前确认订阅状态正常
+- 使用受控 CLI/Runbook 初始化、轮换、禁用或恢复唯一 active platform_admin；不得通过普通 UI
+  创建平台账号，不得提交默认凭据
+- 人工创建 tenant 时显式填写 name、首个 tenant_manager 邮箱、trial/active 时间区间和
+  正整数 location_limit；tenant_code 和一次性临时密码由服务端生成
+- 临时密码只显示一次，离开页面后清除；必须通过批准的安全渠道交付并要求首次登录改密
+- 暂停/恢复、subscription 和额度变更前核对 tenant name + tenant_code、影响摘要和 version，
+  并完成二次确认
+- platform_admin 只能查看 tenant/subscription/额度/脱敏 manager 摘要，不读取人员、扫码、
+  邮件正文、收件邮箱、租户审计或 impersonate 租户用户
+- platform_admin 不受 tenant subscription 到期/暂停影响，但其账号和 Session 仍可过期、禁用和
+  全量撤销。MVP 延后 TOTP，使用单 active 账号、高熵密码、限流、有限 Session、独立 audience、
+  审计和异常告警作为补偿控制；TOTP 见 #114
+
+受控 CLI 在 `backend` 目录运行，凭据只能从运行时环境注入，命令不会回显：
+
+- `npm.cmd run platform:admin -- bootstrap`：仅在不存在 active 账号时初始化
+- `npm.cmd run platform:admin -- rotate`：轮换密码、增加 identity version、撤销全部 Session
+- `npm.cmd run platform:admin -- disable`：禁用并撤销全部 Session
+- `npm.cmd run platform:admin -- recover`：仅在没有其他 active 账号时恢复并轮换密码
+
+Local/CI/Staging 合成账号另用显式 opt-in 的 `platform:seed`；Production 会拒绝该 seed。平台
+控制台地址为 `/platform/login`，账号恢复不提供 UI。
 
 ## 3. 用户与权限管理
 
@@ -32,9 +54,13 @@
 
 ## 4. 订阅管理
 
-- 检查订阅状态（trial/active/expired/suspended）
-- 到期前通知业务负责人续订
-- 过期或暂停后按策略限制关键接口（禁止扫码提交、创建邮件任务、发送与重试）
+- 只有 platform_admin 可修改 `trial` / `active` / `expired` / `suspended`、有效期和
+  `location_limit`；tenant_manager 只读，operator 无权限
+- 到期前由平台运营通知业务负责人；过期或暂停后禁止扫码提交、创建邮件任务、发送与重试
+- location 额度统计 active、inactive 和 pending deletion，ADR-011 终结清理为 purged 后释放
+- 达到额度时禁止创建新地点；提高额度立即允许后续创建；降低额度不得低于当前计数，也不会隐式
+  停用、删除或冻结既有地点
+- 人工额度不包含价格、付款、账单、proration 或自动扩容；商业化仍由 #102 Future 决策
 
 ## 5. 审计与合规
 
@@ -55,7 +81,8 @@
 - 邮件任务保存发送时的 tenant/location/person 名称与 `person_code` 快照。后续改名不改写历史；审计和普通日志不得记录完整邮箱、邮件正文或批量 UUID/人员码对应关系
 - “停用”可随时重新启用；“删除”进入 14 天恢复期，并立即停止新扫描、映射写入、地点授权和 queued
   邮件。期限内可恢复删除前状态；到期后地点名称及其当前人员 PII 被匿名化、operator 授权撤销，历史不删除
-- 已停用地点可由 tenant_manager 在地点管理页重新启用；该操作不依赖价格、套餐 allowance、付款或商业计费配置
+- 已停用地点可由 tenant_manager 在地点管理页重新启用；inactive 地点已经占用人工额度，因此
+  重新启用不新增额度占用，仍不依赖价格、付款或商业计费配置
 - `operator` 只能维护当前租户已显式授权地点内的人员映射；只有 `tenant_manager` 可新增、编辑、停用或启用地点
 - 关注 denied/fail 事件峰值
 - 发生安全事件时保全日志并升级处理
