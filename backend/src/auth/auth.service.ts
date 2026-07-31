@@ -112,6 +112,7 @@ export class AuthService {
             passwordHash: true,
             role: true,
             status: true,
+            mustChangePassword: true,
           },
         })
       : null;
@@ -204,6 +205,7 @@ export class AuthService {
             email: true,
             role: true,
             status: true,
+            mustChangePassword: true,
             tenant: { select: { tenantCode: true } },
           },
         },
@@ -256,6 +258,50 @@ export class AuthService {
     };
   }
 
+  async changeInitialPassword(
+    user: AuthenticatedUserResponse,
+    newPassword: string,
+  ) {
+    const current = await this.prisma.user.findFirst({
+      where: { id: user.user_id, tenantId: user.tenant_id },
+      select: { mustChangePassword: true },
+    });
+    if (!current?.mustChangePassword) {
+      throw new HttpException(
+        {
+          code: 'INITIAL_PASSWORD_CHANGE_NOT_REQUIRED',
+          message: '当前账号不需要首次改密',
+        },
+        HttpStatus.CONFLICT,
+      );
+    }
+    const passwordHash = await argon2.hash(newPassword, {
+      type: argon2.argon2id,
+    });
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.user_id },
+        data: { passwordHash, mustChangePassword: false },
+      }),
+      this.prisma.session.updateMany({
+        where: {
+          tenantId: user.tenant_id,
+          userId: user.user_id,
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+    await this.audit.record({
+      tenantId: user.tenant_id,
+      actorUserId: user.user_id,
+      action: 'auth.initial_password_changed',
+      resourceType: 'user',
+      resourceId: user.user_id,
+      result: 'success',
+    });
+  }
+
   async authenticate(
     authorizationHeader: string | undefined,
     cookieHeader?: string,
@@ -277,6 +323,7 @@ export class AuthService {
         email: true,
         role: true,
         status: true,
+        mustChangePassword: true,
         tenant: { select: { tenantCode: true } },
       },
     });
@@ -456,6 +503,7 @@ export class AuthService {
     username: string | null;
     email: string | null;
     role: string;
+    mustChangePassword: boolean;
   }): AuthenticatedUserResponse {
     return {
       user_id: user.id,
@@ -464,6 +512,7 @@ export class AuthService {
       username: user.username,
       email: user.email,
       role: user.role,
+      must_change_password: user.mustChangePassword,
     };
   }
 
@@ -476,6 +525,7 @@ export class AuthService {
       username: user.username,
       email: user.email,
       role: user.role,
+      ...(user.must_change_password ? { must_change_password: true } : {}),
     };
   }
 }

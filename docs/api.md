@@ -7,7 +7,9 @@
 - 所有业务接口默认在租户上下文中执行
 - tenant 隔离：登录时接收并校验公开 `tenant_code`，服务端解析为内部 UUID；登录成功后业务接口使用 token/session 中的内部 `tenant_id`，不接受业务接口显式传入或覆盖 `tenant_id`
 - 认证上下文：受保护接口通过后端 `JwtAuthGuard` 解析 token，并通过请求上下文注入 `tenant_id`、`user_id`、`role`；业务层通过统一上下文读取 tenant scope
-- 角色判断：MVP 最小角色集合为 `tenant_manager` / `operator`，受保护业务接口默认只允许这两类角色
+- 角色判断：租户业务角色为 `tenant_manager` / `operator`；ADR-013 的 tenantless
+  `platform_admin` 使用独立 `/api/platform/*` namespace、guard、Cookie 和 token audience，
+  不加入租户业务角色集合
 - 订阅状态统一：`trial` / `active` / `expired` / `suspended`
 - 扫码邮件正文固定由后端生成，不接收 `custom_message` / `custom_text` / `mail_body` 等自定义正文字段
 - 固定邮件正文模板按动作选择：`entry` 使用“入室しました”，`exit` 使用“退室しました”；动作来自人员动作码，不接受独立动作字段
@@ -63,6 +65,39 @@
 - 出参：`user.user_id`, `user.tenant_code`, `user.username`, `user.email`, `user.role`；内部 `tenant_id` 不返回；operator email 可为
   `null`，tenant_manager username 为 `null`
 - 错误：未提供 token、token 无效或用户不存在时返回 `UNAUTHORIZED`
+
+## 1a. 平台认证（ADR-013，#110 已实现）
+
+### POST `/api/platform/auth/login`
+
+- 入参：`email`, `password`；不接收 `tenant_code`，也不回退查询 tenant user
+- 成功：设置独立 HttpOnly platform access/refresh Cookie，返回有限 `expires_in` 和最小平台身份摘要
+- 失败：不存在、disabled 或密码错误均返回统一 `PLATFORM_LOGIN_FAILED`；执行伪哈希和限流
+- MVP 不接收 TOTP，不返回或保存伪 `mfa_enabled`；完整 TOTP 由 #114 决策
+
+### POST `/api/platform/auth/refresh`
+
+- 只接受 platform refresh Cookie；逐次轮换并检测重放
+- 账号 disabled、identity version 变化、Session 到期/撤销时统一拒绝并清除 Cookie
+
+### POST `/api/platform/auth/logout`
+
+- 撤销当前 platform Session 并清除独立 Cookie
+
+### GET `/api/platform/auth/me`
+
+- 只接受 platform access Cookie/token audience
+- 出参只含 platform admin ID、脱敏/必要邮箱字段和状态；不含 `tenant_id`
+
+platform token 调用租户业务 API、tenant token 调用上述平台 API 时均返回未授权/禁止，不进行
+角色或账号回退。
+
+### POST `/api/auth/change-initial-password`
+
+- 权限：已登录且 `must_change_password=true` 的 tenant 用户
+- 入参：`new_password`，至少 8 位并同时包含英文字母和数字
+- 成功：清除强制改密状态、撤销该用户全部 refresh Session、清除当前 Cookie，并要求重新登录
+- 其他受角色保护的租户 API 在强制改密完成前返回 `PASSWORD_CHANGE_REQUIRED`
 
 ## 2. License Check
 
@@ -305,16 +340,47 @@
 - `GET /api/scan-events/export` 与 `GET /api/mail-jobs/export`：仅 `tenant_manager`，相同的时间范围限制，可按 location/status 过滤
 - CSV 使用 UTC ISO 时间；扫码与邮件导出包含 `person_code`、`action`、`action_source` 及固化的名称上下文，邮件邮箱格式为 `a***z@example.com`，不含正文、provider secret 或完整邮箱；所有导出动作写审计
 
-## 6. Admin Tenants（管理员）
+## 6. Platform Control（ADR-013，#111 已实现）
 
-### GET `/api/admin/tenants`
-- 说明：查询租户列表（平台管理员；规划中，尚未实现）
-- 权限：ADR-006 Accepted 后使用 tenantless `platform_admin`，不得复用 `tenant_manager`
+以下接口只允许独立 `platform_admin`，不复用 `/api/admin/*`、tenant `JwtAuthGuard` 或 nullable
+tenant 查询。响应只包含 tenant/subscription/额度/脱敏 manager 摘要，不返回人员、扫码、邮件、
+租户审计或其他业务明细。
 
-### GET `/api/admin/tenants/{id}`
-- 说明：查询租户详情
-- 权限：规划中的 tenantless `platform_admin`；尚未实现
+### GET `/api/platform/tenants`
 
-### PATCH `/api/admin/tenants/{id}/status`
-- 说明：更新租户状态（`trial` / `active` / `expired` / `suspended`）
-- 权限：规划中的 tenantless `platform_admin`；尚未实现
+- 说明：查询 tenant name、`tenant_code`、subscription、`location_limit`/当前计数、
+  脱敏首个 tenant_manager 和平台版本
+- 权限：platform_admin
+
+### POST `/api/platform/tenants`
+
+- Header：必填 `Idempotency-Key`
+- 入参：`name`, `manager_email`, `subscription_status`（仅 `trial|active`）,
+  `start_at`, `end_at`, `location_limit`
+- 服务端原子生成内部 UUID、`tenant_code`、subscription、首个 tenant_manager 和一次性临时密码；
+  不接收客户端 UUID/tenant_code
+- 临时密码只在该逻辑操作的成功响应/安全重放中返回；数据库只保存 Argon2 哈希并要求首次登录改密，
+  UI 关闭一次性凭据区域后清除
+- 相同 key/请求安全重放原结果；相同 key/不同请求返回 `IDEMPOTENCY_KEY_CONFLICT`
+
+### GET `/api/platform/tenants/{tenant_code}`
+
+- 返回 ADR-013 最小 tenant 摘要和乐观并发 `version`
+
+### PATCH `/api/platform/tenants/{tenant_code}/subscription`
+
+- 入参：`status`, `start_at`, `end_at`, `version`
+- 支持 `trial|active|expired|suspended`；高影响变更记录旧/新状态和非 PII 平台审计
+
+暂停通过 subscription PATCH 写入 `suspended`；恢复通过同一 PATCH 显式写入 `trial|active`、
+有效 `start_at`/`end_at` 与当前 `version`。不新增含义重叠的 tenant 停用状态，也不删除历史数据。
+
+### PATCH `/api/platform/tenants/{tenant_code}/location-limit`
+
+- 入参：正整数 `location_limit`, `version`
+- active/inactive/pending deletion location 均计数，purged 后释放
+- 新额度低于当前计数返回 `LOCATION_LIMIT_BELOW_CURRENT_USAGE`，且不修改既有 location
+- tenant location 创建达到额度时返回 `LOCATION_LIMIT_REACHED`；创建与调额使用并发安全事务
+
+所有平台写操作必须记录 request ID、目标内部 tenant ID、actor platform admin ID 和结果，不记录
+密码、token、完整邮箱或租户业务 PII。商业价格、付款、账单、proration 和自动扩容不属于这些接口。

@@ -25,6 +25,10 @@
   passwordHash
 - 登录身份：10 位 tenant_code 回填与大小写规范化、UUID tenant_id 拒绝、username/email 双模式、无邮箱 operator、tenant_manager email-only、统一
   `LOGIN_FAILED`、伪哈希路径、限流与旧 `email` 请求字段兼容
+- platform 身份：独立邮箱/密码登录、单 active 账号、有限 Session、refresh 轮换/重放、即时撤销、
+  tenant/platform token audience 双向拒绝；MVP 不宣称启用 TOTP
+- platform 控制面：tenant 原子创建/幂等、一次性临时密码、subscription/额度乐观并发、
+  tenant_manager/operator 禁止访问、platform_admin 禁止读取租户业务 API
 - 未授权访问拦截
 - 输入参数校验与错误码一致性
 
@@ -37,6 +41,10 @@
 - 订阅过期禁止关键业务接口
 - `trial` / `active` 允许扫码与发信，`expired` / `suspended` 禁止扫码提交、创建邮件任务、发送与重试
 - license check 结果与订阅状态一致
+- platform_admin 不受任一 tenant subscription 门禁，但 disabled/撤销/Session 到期仍拒绝
+- `location_limit` 统计 active/inactive/pending deletion，purged 后释放；达到上限拒绝创建，
+  降额低于当前用量拒绝
+- 人工额度测试不得生成价格、付款、账单、proration 或自动扩容数据
 
 ## 3. 回归基线
 
@@ -63,8 +71,9 @@ seed 数据仅使用 `example.local` 邮箱和固定 UUID，不包含真实客�
 核心 seed 值：
 
 - `tenant_code`: `10CA000001`（内部 tenant UUID 不作为登录输入）
-- `operator@example.local` / `PoolduckLocal123!`
-- `tenant-manager@example.local` / `PoolduckLocal123!`
+- operator username：`local-operator`；可选邮箱：`operator@example.local`
+- tenant_manager email：`tenant-manager@example.local`（tenant_manager 没有 username，只能使用邮箱登录）
+- 以上账号密码：`PoolduckLocal123!`
 - `location_id`: `10CA1001`（公开地点 ID；内部 UUID 仅用于数据库追溯）
 - active `person_code`: `01K0ABC10001`；进入动作码：`PD1|ENTRY|01K0ABC10001`；离开动作码：`PD1|EXIT|01K0ABC10001`
 - unmapped 动作码：`PD1|ENTRY|01K0ABC19999`
@@ -233,6 +242,60 @@ Issue #60 后，本地 GUI 黑盒前应额外验证容器组形态：
 - 保留：终结清理匿名化当前地点名、人员姓名和邮箱并撤销 assignments，不删除 scan event、mail job、
   unmapped case 或 audit log，公开 location/person code 不得复用。
 
+### 4.11 ADR-013 / Issues #110–#113 平台控制面验证
+
+- 正常：受控 bootstrap 创建唯一 active platform_admin；独立登录/refresh/logout；原子创建
+  trial/active tenant、tenant_code、subscription、首个 tenant_manager 和 location_limit；
+  提额、暂停和恢复成功。
+- 错误：错误平台邮箱/密码统一失败；重复 bootstrap、Idempotency-Key 冲突、非法订阅时间、
+  过期 version、创建部分失败、低于当前用量降额和网络中断均不产生部分数据或伪成功。
+- 权限：tenant_manager/operator 不能访问 `/platform` 或 `/api/platform/*`；platform token
+  不能访问 location、people、scan、mail、tenant audit 等业务 API。
+- 租户隔离：平台列表只返回 tenant/subscription/额度/脱敏 manager 摘要；同一 manager 邮箱可存在
+  于不同 tenant，但任何平台修改都显式限定目标 tenant，不串用 version 或 Idempotency-Key。
+- 边界：MVP 同时最多一个 active platform_admin；额度 1、恰好达到上限、并发创建、active、
+  inactive、pending deletion、purged 计数和 `end_at` 边界。
+- 订阅：`trial` / `active` 允许现有发送链路，`expired` / `suspended` 阻断；任一 tenant 状态不影响
+  platform_admin 登录，平台账号 disabled/撤销/Session 到期仍立即拒绝。
+- 回归：tenant_manager/operator 的登录、Session、location、人员、扫码、邮件、历史、
+  operator assignment 与延迟删除保持原权限和行为。
+- 网络：refresh 重试不产生两个可用 token；tenant 创建使用相同 Idempotency-Key 可安全重放；
+  UI 在登录、创建或修改失败时不缓存伪 Session/伪 tenant 状态。
+- 安全：日志、审计、测试 artifact 不含平台密码、临时密码、token、完整 manager 邮箱、邮件正文或
+  业务 PII；MVP 不存在未校验的 `mfa_enabled`。
+
+人工步骤：
+
+1. 在合成数据库执行 migration/backfill，核对既有 tenant 的 location_limit 为
+   `max(1, 未终结清理 location 数量)`，且没有 location、subscription 或用户被删除。
+2. 使用 `.example.local` 标识和运行时注入密码执行 platform bootstrap 两次，确认第二次拒绝覆盖；
+   登录后确认 tenant/platform Cookie 与 token audience 双向隔离。
+3. 创建一个 trial tenant，确认临时密码只展示一次；使用首个 tenant_manager 登录并完成强制改密。
+4. 创建地点直到额度上限，确认下一次返回 `LOCATION_LIMIT_REACHED`；停用/安排删除不释放名额，
+   终结清理后才释放。
+5. 尝试把额度降到当前计数以下，确认返回 `LOCATION_LIMIT_BELOW_CURRENT_USAGE` 且既有地点不变；
+   提额后确认可继续创建。
+6. 暂停和恢复 tenant，验证租户发送门禁变化但 platform Session 不受影响；再禁用 platform_admin，
+   确认全部既有平台 Session 立即失效。
+7. 运行 seed 两次、API smoke、Frontend E2E 和 guarded rollback；检查日志、审计与 artifact 脱敏。
+
+2026-07-29 Local 验证记录（未执行 Staging/Production）：
+
+- `db:deploy` 成功应用 `20260729000000_add_platform_control_plane`；普通 `local:seed` 与显式
+  opt-in 的 `platform:seed` 均连续执行两次成功。
+- 只读数据库核对：active platform_admin 为 1；trial/active/expired/suspended 均有合成 fixture；
+  active/inactive/pending deletion 计入额度、purged 不计入；所有 tenant 均满足当前计数
+  `<= location_limit`。同时修复 seed，确保重复执行不会把额度降到既有用量以下。
+- CLI：重复 bootstrap 正确拒绝覆盖；rotate、disable、recover 均成功并撤销既有 Session；
+  recover 后平台 smoke 再次通过。
+- Backend：`typecheck`、`lint` 通过；25 suites / 152 tests 通过。Prisma schema 测试确认安全
+  backfill、单 active partial unique index、tenantless 模型与 guarded rollback 不删除既有业务数据。
+- Frontend：`typecheck`、`lint`、production build 通过；6 files / 42 tests 通过。
+- 运行中本地容器：PostgreSQL、Backend、Frontend 均 healthy；既有 `smoke:api` 通过；
+  新 `smoke:platform` 通过；`platform-control-plane.spec.ts` 在 390×720 viewport 下 1/1 通过。
+- Staging bootstrap、Secret 注入、migration、smoke 与部署未执行；仍须按人工批准的目标和
+  `docs/staging-manual.md` Runbook 单独进行。
+
 ## 5. Staging seed data
 
 Staging verification uses `npm run staging:seed` from `backend/`, or the container equivalent:
@@ -245,19 +308,48 @@ The command is idempotent and writes only synthetic `.example.local` data. It pr
 
 每个表中列出的 staging operator 都只被显式分配到同一行的合成 Location ID；seed 不会为任何其他 operator 自动授权全部地点。
 
-| Subscription | Tenant ID | Operator | Password | Location ID | Person code / ENTRY action code |
-|---|---|---|---|---|---|
-| active | `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa` | `staging-active-operator@example.local` | `PoolduckStaging123!` | `dddddddd-dddd-4ddd-8ddd-dddddddddddd` | `01K0ABC20001` / `PD1|ENTRY|01K0ABC20001` |
-| suspended | `11111112-1112-4112-8112-111111111112` | `staging-suspended-operator@example.local` | `PoolduckStaging123!` | `44444445-4445-4445-8445-444444444445` | `01K0ABC20002` / `PD1|ENTRY|01K0ABC20002` |
-| expired | `66666667-6667-4667-8667-666666666667` | `staging-expired-operator@example.local` | `PoolduckStaging123!` | `99999990-9990-4990-8990-999999999990` | `01K0ABC20003` / `PD1|ENTRY|01K0ABC20003` |
+登录页使用 `tenant_code + identifier + password`。`tenant_manager` 没有 username，`identifier`
+必须填写邮箱；operator 优先使用 username，也可以使用同一行的可选邮箱。所有 Staging 合成账号的密码均为
+`PoolduckStaging123!`。
+
+| Subscription | tenant_code | tenant_manager identifier（email） | operator identifier（username） | operator 可选 email |
+|---|---|---|---|---|
+| active | `5A6E000001` | `staging-active-tenant-manager@example.local` | `staging-active-operator` | `staging-active-operator@example.local` |
+| suspended | `5A6E000002` | `staging-suspended-tenant-manager@example.local` | `staging-suspended-operator` | `staging-suspended-operator@example.local` |
+| expired | `5A6E000003` | `staging-expired-tenant-manager@example.local` | `staging-expired-operator` | `staging-expired-operator@example.local` |
+
+| Subscription | Location code | Person code | ENTRY action code |
+|---|---|---|---|
+| active | `5A6E0001` | `01K0ABC20001` | `PD1|ENTRY|01K0ABC20001` |
+| suspended | `5A6E0002` | `01K0ABC20002` | `PD1|ENTRY|01K0ABC20002` |
+| expired | `5A6E0003` | `01K0ABC20003` | `PD1|ENTRY|01K0ABC20003` |
 
 Expected Staging checks:
 
-- active tenant: login, license/check, locations, scan-events, and mail-jobs send pass with mock/sandbox provider.
-- suspended tenant: license/check returns `can_send=false`; scan-events is rejected with `SUBSCRIPTION_NOT_SENDABLE`.
-- expired tenant: license/check returns `can_send=false`; scan-events is rejected with `SUBSCRIPTION_NOT_SENDABLE`.
+- active tenant: tenant_manager 邮箱登录和 operator username/email 登录均成功；license/check、locations、
+  scan-events 和 mail-jobs send 使用 mock/sandbox provider 验证通过。
+- 权限：active tenant_manager 可进入用户和地点管理；operator 不显示管理入口，直接调用管理 API 返回
+  `ROLE_FORBIDDEN`。
+- suspended tenant: 两种角色均可登录，license/check 返回 `can_send=false`；scan-events 返回
+  `SUBSCRIPTION_NOT_SENDABLE`。
+- expired tenant: 两种角色均可登录，license/check 返回 `can_send=false`；scan-events 返回
+  `SUBSCRIPTION_NOT_SENDABLE`。
+- 身份错误：tenant_manager 使用非邮箱 identifier，或把任一账号与其他行的 `tenant_code` 组合时，
+  返回统一 `LOGIN_FAILED`，不得泄露账号、角色或 tenant 是否存在。
+- 回归与网络：operator 的含 `@` identifier 只按邮箱查询、不回退 username；登录请求网络失败时，
+  页面显示安全错误且不创建本地伪会话。
+
+人工登录验证：
+
+1. 打开 Staging HTTPS 登录页，先用 active tenant_manager 邮箱登录，确认进入工作台并可访问用户和地点管理。
+2. 退出后使用 active operator username 登录，确认进入工作台但没有用户/地点管理权限。
+3. 分别使用 suspended、expired 的 tenant_manager 和 operator 登录，确认允许查看订阅状态但不能提交扫码。
+4. 将 active tenant_manager 邮箱与 suspended `tenant_code` 组合，确认只显示通用登录失败。
 
 Do not run this seed against Production or any database containing real customer data.
+
+ADR-013 的 platform_admin 合成 bootstrap/seed 已由 #113 实现；加入 Staging 流程前仍必须显式
+opt-in、运行时注入凭据并检测/拒绝 Production。当前表中的 tenant seed 不代表已创建平台账号。
 
 ## 6. GUI 黑盒与 E2E 冒烟
 

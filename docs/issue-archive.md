@@ -40,6 +40,12 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #101 | 基于已批准的 `person_code` 生成人员二维码与 Code 128 条形码图片，并支持安全预览和下载 | 已完成并关闭；纳入本次阶段 PR | 否，依赖 #90 与 #93 |
 | #102 | 用 ADR 定义按启用 location 数量与单据点活动人员计算的边际阶梯计费模型 | P3/Future；仅服务未来商业化，不阻塞任何 MVP 功能 | 是，涉及计费口径、proration 与安全上限 |
 | #104 | 为人员与地点增加 14 天可恢复删除和到期终结清理 | 已完成并关闭；纳入本次阶段 PR | 是，ADR-011 Accepted |
+| #109 | 用 ADR 定义 tenantless `platform_admin` 平台控制面、人工租户开通、订阅状态与 location 额度管理 | ADR-013 Accepted，已完成并关闭 | 是，已确认人工额度、独立控制面及 ADR-009 局部 supersede |
+| #110 | 实现 platform_admin 独立身份、Session、bootstrap 与恢复 CLI | 本地已实现并验证；尚未提交或部署 | 是，涉及最高权限认证、Secret 与恢复 |
+| #111 | 实现平台 tenant/subscription/location_limit API 与并发安全额度门禁 | 本地已实现并验证；尚未提交或部署 | 是，涉及租户创建、订阅、额度和迁移 |
+| #112 | 建立独立 platform_admin 登录与平台控制台 UI | 本地已实现并验证；尚未提交或部署 | 是，涉及最高权限 UI 与一次性凭据 |
+| #113 | 建立平台合成 seed、E2E、Staging smoke 与恢复 Runbook | Local/CI 资产与 Staging Runbook 已实现；按用户范围未执行 Staging | 是，涉及 Staging 身份、Secret、迁移和恢复 |
+| #114 | 用独立 ADR 定义 platform_admin TOTP MFA、恢复码与丢失设备恢复 | P3/Future；不阻塞 ADR-013 MVP | 是，涉及最高权限 MFA 与 break-glass |
 
 后续所有产品能力、用户体验和业务流程改进 Issue 均追加到本节。
 

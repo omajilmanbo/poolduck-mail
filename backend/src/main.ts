@@ -32,6 +32,7 @@ export async function bootstrap() {
       'Authorization',
       'Content-Type',
       'Idempotency-Key',
+      'X-Request-Id',
     ],
     credentials: true,
   });

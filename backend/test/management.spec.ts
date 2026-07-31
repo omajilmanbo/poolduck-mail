@@ -14,10 +14,13 @@ describe('Location and person mapping management', () => {
   let locationCodeGenerator: LocationCodeGenerator;
   let prisma: {
     $transaction: jest.Mock;
+    $executeRaw: jest.Mock;
     $queryRaw: jest.Mock;
+    tenant: { findUnique: jest.Mock };
     user: { findFirst: jest.Mock };
     location: {
       findFirst: jest.Mock;
+      count: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
       updateMany: jest.Mock;
@@ -46,10 +49,13 @@ describe('Location and person mapping management', () => {
   beforeEach(async () => {
     prisma = {
       $transaction: jest.fn(async (callback: (tx: typeof prisma) => unknown) => callback(prisma)),
+      $executeRaw: jest.fn().mockResolvedValue(1),
       $queryRaw: jest.fn().mockResolvedValue([{ now: new Date('2026-07-28T00:00:00.000Z') }]),
+      tenant: { findUnique: jest.fn().mockResolvedValue({ locationLimit: 10 }) },
       user: { findFirst: jest.fn() },
       location: {
         findFirst: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
         create: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),

@@ -16,6 +16,7 @@ export type LoginResponse = {
     username: string | null;
     email: string | null;
     role: string;
+    must_change_password?: boolean;
   };
 };
 
@@ -131,6 +132,50 @@ export type SendMailJobResponse = {
 };
 
 export type MeResponse = { user: LoginResponse['user'] };
+
+export type PlatformAdminSummary = {
+  platform_admin_id: string;
+  email_masked: string;
+  identity_version: number;
+  session_id: string;
+};
+
+export type PlatformTenantSummary = {
+  tenant_code: string;
+  name: string;
+  status: string;
+  created_at: string;
+  platform_version: number;
+  location_limit: number;
+  location_count: number;
+  subscription: null | {
+    plan: string;
+    status: 'trial' | 'active' | 'expired' | 'suspended' | string;
+    start_at: string;
+    end_at: string;
+    version: number;
+  };
+  manager: null | { email_masked: string | null; status: string };
+  recent_platform_operation: null | {
+    audit_id: string;
+    created_at: string;
+    result: string;
+  };
+};
+
+export type CreatePlatformTenantInput = {
+  name: string;
+  manager_email: string;
+  subscription_status: 'trial' | 'active';
+  start_at: string;
+  end_at: string;
+  location_limit: number;
+};
+
+export type CreatedPlatformTenant = PlatformTenantSummary & {
+  temporary_password: string;
+  idempotency_replayed: boolean;
+};
 
 export type ManagedOperator = {
   user_id: string;
@@ -400,6 +445,11 @@ export function createApiClient(config: ApiClientConfig = {}) {
     refresh: () => request<LoginResponse>('/api/auth/refresh', { method: 'POST', retry: false }),
     logout: () => request<{ status: string }>('/api/auth/logout', { method: 'POST', retry: false }),
     getMe: () => request<MeResponse>('/api/auth/me'),
+    changeInitialPassword: (newPassword: string) =>
+      request<{ status: string; reauthentication_required: boolean }>(
+        '/api/auth/change-initial-password',
+        { method: 'POST', body: { new_password: newPassword } },
+      ),
     getUsers: () => request<ManagedOperator[]>('/api/users'),
     createUser: (body: CreateOperatorInput) =>
       request<ManagedOperator>('/api/users', { method: 'POST', body }),
@@ -423,6 +473,136 @@ export function createApiClient(config: ApiClientConfig = {}) {
       request<ScanHistoryResponse>(
         `/api/scan-events?location_id=${encodeURIComponent(locationId)}&limit=${limit}`,
         { token },
+      ),
+  };
+}
+
+export function createPlatformApiClient(config: ApiClientConfig = {}) {
+  const baseUrl = normalizeBaseUrl(
+    config.baseUrl ??
+      process.env.NEXT_PUBLIC_API_BASE_URL ??
+      'http://localhost:3001',
+  );
+
+  async function request<T>(
+    path: string,
+    options: Omit<RequestOptions, 'token'> = {},
+  ): Promise<T> {
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      ...options.headers,
+    };
+    if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl}${path}`, {
+        method: options.method ?? 'GET',
+        headers,
+        body:
+          options.body === undefined ? undefined : JSON.stringify(options.body),
+        credentials: 'include',
+      });
+    } catch {
+      throw new ApiNetworkError(baseUrl);
+    }
+    if (
+      response.status === 401 &&
+      options.retry !== false &&
+      !path.startsWith('/api/platform/auth/')
+    ) {
+      const refreshed = await fetch(`${baseUrl}/api/platform/auth/refresh`, {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+        credentials: 'include',
+      });
+      if (refreshed.ok) {
+        return request<T>(path, { ...options, retry: false });
+      }
+    }
+    const contentType = response.headers.get('content-type') ?? '';
+    const payload = contentType.includes('application/json')
+      ? await response.json()
+      : null;
+    if (!response.ok) {
+      const record =
+        payload && typeof payload === 'object'
+          ? (payload as Record<string, unknown>)
+          : null;
+      throw new ApiError(
+        toErrorMessage(payload, response.status === 401 ? '平台登录已失效' : '请求失败'),
+        response.status,
+        typeof record?.code === 'string' ? record.code : undefined,
+      );
+    }
+    return payload as T;
+  }
+
+  return {
+    baseUrl,
+    login: (email: string, password: string) =>
+      request<{ expires_in: number; admin: PlatformAdminSummary }>(
+        '/api/platform/auth/login',
+        { method: 'POST', body: { email, password }, retry: false },
+      ),
+    refresh: () =>
+      request<{ expires_in: number; admin: PlatformAdminSummary }>(
+        '/api/platform/auth/refresh',
+        { method: 'POST', retry: false },
+      ),
+    logout: () =>
+      request<{ status: string }>('/api/platform/auth/logout', {
+        method: 'POST',
+        retry: false,
+      }),
+    getMe: () =>
+      request<{ admin: PlatformAdminSummary }>('/api/platform/auth/me'),
+    getTenants: () =>
+      request<PlatformTenantSummary[]>('/api/platform/tenants'),
+    getTenant: (tenantCode: string) =>
+      request<PlatformTenantSummary>(
+        `/api/platform/tenants/${encodeURIComponent(tenantCode)}`,
+      ),
+    createTenant: (
+      body: CreatePlatformTenantInput,
+      idempotencyKey: string,
+    ) =>
+      request<CreatedPlatformTenant>('/api/platform/tenants', {
+        method: 'POST',
+        body,
+        headers: {
+          'Idempotency-Key': idempotencyKey,
+          'X-Request-Id': crypto.randomUUID(),
+        },
+      }),
+    updateSubscription: (
+      tenantCode: string,
+      body: {
+        status: 'trial' | 'active' | 'expired' | 'suspended';
+        start_at: string;
+        end_at: string;
+        version: number;
+      },
+    ) =>
+      request<PlatformTenantSummary>(
+        `/api/platform/tenants/${encodeURIComponent(tenantCode)}/subscription`,
+        {
+          method: 'PATCH',
+          body,
+          headers: { 'X-Request-Id': crypto.randomUUID() },
+        },
+      ),
+    updateLocationLimit: (
+      tenantCode: string,
+      locationLimit: number,
+      version: number,
+    ) =>
+      request<PlatformTenantSummary>(
+        `/api/platform/tenants/${encodeURIComponent(tenantCode)}/location-limit`,
+        {
+          method: 'PATCH',
+          body: { location_limit: locationLimit, version },
+          headers: { 'X-Request-Id': crypto.randomUUID() },
+        },
       ),
   };
 }

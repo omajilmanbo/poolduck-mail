@@ -41,6 +41,7 @@ async function main() {
       tenantCode: createTenantCode(),
       name: `Smoke Tenant ${suffix}`,
       status: "active",
+      locationLimit: 2,
     },
   });
 

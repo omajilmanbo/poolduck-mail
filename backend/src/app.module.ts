@@ -13,6 +13,7 @@ import { AuditApiModule } from './audit/audit-api.module';
 import { UnmappedScansModule } from './unmapped-scans/unmapped-scans.module';
 import { UsersModule } from './users/users.module';
 import { LocationAccessModule } from './location-access/location-access.module';
+import { PlatformModule } from './platform/platform.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { LocationAccessModule } from './location-access/location-access.module';
     ScanEventsModule,
     UnmappedScansModule,
     UsersModule,
+    PlatformModule,
   ],
   controllers: [AppController],
   providers: [

@@ -43,6 +43,10 @@
 ## 3. 后端层
 
 - Auth 模块：登录、token 刷新、权限校验
+- Platform Auth 模块：tenantless `platform_admin` 的独立登录、Session、token audience 与
+  bootstrap/recovery CLI；首期不启用 TOTP
+- Platform Control 模块：人工创建 tenant/首个 tenant_manager、subscription 状态与
+  `location_limit` 管理；默认不读取租户业务明细
 - Tenant 模块：租户管理与隔离
 - Subscription 模块：订阅状态与有效期校验
 - Scan 模块：严格解析 `PD1|ENTRY|person_code` / `PD1|EXIT|person_code`、扫码事件入库、幂等与冲突处理
@@ -76,13 +80,18 @@
 - Controller 使用统一的 `@CurrentUser()` 获取认证上下文，业务层不得从 body/query/path 中信任前端传入的 `tenant_id`
 - MVP 提供最小角色判断能力：`@Roles('tenant_manager', 'operator')` + `RolesGuard`
 - 基于最小 RBAC 执行接口级权限控制
-- ADR-006 已 Accepted：`tenant_manager` 管理自身 tenant 的 `operator`、location 与租户内数据，`operator` 维护人员映射与扫码；平台操作由未来独立实现的 tenantless `platform_admin` 承担
+- ADR-006/ADR-013 已 Accepted：`tenant_manager` 管理自身 tenant 的 `operator`、location 与租户内
+  数据，`operator` 维护授权地点内的人员映射与扫码；tenantless `platform_admin` 使用独立身份、
+  `/platform` UI、`/api/platform/*` API 和 token audience 执行平台操作
 - operator 的 location 权限来自 `operator_location_assignments` 显式绑定。共享 `LocationAccessService` 把 token tenant、operator user ID 与 assignment 关系组合为统一数据库过滤条件，供 locations、people、scan、history、mail job 与 unmapped case 复用
 - assignment 不写入 JWT、不做进程缓存；每个新业务请求都在数据库查询中包含 assignment 关系，因此撤销后立即阻止新的扫码、映射写入、历史读取与异常处理。只有 `tenant_manager` 可绕过 assignment，但仍强制 tenant scope
 - 用户生命周期模块只查询 token tenant 下的 `operator`；创建与重置使用 Argon2 哈希，登录身份修改、
   禁用或重置同步撤销活动会话，且不允许把任何账号提升为或修改 `tenant_manager`
 - 登录成功后，tenant scope 以后端会话/token 中的 `tenant_id` 为准，业务接口不允许越权切换 tenant
 - 浏览器认证使用 `HttpOnly + SameSite=Lax` Cookie；Production 同时启用 `Secure`。access token 为 15 分钟，refresh token 为 7 天并逐次轮换，数据库仅保存 refresh token 的 SHA-256 哈希，允许多设备独立会话
+- platform_admin 不受任何 tenant subscription 门禁，但账号与 Session 仍有有限 TTL、可禁用和
+  全量撤销。MVP 只允许一个 active 平台账号，由 CLI/Runbook 初始化和恢复；TOTP 延后到 #114，
+  当前不得创建伪 MFA 标记
 
 ## 6. 邮件服务集成
 
@@ -101,9 +110,14 @@
 ## 8. 订阅模型
 
 - subscription 与 tenant 一对一（MVP）
-- 关键字段：plan、status、start_at、end_at
-- MVP 仅使用 subscription 的状态与到期时间执行扫码和邮件发送安全门禁，不实施
-  location/person 商业配额、价格、付款或 proration
+- 关键字段：plan、status、start_at、end_at；tenant 另有 platform_admin 人工维护的
+  `location_limit`
+- subscription 状态与到期时间继续执行扫码和邮件发送安全门禁；`location_limit` 只限制尚未
+  终结清理的 location 数量，不是价格、账单、付款或 proration
+- active、inactive、pending deletion location 均占额度，ADR-011 终结清理为 purged 后才释放；
+  创建路径使用并发安全门禁，达到上限返回 `LOCATION_LIMIT_REACHED`
+- platform_admin 可提高额度；降低额度不得低于当前计数，否则返回
+  `LOCATION_LIMIT_BELOW_CURRENT_USAGE`，且不隐式停用或删除既有地点
 - 未来商业计费由 P3/Future Issue #102 独立规划；除价格展示、收费、支付、发票和结算外，
   任何 MVP 功能不得依赖该 Issue
 - API 请求进入业务前先执行 license check
@@ -121,7 +135,9 @@
 - 同租户、同地点、同解析后 `person_code`、同动作在 10 秒内重复提交时，通过数据库事务 advisory lock 返回原 scan event/mail job，并标记 `deduplicated=true`；相反动作返回 `SCAN_ACTION_CONFLICT`
 - 客户端可为提交附带 `Idempotency-Key`；服务端只保存 key 与规范请求内容的 SHA-256 哈希，并在 24 小时内重放原 scan event/mail job，禁止同 key 绑定不同动作或人员
 - 浏览器按用户本地时区显示时间；数据库、API 与导出使用 UTC
-- 平台管理员角色边界已由 ADR-006 接受；本次仅迁移租户角色，平台级运行时权限仍由后续 Issue 实现
+- 平台管理员角色边界与控制面已由 ADR-006/ADR-013 接受；#110–#113 已在本地实现独立身份、
+  平台 API/额度门禁、独立 UI 和合成验证/运维，任何实现都不得通过 nullable tenant 复用租户查询；
+  未经额外批准不代表已部署到 Staging/Production
 - 扫码与邮件任务历史读取始终从 JWT 获取 tenant scope，并使用 `created_at + id` 复合游标稳定分页
 - 12 位 `person_code` 仅是公开定位符：服务端生成、数据库全局唯一；解析仍必须同时限定 JWT tenant 与当前 location，不能作为认证或授权依据
 - 新人员的 `person_code` 是动作码内的公开定位符；扫码写接口只接受 ADR-008 的两张人员动作码，不接受裸 `person_code`、旧 `scan_code`、人工动作选择或按日次数推断

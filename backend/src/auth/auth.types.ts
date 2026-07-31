@@ -14,6 +14,7 @@ export type AuthenticatedUserResponse = {
   username: string | null;
   email: string | null;
   role: string;
+  must_change_password?: boolean;
 };
 
 export type PublicAuthenticatedUserResponse = Omit<

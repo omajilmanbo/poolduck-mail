@@ -10,12 +10,18 @@
 - `tenant_code` (varchar(10), unique) - 服务端生成的全局唯一 Crockford Base32 登录标识；不可由客户指定或修改
 - `name` (varchar)
 - `status` (varchar) - active/suspended
+- `location_limit` (integer, positive) - ADR-013 的人工运营额度；active/inactive/pending deletion
+  location 均计数，purged 后释放
+- `platform_version` (integer) - platform_admin 修改 subscription/额度时使用的乐观并发版本
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
 
 ## 2. users
 
-> 用法：可登录系统的租户管理员账号表（仅后台管理用户，不等同于收件人）。管理员分为 `tenant_manager`（管理自身 tenant）与 `operator`（仅维护 `person_mappings` 与扫码）。ADR-006 已 Accepted；tenantless `platform_admin` 尚未进入当前 schema。
+> 用法：可登录系统的租户账号表（仅后台管理用户，不等同于收件人）。管理员分为
+> `tenant_manager`（管理自身 tenant）与 `operator`（仅维护授权地点内的 `person_mappings`
+> 与扫码）。ADR-013 的 tenantless `platform_admin` 使用独立表，不加入本表，也不允许
+> `tenant_id` 为 null。
 
 - `id` (pk, uuid)
 - `tenant_id` (fk -> tenants.id)
@@ -24,13 +30,67 @@
 - `password_hash` (varchar)
 - `role` (varchar) - tenant_manager/operator
 - `status` (varchar)
+- `must_change_password` (boolean) - platform_admin 原子创建的首个 tenant_manager 初始为 true；
+  既有用户迁移时保持 false
 - `last_login_at` (timestamp, nullable)
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
 
+## 2a. platform_admins（ADR-013，已由 #110 实现）
+
+> 用法：tenantless 平台最高权限身份。MVP 同时最多一个 active 账号；不能通过 tenant 注册或
+> tenant_manager API 创建。数据库 partial unique index 强制同时最多一个 active 账号。
+
+- `id` (pk, uuid)
+- `email` (varchar(254), unique，服务层规范化为小写)
+- `password_hash` (varchar)
+- `status` (varchar) - active/disabled
+- `identity_version` (integer) - 密码、状态或恢复操作变化时撤销全部 Session
+- `last_login_at` (timestamp, nullable)
+- `created_at` / `updated_at` (timestamp)
+
+MVP 不增加 `mfa_enabled`、TOTP secret 或恢复码字段；TOTP 由 #114 的独立 ADR 决定。
+
+## 2b. platform_sessions（ADR-013，已由 #110 实现）
+
+- `id` (pk, uuid)
+- `platform_admin_id` (fk -> platform_admins.id)
+- `refresh_token_hash` (varchar)
+- `identity_version_snapshot` (integer)
+- `expires_at`, `last_used_at`, `revoked_at` (timestamp)
+- `created_at`, `updated_at` (timestamp)
+
+platform Session 使用独立 Cookie、JWT secret/audience 和有限 TTL，不与 tenant `sessions` 混用。
+
+## 2c. platform_audit_logs（ADR-013，已由 #110 实现）
+
+- `id` (pk, uuid)
+- `platform_admin_id` (fk -> platform_admins.id)
+- `target_tenant_id` (fk -> tenants.id, nullable)
+- `action`, `resource_type`, `resource_id`, `result` (varchar)
+- `request_id` (varchar)
+- `metadata_json` (jsonb, sanitized)
+- `created_at` (timestamp)
+
+只记录平台操作所需的内部 ID、状态变化和结果；不得记录密码、token、完整邮箱或租户业务 PII。
+
+## 2d. platform_tenant_idempotency
+
+- `id` (pk, uuid)
+- `key_hash` (varchar(64), unique) - 不保存原始 `Idempotency-Key`
+- `request_fingerprint` (varchar(64))
+- `platform_admin_id` (uuid) - 发起该逻辑操作的平台身份
+- `tenant_id` (fk -> tenants.id, unique)
+- `expires_at`, `created_at` (timestamp)
+
+租户临时密码不进入该表。服务端使用受控 `PLATFORM_PROVISIONING_SECRET`、key hash 与请求指纹
+确定性地产生同一逻辑请求的高熵临时密码，以兼顾网络重放语义和“数据库只保存 Argon2 哈希”边界。
+UI 在成功响应后仅临时显示并可立即清除。
+
 ## 3. subscriptions
 
-> 用法：订阅配置表（MVP 先按 tenant 统一订阅）；现行权限遵循 ADR-003。ADR-006 已 Accepted，后续平台控制面将把订阅修改移交 `platform_admin`；该平台 API 当前尚未实现。
+> 用法：订阅配置表（MVP 先按 tenant 统一订阅）；现行发送门禁遵循 ADR-003，修改权限遵循
+> ADR-006/ADR-013，仅 tenantless `platform_admin` 可通过独立平台 API 修改。
 
 - `id` (pk, uuid)
 - `tenant_id` (fk -> tenants.id, unique)
@@ -38,6 +98,7 @@
 - `status` (varchar) - trial/active/expired/suspended
 - `start_at` (timestamp)
 - `end_at` (timestamp)
+- `version` (integer) - 平台修改使用的乐观并发版本
 
 时间统一按 UTC 存储；当 `end_at <= 当前 UTC 时间` 时，trial/active 在运行时视为 expired。过期用户仍可登录，但不能创建扫描发送或发送邮件。
 - `created_at` (timestamp)

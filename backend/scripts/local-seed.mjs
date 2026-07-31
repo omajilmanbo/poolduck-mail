@@ -145,6 +145,14 @@ async function main() {
   const passwordHash = await argon2.hash(seed.password);
   const startAt = new Date("2026-01-01T00:00:00.000Z");
   const endAt = new Date("2027-01-01T00:00:00.000Z");
+  const activeLocationCount = await prisma.location.count({
+    where: { tenantId: seed.activeTenantId, status: { not: "purged" } },
+  });
+  const suspendedLocationCount = await prisma.location.count({
+    where: { tenantId: seed.suspendedTenantId, status: { not: "purged" } },
+  });
+  const activeLocationLimit = Math.max(4, activeLocationCount);
+  const suspendedLocationLimit = Math.max(2, suspendedLocationCount);
 
   await prisma.tenant.upsert({
     where: { id: seed.activeTenantId },
@@ -152,12 +160,14 @@ async function main() {
       tenantCode: seed.activeTenantCode,
       name: "Poolduck Local Active Tenant",
       status: "active",
+      locationLimit: activeLocationLimit,
     },
     create: {
       id: seed.activeTenantId,
       tenantCode: seed.activeTenantCode,
       name: "Poolduck Local Active Tenant",
       status: "active",
+      locationLimit: activeLocationLimit,
     },
   });
 
@@ -167,12 +177,14 @@ async function main() {
       tenantCode: seed.suspendedTenantCode,
       name: "Poolduck Local Suspended Tenant",
       status: "active",
+      locationLimit: suspendedLocationLimit,
     },
     create: {
       id: seed.suspendedTenantId,
       tenantCode: seed.suspendedTenantCode,
       name: "Poolduck Local Suspended Tenant",
       status: "active",
+      locationLimit: suspendedLocationLimit,
     },
   });
 

@@ -99,3 +99,23 @@
 - Backend：`npm test -- --runInBand test/auth.spec.ts test/users.spec.ts test/prisma-schema.spec.ts`
 - Frontend：`npm test -- test/smoke.test.tsx test/users-page.test.tsx`
 - 完整 GUI：准备 Local seed 并启动前后端后执行 `npm run test:e2e`
+
+## 7. Platform control plane 本地入口（Issues #110–#113）
+
+先执行 migration；平台认证与租户开通还必须在运行时注入彼此独立的
+`PLATFORM_JWT_SECRET`、`PLATFORM_REFRESH_TOKEN_SECRET` 与至少 32 字符的
+`PLATFORM_PROVISIONING_SECRET`。示例文件仅列变量名，不是可部署 Secret。
+
+- 初始化：在 `backend` 目录注入 `PLATFORM_ADMIN_EMAIL`、`PLATFORM_ADMIN_PASSWORD` 后执行
+  `npm.cmd run platform:admin -- bootstrap`
+- 轮换/禁用/恢复：将末尾命令分别改为 `rotate`、`disable`、`recover`
+- 合成 seed：仅 Local/CI/Staging 可显式设置 `PLATFORM_SYNTHETIC_SEED=true`、
+  `.example.local` 邮箱和运行时测试密码，再执行 `npm.cmd run platform:seed`
+- Production 会拒绝合成 seed；CLI 与 seed 均不输出邮箱、密码、token 或哈希
+- UI：`http://localhost:3000/platform/login`；租户登录仍为 `http://localhost:3000/`
+
+聚焦验证：
+
+- Backend：`npm.cmd test -- test/platform.spec.ts test/auth.spec.ts test/management.spec.ts`
+- Frontend：`npm.cmd test -- --run test/platform.test.tsx`
+- E2E：本地前后端可用后执行 `npm.cmd run test:e2e -- platform-control-plane.spec.ts`

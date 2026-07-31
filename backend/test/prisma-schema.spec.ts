@@ -100,6 +100,21 @@ const tenantCodeRollbackPath = join(
   'rollback',
   '20260728010000_add_tenant_codes.sql',
 );
+const platformMigrationPath = join(
+  __dirname,
+  '..',
+  'prisma',
+  'migrations',
+  '20260729000000_add_platform_control_plane',
+  'migration.sql',
+);
+const platformRollbackPath = join(
+  __dirname,
+  '..',
+  'prisma',
+  'rollback',
+  '20260729000000_add_platform_control_plane.sql',
+);
 
 describe('Prisma initial schema', () => {
   const schema = readFileSync(schemaPath, 'utf8');
@@ -128,6 +143,8 @@ describe('Prisma initial schema', () => {
   const locationCodeRollback = readFileSync(locationCodeRollbackPath, 'utf8');
   const tenantCodeMigration = readFileSync(tenantCodeMigrationPath, 'utf8');
   const tenantCodeRollback = readFileSync(tenantCodeRollbackPath, 'utf8');
+  const platformMigration = readFileSync(platformMigrationPath, 'utf8');
+  const platformRollback = readFileSync(platformRollbackPath, 'utf8');
 
   it('defines the MVP initial models', () => {
     for (const model of [
@@ -309,5 +326,38 @@ describe('Prisma initial schema', () => {
       'DROP COLUMN IF EXISTS "tenant_code"',
     );
     expect(tenantCodeRollback).not.toMatch(/DELETE\s+FROM\s+"tenants"/i);
+  });
+
+  it('adds a tenantless platform control plane, safe quota backfill and guarded rollback', () => {
+    for (const model of [
+      'PlatformAdmin',
+      'PlatformSession',
+      'PlatformAuditLog',
+      'PlatformTenantIdempotency',
+    ]) {
+      expect(schema).toContain(`model ${model} `);
+    }
+    expect(platformMigration).toContain(
+      'SET "location_limit" = GREATEST(',
+    );
+    expect(platformMigration).toContain(
+      `WHERE l."tenant_id" = t."id"
+      AND l."status" <> 'purged'`,
+    );
+    expect(platformMigration).toContain(
+      'CREATE UNIQUE INDEX "platform_admins_single_active_key"',
+    );
+    expect(platformMigration).toContain(
+      `WHERE "status" = 'active'`,
+    );
+    expect(platformMigration).not.toMatch(
+      /INSERT\s+INTO\s+"platform_admins"/i,
+    );
+    expect(platformRollback).toContain(
+      'guarded rollback refused: platform identity, audit, provisioned tenant, or forced-password state exists',
+    );
+    expect(platformRollback).not.toMatch(
+      /DELETE\s+FROM\s+"(?:tenants|users|subscriptions|locations|platform_audit_logs)"/i,
+    );
   });
 });

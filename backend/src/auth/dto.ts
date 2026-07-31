@@ -5,6 +5,7 @@ import {
   IsUUID,
   Matches,
   MaxLength,
+  MinLength,
   ValidateIf,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
@@ -45,4 +46,14 @@ export class LoginDto {
   @IsString()
   @IsNotEmpty()
   password!: string;
+}
+
+export class ChangeInitialPasswordDto {
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  @Matches(/^(?=.*[A-Za-z])(?=.*\d).{8,}$/, {
+    message: '密码至少 8 位，且必须同时包含英文字母和数字',
+  })
+  new_password!: string;
 }

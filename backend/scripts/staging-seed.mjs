@@ -243,18 +243,24 @@ function subscriptionDates(status) {
 }
 
 async function seedTenant(tenant, passwordHash) {
+  const countedLocations = await prisma.location.count({
+    where: { tenantId: tenant.id, status: { not: "purged" } },
+  });
+  const locationLimit = Math.max(tenant.locationLimit ?? 2, countedLocations);
   await prisma.tenant.upsert({
     where: { id: tenant.id },
     update: {
       tenantCode: tenant.tenantCode,
       name: tenant.name,
       status: "active",
+      locationLimit,
     },
     create: {
       id: tenant.id,
       tenantCode: tenant.tenantCode,
       name: tenant.name,
       status: "active",
+      locationLimit,
     },
   });
 

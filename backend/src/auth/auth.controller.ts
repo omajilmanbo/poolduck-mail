@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './current-user.decorator';
-import { LoginDto } from './dto';
+import { ChangeInitialPasswordDto, LoginDto } from './dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { AuthenticatedUserResponse } from './auth.types';
 import { ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME } from './auth.constants';
@@ -60,6 +60,23 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   me(@CurrentUser() user: AuthenticatedUserResponse) {
     return this.authService.me(user);
+  }
+
+  @Post('change-initial-password')
+  @UseGuards(JwtAuthGuard)
+  async changeInitialPassword(
+    @CurrentUser() user: AuthenticatedUserResponse,
+    @Body() dto: ChangeInitialPasswordDto,
+    @Res({ passthrough: true }) response: HttpResponse,
+  ) {
+    await this.authService.changeInitialPassword(user, dto.new_password);
+    const options = this.authService.cookieOptions();
+    response.clearCookie(ACCESS_COOKIE_NAME, { ...options, path: '/' });
+    response.clearCookie(REFRESH_COOKIE_NAME, {
+      ...options,
+      path: '/api/auth',
+    });
+    return { status: 'password_changed', reauthentication_required: true };
   }
 
   private setSessionCookies(response: HttpResponse, accessToken: string, refreshToken: string) {
