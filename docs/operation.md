@@ -22,6 +22,19 @@
 7. 检查收件箱地址格式与域名策略
 8. 仅在非 MVP 阶段接入真实 provider 后，再排查 SMTP/provider 凭据与连接性
 
+### 2.1 ADR-017 等待、取消与不确定投递
+
+ADR-017 本地运行时代码已落地，按以下 Runbook 排查：
+
+1. 区分首次 `waiting`、retry `queued`、`processing`、`canceled`、`failed`、`sent` 与
+   `delivery_unknown`；不得把 `canceled` 或 `delivery_unknown` 手工改回 `queued`。
+2. 检查数据库 `cancel_until/send_not_before`，确认截止前没有 provider attempt；两字段不得解释为
+   retry `scheduled_at`。
+3. `send_not_before` 后超过 5 秒仍未领取时按 P1 候选告警检查 worker、数据库时钟、队列深度与 claim。
+4. 进程崩溃后，未领取的 `waiting` 可恢复处理；无法证明 provider 未调用的任务进入
+   `delivery_unknown` 并人工排查，不自动重发。
+5. 取消、领取、订阅/资源阻断和竞态审计仅使用内部 ID 与安全原因码，不复制邮箱、正文或完整动作码。
+
 ## 3. 订阅异常
 
 排查步骤：

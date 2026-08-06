@@ -5,7 +5,7 @@ config({ path: ".env", quiet: true });
 config({ path: ".env.local", override: true, quiet: true });
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:3001";
-const expectedSendStatus = process.env.API_SMOKE_EXPECT_SEND_STATUS ?? "sent";
+const expectedCreateStatus = process.env.API_SMOKE_EXPECT_SEND_STATUS ?? "waiting";
 let sessionCookie = "";
 
 const smoke = {
@@ -21,10 +21,10 @@ const smoke = {
     process.env.API_SMOKE_LOCATION_ID ??
     "10CA1001",
   scanCode:
-    process.env.API_SMOKE_SCAN_CODE ?? "PD1|ENTRY|01K0ABC10001",
+    process.env.API_SMOKE_SCAN_CODE ?? "V2E01K0ABC10001",
   unmappedScanCode:
     process.env.API_SMOKE_UNMAPPED_SCAN_CODE ??
-    "PD1|ENTRY|01K0ABC19999",
+    "V2E01K0ABC19999",
 };
 
 async function request(path, options = {}) {
@@ -54,6 +54,9 @@ function assert(condition, message) {
     throw new Error(message);
   }
 }
+
+const sleep = (milliseconds) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 async function main() {
   console.log(`Running API smoke test against ${API_BASE_URL}`);
@@ -106,8 +109,8 @@ async function main() {
   assert(
     unmapped.response.status === 404 &&
       unmapped.body?.code === "SCAN_CODE_NOT_MAPPED" &&
-      unmapped.body?.scan_event_id,
-    `Unmapped scan_code did not create an abnormal scan_event: ${unmapped.response.status} ${JSON.stringify(unmapped.body)}`,
+      !("scan_event_id" in (unmapped.body ?? {})),
+    `Unmapped action code was not rejected without persistence: ${unmapped.response.status} ${JSON.stringify(unmapped.body)}`,
   );
 
   const scan = await request("/api/scan-events", {
@@ -126,8 +129,48 @@ async function main() {
     "Scan did not persist the ENTRY action.",
   );
   assert(
-    scan.body?.status === expectedSendStatus,
-    `Expected automatic send status ${expectedSendStatus}, got ${scan.body?.status}.`,
+    scan.body?.status === expectedCreateStatus &&
+      scan.body?.mail_status === expectedCreateStatus &&
+      typeof scan.body?.server_time === "string",
+    `Expected initial send status ${expectedCreateStatus}, got ${scan.body?.status}.`,
+  );
+
+  const cancellation = await request(
+    `/api/scan-events/${scan.body.scan_event_id}/cancel`,
+    { method: "POST" },
+  );
+  assert(
+    cancellation.response.ok &&
+      cancellation.body?.effective_status === "canceled" &&
+      cancellation.body?.mail_status === "canceled" &&
+      typeof cancellation.body?.canceled_at === "string",
+    `Cancellation failed: ${cancellation.response.status} ${JSON.stringify(cancellation.body)}`,
+  );
+
+  const rescan = await request("/api/scan-events", {
+    method: "POST",
+    headers: { "Idempotency-Key": crypto.randomUUID() },
+    body: JSON.stringify({
+      location_id: smoke.locationId,
+      scan_code: smoke.scanCode,
+    }),
+  });
+  assert(
+    rescan.response.ok &&
+      rescan.body?.status === "waiting" &&
+      rescan.body?.scan_event_id !== scan.body.scan_event_id,
+    "A new idempotency key did not create a fresh waiting event after cancellation.",
+  );
+
+  let delivered;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await sleep(1_000);
+    delivered = await request(`/api/scan-events/${rescan.body.scan_event_id}`);
+    if (delivered.response.ok && delivered.body?.mail_status === "sent") break;
+  }
+  assert(
+    delivered?.response.ok && delivered.body?.mail_status === "sent",
+    `Uncanceled waiting task was not sent by the worker: ${JSON.stringify(delivered?.body)}`,
   );
 
   console.log("API smoke test completed.");
@@ -138,7 +181,10 @@ async function main() {
         location_id: smoke.locationId,
         scan_event_id: scan.body.scan_event_id,
         mail_job_id: scan.body.mail_job_id,
-        send_status: scan.body.status,
+        initial_send_status: scan.body.status,
+        final_send_status: cancellation.body.mail_status,
+        rescan_event_id: rescan.body.scan_event_id,
+        rescan_final_status: delivered.body.mail_status,
       },
       null,
       2,

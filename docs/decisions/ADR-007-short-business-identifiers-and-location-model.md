@@ -63,7 +63,7 @@ Issue #90 希望降低人工输入和识别成本：
 - `person_code` 固定为 12 位大写 Crockford Base32，由系统生成，不允许人工指定或修改。
 - 前 7 位编码 Unix 秒时间，后 5 位为密码学安全随机值；同一进程在同一秒生成时可以从随机起点单调递增后缀，使代码大体按创建时间排序。
 - `person_code` 建立全局唯一约束。数据库唯一冲突时重新生成，单次创建最多重试 5 次；分布式节点不能只依赖进程内单调状态。
-- `person_code` 是二维码或 Code 128 的人员定位部分。ADR-008 Accepted 后，扫码写入口的规范负载已由其后续决定替换为 `PD1|ENTRY|<person_code>` / `PD1|EXIT|<person_code>`，不再直接接受裸 `person_code`；查询仍必须遵循 ADR-002 的 tenant + location 上下文，不能仅按 `person_code` 全局查人。
+- `person_code` 是二维码或 Code 128 的人员定位部分。ADR-015 已 supersede ADR-008 的负载语法，扫码写入口只接受 `V2E<person_code>` / `V2X<person_code>`，不接受 `PD1` 或裸 `person_code`；查询仍必须遵循 ADR-002 的 tenant + location 上下文，不能仅按 `person_code` 全局查人。
 - `person_code` 的字典序只用于人工查看和粗略排序。API 分页、历史顺序与幂等判断继续使用 `created_at + id`，不能依赖业务码顺序。
 - 代码中的时间部分会泄露大致创建时间，因此 `person_code` 不是秘密。任何能由业务码读取人员姓名、邮箱或历史的接口仍需认证、tenant/location 授权和速率限制。
 

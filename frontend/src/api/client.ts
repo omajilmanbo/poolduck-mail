@@ -80,14 +80,27 @@ export type ScanEventResponse = {
   person_code: string;
   action: 'entry' | 'exit';
   action_source: ScanActionSource;
-  status: Extract<MailJobStatus, 'queued' | 'processing' | 'sent' | 'failed'>;
+  status: MailJobStatus;
+  effective_status: 'active' | 'canceled';
+  mail_status: MailJobStatus;
+  can_cancel: boolean;
+  cancel_until: string | null;
+  server_time: string;
+  canceled_at: string | null;
   retry_count: number;
   scheduled_at: string | null;
   error_message: string | null;
   deduplicated: boolean;
 };
 
-export type MailJobStatus = 'unmapped' | 'queued' | 'processing' | 'sent' | 'failed';
+export type MailJobStatus =
+  | 'waiting'
+  | 'queued'
+  | 'processing'
+  | 'sent'
+  | 'failed'
+  | 'canceled'
+  | 'delivery_unknown';
 export type ScanAction = 'entry' | 'exit' | 'unknown';
 export type ScanActionSource =
   | 'person_action_code'
@@ -106,6 +119,12 @@ export type ScanHistoryItem = {
   action_source: ScanActionSource;
   received_at: string;
   status: MailJobStatus;
+  effective_status: 'active' | 'canceled';
+  mail_status: MailJobStatus;
+  can_cancel: boolean;
+  cancel_until: string | null;
+  server_time: string;
+  canceled_at: string | null;
   mail_job: null | {
     mail_job_id: string;
     status: string;
@@ -118,6 +137,15 @@ export type ScanHistoryItem = {
 export type ScanHistoryResponse = {
   items: ScanHistoryItem[];
   next_cursor: string | null;
+};
+
+export type CancelScanEventResponse = {
+  scan_event_id: string;
+  mail_job_id: string;
+  effective_status: 'canceled';
+  mail_status: 'canceled';
+  canceled_at: string;
+  server_time: string;
 };
 
 export type SendMailJobResponse = {
@@ -215,20 +243,6 @@ type RequestOptions = {
   headers?: Record<string, string>;
 };
 
-export type UnmappedScanCase = {
-  case_id: string;
-  scan_event_id: string;
-  location_id: string | null;
-  location_name: string | null;
-  location_active: boolean;
-  scan_code: string;
-  received_at: string;
-  status: 'open' | 'resolved' | 'ignored';
-  handled_by_user_id: string | null;
-  handled_at: string | null;
-  mapping_prefill_allowed: boolean;
-};
-
 export class ApiError extends Error {
   status: number;
   code?: string;
@@ -282,11 +296,13 @@ export function isSendAllowed(license: LicenseCheck | null) {
 
 export function mailStatusLabel(status: MailJobStatus) {
   const labels: Record<MailJobStatus, string> = {
-    unmapped: '未映射',
+    waiting: '可取消等待中',
     queued: '发送中',
     processing: '发送中',
     sent: '已发送',
     failed: '发送失败',
+    canceled: '已取消',
+    delivery_unknown: '投递结果未知',
   };
 
   return labels[status];
@@ -420,13 +436,6 @@ export function createApiClient(config: ApiClientConfig = {}) {
     restoreLocation: (locationId: string) =>
       request<LocationItem>(`/api/locations/${encodeURIComponent(locationId)}/restore`, { method: 'POST' }),
     getAuditLogs: (params = '') => request<AuditLogResponse>(`/api/audit-logs${params ? `?${params}` : ''}`),
-    getUnmappedScans: (params = '') =>
-      request<UnmappedScanCase[]>(`/api/unmapped-scans${params ? `?${params}` : ''}`),
-    updateUnmappedScan: (caseId: string, status: 'resolved' | 'ignored') =>
-      request<UnmappedScanCase>(`/api/unmapped-scans/${encodeURIComponent(caseId)}`, {
-        method: 'PATCH',
-        body: { status },
-      }),
     exportAuditLogs: (params: string) => download(`/api/audit-logs/export?${params}`, 'audit-logs.csv'),
     exportScanEvents: (params: string) => download(`/api/scan-events/export?${params}`, 'scan-events.csv'),
     exportMailJobs: (params: string) => download(`/api/mail-jobs/export?${params}`, 'mail-jobs.csv'),
@@ -442,6 +451,11 @@ export function createApiClient(config: ApiClientConfig = {}) {
         body: createScanEventBody(locationId, scanCode),
         headers: { 'Idempotency-Key': idempotencyKey },
       }),
+    cancelScanEvent: (token: string, scanEventId: string) =>
+      request<CancelScanEventResponse>(
+        `/api/scan-events/${encodeURIComponent(scanEventId)}/cancel`,
+        { token, method: 'POST' },
+      ),
     refresh: () => request<LoginResponse>('/api/auth/refresh', { method: 'POST', retry: false }),
     logout: () => request<{ status: string }>('/api/auth/logout', { method: 'POST', retry: false }),
     getMe: () => request<MeResponse>('/api/auth/me'),

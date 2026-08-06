@@ -22,9 +22,9 @@ model Tenant {
   personMappings              PersonMapping[]
   scanEvents                  ScanEvent[]
   mailJobs                    MailJob[]
+  mailDeliveryAttempts        MailDeliveryAttempt[]
   auditLogs                   AuditLog[]
   sessions                    Session[]
-  unmappedScanCases           UnmappedScanCase[]
   scanIdempotencies           ScanRequestIdempotency[]
   operatorLocationAssignments OperatorLocationAssignment[]
   platformAuditLogs           PlatformAuditLog[]
@@ -46,10 +46,10 @@ model User {
   createdAt                   DateTime                     @default(now()) @map("created_at")
   updatedAt                   DateTime                     @updatedAt @map("updated_at")
   tenant                      Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  scanEvents                  ScanEvent[]
+  scanEvents                  ScanEvent[]                  @relation("ScanEventCreatedBy")
+  canceledScanEvents          ScanEvent[]                  @relation("ScanEventCanceledBy")
   auditLogs                   AuditLog[]
   sessions                    Session[]
-  handledUnmappedScanCases    UnmappedScanCase[]           @relation("UnmappedScanCaseHandler")
   operatorLocationAssignments OperatorLocationAssignment[]
 
   @@unique([tenantId, username])
@@ -106,7 +106,6 @@ model Location {
   personMappings              PersonMapping[]
   scanEvents                  ScanEvent[]
   mailJobs                    MailJob[]
-  unmappedScanCases           UnmappedScanCase[]
   operatorLocationAssignments OperatorLocationAssignment[]
   legacyIdentifiers           LocationLegacyIdentifier[]
 
@@ -186,14 +185,17 @@ model ScanEvent {
   rawPayload         String                   @map("raw_payload") @db.Text
   receivedAt         DateTime                 @map("received_at")
   createdByUserId    String?                  @map("created_by_user_id") @db.Uuid
+  canceledAt         DateTime?                @map("canceled_at")
+  canceledByUserId   String?                  @map("canceled_by_user_id") @db.Uuid
+  cancelReasonCode   String?                  @map("cancel_reason_code") @db.VarChar(32)
   createdAt          DateTime                 @default(now()) @map("created_at")
   tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   device             Device?                  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   location           Location?                @relation(fields: [locationId], references: [id], onDelete: SetNull)
   personMapping      PersonMapping?           @relation(fields: [personMappingId], references: [id], onDelete: Restrict)
-  createdByUser      User?                    @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdByUser      User?                    @relation("ScanEventCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  canceledByUser     User?                    @relation("ScanEventCanceledBy", fields: [canceledByUserId], references: [id], onDelete: SetNull)
   mailJobs           MailJob[]
-  unmappedScanCase   UnmappedScanCase?
   idempotencyRecords ScanRequestIdempotency[]
 
   @@index([tenantId, receivedAt])
@@ -219,11 +221,15 @@ model MailJob {
   subject               String                   @db.VarChar(255)
   body                  String                   @db.Text
   templateKey           String                   @map("template_key") @db.VarChar(128)
-  status                String                   @default("queued") @db.VarChar(32)
+  status                String                   @default("waiting") @db.VarChar(32)
   retryCount            Int                      @default(0) @map("retry_count")
   providerMessageId     String?                  @map("provider_message_id") @db.VarChar(255)
   errorMessage          String?                  @map("error_message") @db.Text
   scheduledAt           DateTime?                @map("scheduled_at")
+  cancelUntil           DateTime?                @default(dbgenerated("(CURRENT_TIMESTAMP + INTERVAL '10 seconds')")) @map("cancel_until")
+  sendNotBefore         DateTime?                @default(dbgenerated("(CURRENT_TIMESTAMP + INTERVAL '10 seconds')")) @map("send_not_before")
+  claimedAt             DateTime?                @map("claimed_at")
+  claimAttemptId        String?                  @map("claim_attempt_id") @db.Uuid
   sentAt                DateTime?                @map("sent_at")
   createdAt             DateTime                 @default(now()) @map("created_at")
   updatedAt             DateTime                 @updatedAt @map("updated_at")
@@ -232,11 +238,34 @@ model MailJob {
   personMapping         PersonMapping            @relation(fields: [personMappingId], references: [id], onDelete: Restrict)
   scanEvent             ScanEvent                @relation(fields: [scanEventId], references: [id], onDelete: Restrict)
   idempotencyRecords    ScanRequestIdempotency[]
+  deliveryAttempts      MailDeliveryAttempt[]
 
   @@index([tenantId, status, createdAt])
+  @@index([status, sendNotBefore])
+  @@index([status, scheduledAt])
+  @@index([status, claimedAt])
   @@index([tenantId, locationId, createdAt])
   @@index([tenantId, personMappingId, createdAt])
   @@map("mail_jobs")
+}
+
+model MailDeliveryAttempt {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  mailJobId         String    @map("mail_job_id") @db.Uuid
+  status            String    @default("claimed") @db.VarChar(32)
+  claimedAt         DateTime  @default(now()) @map("claimed_at")
+  providerInvokedAt DateTime? @map("provider_invoked_at")
+  completedAt       DateTime? @map("completed_at")
+  providerMessageId String?   @map("provider_message_id") @db.VarChar(255)
+  errorCode         String?   @map("error_code") @db.VarChar(64)
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  mailJob           MailJob   @relation(fields: [mailJobId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, claimedAt])
+  @@index([mailJobId, claimedAt])
+  @@index([status, claimedAt])
+  @@map("mail_delivery_attempts")
 }
 
 model ScanRequestIdempotency {
@@ -273,26 +302,6 @@ model AuditLog {
 
   @@index([tenantId, createdAt])
   @@map("audit_logs")
-}
-
-model UnmappedScanCase {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId        String    @map("tenant_id") @db.Uuid
-  scanEventId     String    @unique @map("scan_event_id") @db.Uuid
-  locationId      String?   @map("location_id") @db.Uuid
-  status          String    @default("open") @db.VarChar(32)
-  handledByUserId String?   @map("handled_by_user_id") @db.Uuid
-  handledAt       DateTime? @map("handled_at")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  scanEvent       ScanEvent @relation(fields: [scanEventId], references: [id], onDelete: Restrict)
-  location        Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  handledByUser   User?     @relation("UnmappedScanCaseHandler", fields: [handledByUserId], references: [id], onDelete: SetNull)
-
-  @@index([tenantId, status, createdAt])
-  @@index([tenantId, locationId, createdAt])
-  @@map("unmapped_scan_cases")
 }
 
 model Session {

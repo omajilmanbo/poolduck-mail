@@ -1,5 +1,6 @@
 export type MailProviderSendInput = {
   mailJobId: string;
+  attemptId: string;
   toEmail: string;
   subject: string;
   body: string;

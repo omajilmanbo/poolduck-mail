@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { AuthenticatedUserResponse } from '../auth/auth.types';
 import { LicenseService } from '../license/license.service';
@@ -196,119 +197,119 @@ export class MailJobsService {
     mailJobId: string,
     actorUserId: string | null,
   ): Promise<SendMailJobResponse> {
-    const now = new Date();
-    const claimed = await this.prisma.mailJob.updateMany({
-      where: {
-        id: mailJobId,
+    return this.processClaimedMailJob(tenantId, mailJobId, actorUserId);
+  }
+
+  private async processClaimedMailJob(
+    tenantId: string,
+    mailJobId: string,
+    actorUserId: string | null,
+  ): Promise<SendMailJobResponse> {
+    const attemptId = randomUUID();
+    const mailJob = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.$executeRawUnsafe(
+        `UPDATE "mail_jobs"
+         SET "status" = 'processing', "claimed_at" = CURRENT_TIMESTAMP,
+             "claim_attempt_id" = $1::uuid, "updated_at" = CURRENT_TIMESTAMP
+         WHERE "id" = $2::uuid AND "tenant_id" = $3::uuid
+           AND (
+             ($4::boolean AND "status" = 'waiting' AND CURRENT_TIMESTAMP >= "send_not_before")
+             OR ("status" = 'queued' AND "scheduled_at" IS NOT NULL AND CURRENT_TIMESTAMP >= "scheduled_at")
+             OR ("status" = 'queued' AND "scheduled_at" IS NULL AND "send_not_before" IS NULL)
+           )`,
+        attemptId,
+        mailJobId,
         tenantId,
-        status: 'queued',
-        OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
-      },
-      data: { status: 'processing' },
+        actorUserId === null,
+      );
+      if (claimed !== 1) return null;
+      await tx.mailDeliveryAttempt.create({
+        data: { id: attemptId, tenantId, mailJobId, status: 'claimed' },
+      });
+      return tx.mailJob.findFirstOrThrow({
+        where: { id: mailJobId, tenantId, status: 'processing', claimAttemptId: attemptId },
+        select: {
+          id: true,
+          toEmail: true,
+          subject: true,
+          body: true,
+          retryCount: true,
+          location: { select: { status: true } },
+          personMapping: { select: { status: true } },
+        },
+      });
     });
 
-    if (claimed.count !== 1) {
+    if (!mailJob) {
       const current = await this.prisma.mailJob.findFirst({
         where: { id: mailJobId, tenantId },
-        select: { id: true, status: true, scheduledAt: true },
+        select: { id: true, status: true, scheduledAt: true, sendNotBefore: true },
       });
       if (!current) {
-        await this.audit.record({
-          tenantId,
-          actorUserId,
-          action: 'authorization.mail_job.denied',
-          resourceType: 'mail_job',
-          resourceId: mailJobId,
-          result: 'denied',
-        });
         throw new NotFoundException({
           code: 'MAIL_JOB_NOT_FOUND',
-          message: 'mail_job不存在或不属于当前租户',
+          message: 'mail_job does not exist in this tenant',
         });
       }
       if (current.status === 'sent') {
-        throw new ConflictException({
-          code: 'MAIL_JOB_ALREADY_SENT',
-          message: 'mail_job已发送，不能重复发送',
-        });
+        throw new ConflictException({ code: 'MAIL_JOB_ALREADY_SENT', message: 'mail_job was already sent' });
       }
       throw new ConflictException({
         code: 'MAIL_JOB_STATUS_NOT_SENDABLE',
-        message:
-          current.status === 'queued' && current.scheduledAt
-            ? 'mail_job尚未到达重试时间'
-            : 'mail_job状态不允许发送',
+        message: 'mail_job is not due or is in a terminal state',
       });
     }
-
-    const mailJob = await this.prisma.mailJob.findFirstOrThrow({
-      where: { id: mailJobId, tenantId, status: 'processing' },
-      select: {
-        id: true,
-        toEmail: true,
-        subject: true,
-        body: true,
-        retryCount: true,
-      },
-    });
 
     const license = await this.licenseService.checkTenantLicense(tenantId);
     try {
       this.licenseService.assertCanSend(license.status);
     } catch {
-      await this.prisma.mailJob.update({
-        where: { id: mailJob.id },
-        data: {
-          status: 'failed',
-          scheduledAt: null,
-          errorMessage: 'SUBSCRIPTION_NOT_SENDABLE',
-        },
-      });
-      await this.audit.record({
-        tenantId,
-        actorUserId,
-        action: 'subscription.mail_send.denied',
-        resourceType: 'mail_job',
-        resourceId: mailJob.id,
-        result: 'denied',
-        metadata: { status: license.status },
-      });
-      return this.failureResponse(
-        mailJob.id,
-        mailJob.retryCount,
-        null,
-        'SUBSCRIPTION_NOT_SENDABLE',
-      );
+      return this.blockClaimedJob(tenantId, mailJob.id, attemptId, actorUserId, mailJob.retryCount, 'SUBSCRIPTION_NOT_SENDABLE');
     }
+    if (mailJob.location.status !== 'active' || mailJob.personMapping.status !== 'active') {
+      return this.blockClaimedJob(tenantId, mailJob.id, attemptId, actorUserId, mailJob.retryCount, 'RESOURCE_NOT_SENDABLE');
+    }
+
+    await this.prisma.mailDeliveryAttempt.update({
+      where: { id: attemptId },
+      data: { status: 'invoked', providerInvokedAt: new Date() },
+    });
 
     let providerResult;
     try {
       providerResult = await this.mailProvider.send({
         mailJobId: mailJob.id,
+        attemptId,
         toEmail: mailJob.toEmail,
         subject: mailJob.subject,
         body: mailJob.body,
       });
     } catch {
-      providerResult = {
-        provider: 'sandbox',
-        success: false,
-        errorMessage: 'Sandbox provider request failed',
-      };
+      providerResult = { provider: 'sandbox', success: false, errorMessage: 'Sandbox provider request failed' };
     }
 
     if (providerResult.success) {
-      await this.prisma.mailJob.update({
-        where: { id: mailJob.id },
-        data: {
-          status: 'sent',
-          providerMessageId: providerResult.providerMessageId,
-          errorMessage: null,
-          scheduledAt: null,
-          sentAt: new Date(),
-        },
-      });
-
+      const completedAt = new Date();
+      await this.prisma.$transaction([
+        this.prisma.mailJob.update({
+          where: { id: mailJob.id },
+          data: {
+            status: 'sent',
+            providerMessageId: providerResult.providerMessageId,
+            errorMessage: null,
+            scheduledAt: null,
+            sentAt: completedAt,
+          },
+        }),
+        this.prisma.mailDeliveryAttempt.update({
+          where: { id: attemptId },
+          data: {
+            status: 'succeeded',
+            completedAt,
+            providerMessageId: providerResult.providerMessageId,
+          },
+        }),
+      ]);
       await this.audit.record({
         tenantId,
         actorUserId,
@@ -316,9 +317,8 @@ export class MailJobsService {
         resourceType: 'mail_job',
         resourceId: mailJob.id,
         result: 'success',
-        metadata: { provider: providerResult.provider },
+        metadata: { provider: providerResult.provider, attempt_id: attemptId },
       });
-
       return {
         mail_job_id: mailJob.id,
         status: 'sent',
@@ -335,21 +335,30 @@ export class MailJobsService {
     const retryDelaysMs = [30_000, 120_000, 600_000];
     const retryDelayMs = retryDelaysMs[mailJob.retryCount];
     const nextRetryCount = mailJob.retryCount + 1;
-    const scheduledAt =
-      retryDelayMs === undefined ? null : new Date(Date.now() + retryDelayMs);
+    const scheduledAt = retryDelayMs === undefined ? null : new Date(Date.now() + retryDelayMs);
     const terminal = scheduledAt === null;
-
-    await this.prisma.mailJob.update({
-      where: { id: mailJob.id },
-      data: {
-        status: terminal ? 'failed' : 'queued',
-        retryCount: nextRetryCount,
-        scheduledAt,
-        errorMessage: providerResult.errorMessage,
-        providerMessageId: providerResult.providerMessageId,
-      },
-    });
-
+    const completedAt = new Date();
+    await this.prisma.$transaction([
+      this.prisma.mailJob.update({
+        where: { id: mailJob.id },
+        data: {
+          status: terminal ? 'failed' : 'queued',
+          retryCount: nextRetryCount,
+          scheduledAt,
+          errorMessage: providerResult.errorMessage,
+          providerMessageId: providerResult.providerMessageId,
+        },
+      }),
+      this.prisma.mailDeliveryAttempt.update({
+        where: { id: attemptId },
+        data: {
+          status: terminal ? 'failed' : 'retry_scheduled',
+          completedAt,
+          providerMessageId: providerResult.providerMessageId,
+          errorCode: 'PROVIDER_FAILURE',
+        },
+      }),
+    ]);
     await this.audit.record({
       tenantId,
       actorUserId,
@@ -362,9 +371,9 @@ export class MailJobsService {
         reason: 'PROVIDER_FAILURE',
         retry_count: nextRetryCount,
         scheduled_at: scheduledAt?.toISOString() ?? null,
+        attempt_id: attemptId,
       },
     });
-
     return this.failureResponse(
       mailJob.id,
       nextRetryCount,
@@ -373,6 +382,82 @@ export class MailJobsService {
       providerResult.providerMessageId,
       terminal ? 'failed' : 'queued',
     );
+  }
+
+  private async blockClaimedJob(
+    tenantId: string,
+    mailJobId: string,
+    attemptId: string,
+    actorUserId: string | null,
+    retryCount: number,
+    errorCode: 'SUBSCRIPTION_NOT_SENDABLE' | 'RESOURCE_NOT_SENDABLE',
+  ): Promise<SendMailJobResponse> {
+    const completedAt = new Date();
+    await this.prisma.$transaction([
+      this.prisma.mailJob.update({
+        where: { id: mailJobId },
+        data: { status: 'failed', scheduledAt: null, errorMessage: errorCode },
+      }),
+      this.prisma.mailDeliveryAttempt.update({
+        where: { id: attemptId },
+        data: { status: 'blocked', completedAt, errorCode },
+      }),
+    ]);
+    await this.audit.record({
+      tenantId,
+      actorUserId,
+      action: errorCode === 'SUBSCRIPTION_NOT_SENDABLE' ? 'subscription.mail_send.denied' : 'resource.mail_send.denied',
+      resourceType: 'mail_job',
+      resourceId: mailJobId,
+      result: 'denied',
+      metadata: { reason: errorCode, attempt_id: attemptId },
+    });
+    return this.failureResponse(mailJobId, retryCount, null, errorCode);
+  }
+
+  async recoverStaleProcessingJobs(staleBefore: Date): Promise<number> {
+    const stale = await this.prisma.mailJob.findMany({
+      where: { status: 'processing', claimedAt: { lte: staleBefore } },
+      select: { id: true, tenantId: true, claimAttemptId: true, retryCount: true, sendNotBefore: true },
+      take: 20,
+      orderBy: [{ claimedAt: 'asc' }, { id: 'asc' }],
+    });
+    for (const job of stale) {
+      const attempt = job.claimAttemptId
+        ? await this.prisma.mailDeliveryAttempt.findUnique({
+            where: { id: job.claimAttemptId },
+            select: { providerInvokedAt: true, completedAt: true },
+          })
+        : null;
+      if (attempt?.completedAt) continue;
+      if (!job.claimAttemptId || attempt?.providerInvokedAt) {
+        await this.prisma.mailJob.updateMany({
+          where: { id: job.id, tenantId: job.tenantId, status: 'processing' },
+          data: { status: 'delivery_unknown', errorMessage: 'PROVIDER_OUTCOME_UNKNOWN' },
+        });
+        if (job.claimAttemptId) {
+          await this.prisma.mailDeliveryAttempt.update({
+            where: { id: job.claimAttemptId },
+            data: { status: 'delivery_unknown', completedAt: new Date(), errorCode: 'PROVIDER_OUTCOME_UNKNOWN' },
+          });
+        }
+      } else {
+        await this.prisma.mailJob.updateMany({
+          where: { id: job.id, tenantId: job.tenantId, status: 'processing', claimAttemptId: job.claimAttemptId },
+          data: {
+            status: job.retryCount === 0 && job.sendNotBefore ? 'waiting' : 'queued',
+            claimedAt: null,
+            claimAttemptId: null,
+            errorMessage: null,
+          },
+        });
+        await this.prisma.mailDeliveryAttempt.update({
+          where: { id: job.claimAttemptId },
+          data: { status: 'abandoned', completedAt: new Date(), errorCode: 'STALE_BEFORE_PROVIDER' },
+        });
+      }
+    }
+    return stale.length;
   }
 
   private historySelect() {
@@ -385,6 +470,9 @@ export class MailJobsService {
       errorMessage: true,
       retryCount: true,
       scheduledAt: true,
+      cancelUntil: true,
+      sendNotBefore: true,
+      claimedAt: true,
       tenantNameSnapshot: true,
       locationNameSnapshot: true,
       personNameSnapshot: true,
@@ -412,6 +500,9 @@ export class MailJobsService {
     errorMessage: string | null;
     retryCount: number;
     scheduledAt: Date | null;
+    cancelUntil: Date | null;
+    sendNotBefore: Date | null;
+    claimedAt: Date | null;
     tenantNameSnapshot: string;
     locationNameSnapshot: string;
     personNameSnapshot: string;
@@ -437,6 +528,9 @@ export class MailJobsService {
       error_message: this.safeFailureMessage(row.errorMessage),
       retry_count: row.retryCount,
       scheduled_at: row.scheduledAt?.toISOString() ?? null,
+      cancel_until: row.cancelUntil?.toISOString() ?? null,
+      send_not_before: row.sendNotBefore?.toISOString() ?? null,
+      claimed_at: row.claimedAt?.toISOString() ?? null,
       context: {
         tenant_name: row.tenantNameSnapshot,
         location_name: row.locationNameSnapshot,

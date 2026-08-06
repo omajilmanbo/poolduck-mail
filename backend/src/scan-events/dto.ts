@@ -31,8 +31,8 @@ export class ListScanEventsDto {
   location_id?: string;
 
   @IsOptional()
-  @IsIn(['unmapped', 'queued', 'processing', 'sent', 'failed'])
-  status?: 'unmapped' | 'queued' | 'processing' | 'sent' | 'failed';
+  @IsIn(['waiting', 'queued', 'processing', 'sent', 'failed', 'canceled', 'delivery_unknown'])
+  status?: 'waiting' | 'queued' | 'processing' | 'sent' | 'failed' | 'canceled' | 'delivery_unknown';
 
   @IsOptional()
   @IsDateString()
@@ -67,6 +67,6 @@ export class ExportScanEventsDto {
   location_id?: string;
 
   @IsOptional()
-  @IsIn(['unmapped', 'queued', 'processing', 'sent', 'failed'])
-  status?: 'unmapped' | 'queued' | 'processing' | 'sent' | 'failed';
+  @IsIn(['waiting', 'queued', 'processing', 'sent', 'failed', 'canceled', 'delivery_unknown'])
+  status?: 'waiting' | 'queued' | 'processing' | 'sent' | 'failed' | 'canceled' | 'delivery_unknown';
 }

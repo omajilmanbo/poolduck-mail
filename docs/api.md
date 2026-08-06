@@ -122,6 +122,22 @@ platform token 调用租户业务 API、tenant token 调用上述平台 API 时�
 
 ## 3. 扫码邮件核心流程 API
 
+> 实施状态：ADR-017 已在本地运行时代码实现。`POST /api/scan-events` 创建初始 `waiting` 任务并返回
+> `effective_status`、`mail_status`、`can_cancel`、`cancel_until`、`server_time` 与 `canceled_at`；
+> `POST /api/scan-events/{scan_event_id}/cancel` 是受支持的取消入口。客户端倒计时仅作提示，最终结果
+> 仍由服务端数据库时间和持久化状态决定。
+
+ADR-017 当前契约：
+
+- 取消 endpoint 只接收路径中的 `scan_event_id`；tenant、location、actor、mail job 与截止时间均由
+  服务端关系和认证上下文确定。
+- 首次成功与重复取消返回 `200` 和首次 `canceled_at`；跨 tenant/location、未知 ID 或无 assignment
+  统一 `SCAN_EVENT_NOT_FOUND`。
+- 截止已到但未领取返回 `409 SCAN_CANCEL_WINDOW_EXPIRED`；`processing`、`sent`、`failed` 或
+  `delivery_unknown` 返回 `409 SCAN_CANCEL_NOT_AVAILABLE`。
+- 相同扫码 `Idempotency-Key` 只重放原事件的最新状态；已取消事件不延长窗口、不触发 provider。
+- 取消成功后可用新的 `Idempotency-Key` 立即重扫；原 key 不得改绑到新事件。
+
 ### GET `/api/locations`
 - 说明：获取当前 token tenant 可用的地点列表，用于扫码邮件页面切换上下文
 - 租户上下文：仅使用认证会话中的 `tenant_id`
@@ -170,21 +186,22 @@ platform token 调用租户业务 API、tenant token 调用上述平台 API 时�
 - 错误：`location_id` 非法或不属于当前 tenant 时返回 `LOCATION_NOT_FOUND`
 
 ### POST `/api/scan-events`
-- 入参：`location_id`, `scan_code`；`scan_code` 必须是精确、区分大小写的 `PD1|ENTRY|<12 位 person_code>` 或 `PD1|EXIT|<12 位 person_code>`，服务端只去除整个输入的首尾空白
+- 入参：`location_id`, `scan_code`；`scan_code` 必须是精确、区分大小写、固定 15 位的 `V2E<12 位 person_code>` 或 `V2X<12 位 person_code>`
+- 允许无提交后缀或单个 `CR`、`LF`、`CRLF`/Enter 后缀；前导/尾随空格、内部空白、设备前缀、重复后缀、未知版本/动作、错误大小写、截断和 `PD1` 旧格式统一返回 `ACTION_CODE_INVALID`。不实施 `PD1`/`V2` 双读
 - 可选请求头：`Idempotency-Key`（8–200 位可见 ASCII）。相同 tenant、route、key 与相同请求内容在 24 小时内返回首次结果；同一 key 携带不同 location/person/action 返回 `IDEMPOTENCY_KEY_CONFLICT`
 - 说明：
   - 创建扫码事件记录
   - 后端解析版本、动作与 `person_code`；裸 `person_code`、未知版本/动作、格式错误或混合大小写一律返回 `ACTION_CODE_INVALID`
   - 后端只在 JWT tenant + 当前 location 上下文中按解析后的 `person_code` 查找 active 映射；本接口不再兼容裸码或旧 `scan_code`
   - `entry` 正文使用 `{tenant_name}，{location_name}からのお知らせ：{person_name}　さんは　{time_stamp}　に入室しました。`；`exit` 将末句替换为 `退室しました。`
-  - 后端在事务内把动作、动作来源 `person_action_code`、person → location → tenant 外键及发送时名称/人员码/动作快照写入 scan event/mail job，再创建初始 `queued` 任务；事务提交后立即调用 sandbox/mock provider并返回当前发送或重试状态
+  - 后端在事务内把动作、动作来源 `person_action_code`、person → location → tenant 外键及发送时名称/人员码/动作快照写入 scan event/mail job，再创建初始 `waiting` 任务；provider 在数据库 `send_not_before` 到期且 worker 原子领取后才可调用
   - 同 tenant、location、解析后的 `person_code`、同动作在 10 秒内重复提交时返回原 scan event/mail job，响应 `deduplicated=true`；相反动作在窗口内返回 `SCAN_ACTION_CONFLICT`，不创建第二条记录或任务
   - 邮件重试只发送 mail job 已固化的正文和动作，不根据后续扫描或人员状态重新推断
   - 不接收任何自定义正文字段（`custom_message` / `custom_text` / `mail_body` 等）
 - 权限：已登录用户（`tenant_manager` / `operator`）
 - 订阅要求：`trial` 或 `active`；`expired` / `suspended` 返回 `SUBSCRIPTION_NOT_SENDABLE`
 - location 授权：`operator` 必须已分配该 location；门禁在幂等结果重放之前执行，因此撤销 assignment 后旧 `Idempotency-Key` 也不能继续读取或提交该地点结果
-- 出参：`scan_event_id`, `mail_job_id`, `person_code`, `action`, `action_source`, `mail_subject`, `status`, `retry_count`, `scheduled_at`, `error_message`, `deduplicated`
+- 出参：`scan_event_id`, `mail_job_id`, `person_code`, `action`, `action_source`, `mail_subject`, `status`, `effective_status`, `mail_status`, `can_cancel`, `cancel_until`, `server_time`, `canceled_at`, `retry_count`, `scheduled_at`, `error_message`, `deduplicated`
 - 正常响应示例：
 
 ```json
@@ -206,7 +223,7 @@ platform token 调用租户业务 API、tenant token 调用上述平台 API 时�
 - 错误：
   - `location_id` 非法或不属于当前 tenant：返回 `LOCATION_NOT_FOUND`
   - 动作码格式无效：返回 `ACTION_CODE_INVALID`，不创建扫码事件或邮件任务
-  - 动作码中的 `person_code` 未找到 active 映射邮箱：创建带原动作的 `scanType=unmapped` 异常扫码事件，不创建 `mail_job`，返回 `SCAN_CODE_NOT_MAPPED` 与 `scan_event_id`；动作通过后续历史查询读取
+  - 动作码中的 `person_code` 未找到当前 tenant/location 的 active 映射邮箱：返回 `SCAN_CODE_NOT_MAPPED`，响应不含 `scan_event_id`，不创建 scan event、case、mail job 或逐请求数据库审计
   - 10 秒内出现相反动作：返回 `SCAN_ACTION_CONFLICT`
   - `Idempotency-Key` 格式无效或被不同请求复用：返回 `IDEMPOTENCY_KEY_INVALID` 或 `IDEMPOTENCY_KEY_CONFLICT`
   - 请求包含 `custom_message` / `custom_text` / `mail_body` 等额外字段：返回 `400 Bad Request`
@@ -277,26 +294,16 @@ platform token 调用租户业务 API、tenant token 调用上述平台 API 时�
 - 租户边界：仅使用 JWT 中的 `tenant_id`；其他 tenant 的 ID 统一返回 `SCAN_EVENT_NOT_FOUND`
 - location 授权：operator 只能查询已分配 location 的记录；撤销后单条与列表查询立即不可见
 - 出参：`scan_event_id`, `location_id`, `location_name`, `person_code`, `person_name`, `scan_code`, `scan_type`, `action`, `action_source`, `received_at`, `status`, `mail_job`；关联 `mail_job` 同时返回固化的 `action`
-- `unmapped` 记录的 `mail_job` 为 `null`，不会伪造任务
 
 ### GET `/api/scan-events`
 - 查询：`location_id`, `status`, `created_from`, `created_to`, `cursor`, `limit`（默认 25，最大 100）
 - 说明：按location（办公室/校舍）与状态查询扫码记录，用于页面“扫码记录栏”展示
 - 权限：已登录用户（`tenant_manager` / `operator`）
 - 订阅要求：无（历史记录可查）
-- 状态：`unmapped` / `queued` / `processing` / `sent` / `failed`
+- 状态：`queued` / `processing` / `sent` / `failed`
 - 出参：`{ items: [...], next_cursor }`；按 `created_at DESC, id DESC` 稳定排序，下一页原样传回 `next_cursor`
 - 非本 tenant 的 `location_id` 返回 `LOCATION_NOT_FOUND`
 - operator 未分配的 `location_id` 同样返回 `LOCATION_NOT_FOUND`；不提供 location 过滤条件时，列表也只包含已分配地点
-
-### 未映射扫码处理
-
-- `GET /api/unmapped-scans`：按当前 tenant 查询，支持 `location_id` 与 `status=open|resolved|ignored`
-- `GET /api/unmapped-scans/{case_id}`：查询单条当前 tenant 记录
-- `PATCH /api/unmapped-scans/{case_id}`：把记录标记为 `resolved` 或 `ignored`，记录处理人、处理时间和审计日志；标记 `resolved` 前服务端必须找到同 tenant/location/scan_code 的 active 人员映射，否则返回 `UNMAPPED_SCAN_NOT_RESOLVED`
-- 权限：`tenant_manager` / `operator`；跨 tenant ID 统一返回 `UNMAPPED_SCAN_NOT_FOUND`
-- location 授权：operator 只可列出、读取和处理已分配 location 的记录；停用 location 仍可读取历史，但不能执行新的处理写入
-- `resolved` 仅表示数据已修正，不会自动重发历史邮件；停用地点的历史仍可查，但 `mapping_prefill_allowed=false`
 
 ### 租户 operator 账号生命周期
 

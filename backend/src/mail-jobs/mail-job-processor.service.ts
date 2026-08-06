@@ -8,7 +8,8 @@ import {
 import { PrismaService } from '../prisma.service';
 import { MailJobsService } from './mail-jobs.service';
 
-const POLL_INTERVAL_MS = 15_000;
+const POLL_INTERVAL_MS = 1_000;
+const STALE_CLAIM_MS = 60_000;
 
 @Injectable()
 export class MailJobProcessorService implements OnModuleInit, OnModuleDestroy {
@@ -41,12 +42,20 @@ export class MailJobProcessorService implements OnModuleInit, OnModuleDestroy {
     if (this.running) return 0;
     this.running = true;
     try {
-      const due = await this.prisma.mailJob.findMany({
-        where: { status: 'queued', scheduledAt: { lte: new Date() } },
-        orderBy: [{ scheduledAt: 'asc' }, { id: 'asc' }],
-        take: 20,
-        select: { id: true, tenantId: true },
-      });
+      await this.mailJobs.recoverStaleProcessingJobs(
+        new Date(Date.now() - STALE_CLAIM_MS),
+      );
+      const due = await this.prisma.$queryRawUnsafe<
+        Array<{ id: string; tenantId: string }>
+      >(
+        `SELECT "id", "tenant_id" AS "tenantId"
+         FROM "mail_jobs"
+         WHERE ("status" = 'waiting' AND "send_not_before" <= CURRENT_TIMESTAMP)
+            OR ("status" = 'queued' AND "scheduled_at" <= CURRENT_TIMESTAMP)
+            OR ("status" = 'queued' AND "scheduled_at" IS NULL AND "send_not_before" IS NULL)
+         ORDER BY COALESCE("send_not_before", "scheduled_at", "created_at") ASC, "id" ASC
+         LIMIT 20`,
+      );
       for (const job of due) {
         try {
           await this.mailJobs.processQueuedMailJob(job.tenantId, job.id, null);

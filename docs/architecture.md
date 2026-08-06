@@ -49,9 +49,14 @@
   `location_limit` 管理；默认不读取租户业务明细
 - Tenant 模块：租户管理与隔离
 - Subscription 模块：订阅状态与有效期校验
-- Scan 模块：严格解析 `PD1|ENTRY|person_code` / `PD1|EXIT|person_code`、扫码事件入库、幂等与冲突处理
+- Scan 模块：按 ADR-015 严格解析产品名无关的 `V2E<person_code>` / `V2X<person_code>`、扫码事件入库、幂等与冲突处理；不双读 `PD1|...` 或迁移旧资产
 - Mail 模块：邮件任务创建、发送、重试
 - Audit 模块：以 best-effort 方式写入关键操作审计日志；审计写入失败不改变主业务结果
+
+> ADR-017 已在本地实现：首次发送使用数据库时间权威的 10 秒 `waiting` 犹豫期，并以原子条件更新决定
+> `canceled` 或 `processing` 唯一胜者；首次 `send_not_before/cancel_until` 与 retry `scheduled_at`
+> 分离。worker 每秒扫描并以数据库条件领取，多实例不依赖进程内锁；provider 边界前持久化 attempt，
+> stale claim 在未调用 provider 时恢复，投递结果不确定时进入 `delivery_unknown` 且不自动重发。
 
 ## 4. 数据层
 
@@ -83,8 +88,8 @@
 - ADR-006/ADR-013 已 Accepted：`tenant_manager` 管理自身 tenant 的 `operator`、location 与租户内
   数据，`operator` 维护授权地点内的人员映射与扫码；tenantless `platform_admin` 使用独立身份、
   `/platform` UI、`/api/platform/*` API 和 token audience 执行平台操作
-- operator 的 location 权限来自 `operator_location_assignments` 显式绑定。共享 `LocationAccessService` 把 token tenant、operator user ID 与 assignment 关系组合为统一数据库过滤条件，供 locations、people、scan、history、mail job 与 unmapped case 复用
-- assignment 不写入 JWT、不做进程缓存；每个新业务请求都在数据库查询中包含 assignment 关系，因此撤销后立即阻止新的扫码、映射写入、历史读取与异常处理。只有 `tenant_manager` 可绕过 assignment，但仍强制 tenant scope
+- operator 的 location 权限来自 `operator_location_assignments` 显式绑定。共享 `LocationAccessService` 把 token tenant、operator user ID 与 assignment 关系组合为统一数据库过滤条件，供 locations、people、scan、history 与 mail job 复用
+- assignment 不写入 JWT、不做进程缓存；每个新业务请求都在数据库查询中包含 assignment 关系，因此撤销后立即阻止新的扫码、映射写入与历史读取。只有 `tenant_manager` 可绕过 assignment，但仍强制 tenant scope
 - 用户生命周期模块只查询 token tenant 下的 `operator`；创建与重置使用 Argon2 哈希，登录身份修改、
   禁用或重置同步撤销活动会话，且不允许把任何账号提升为或修改 `tenant_manager`
 - 登录成功后，tenant scope 以后端会话/token 中的 `tenant_id` 为准，业务接口不允许越权切换 tenant
@@ -131,7 +136,7 @@
 - operator-location 授权默认拒绝：迁移不为旧 operator 回填任何地点，客户端 location ID 不能扩大服务端关系过滤条件
 - 敏感数据脱敏日志
 - 密钥与配置通过环境变量注入
-- 审计登录成功/失败、角色或跨租户拒绝、订阅拒绝、未映射扫码、扫码成功与 sandbox 发送成功/失败
+- 审计登录成功/失败、角色或跨租户拒绝、订阅拒绝、扫码成功与 sandbox 发送成功/失败；格式正确但没有当前 active 映射的输入不写业务事件或逐请求数据库审计
 - 同租户、同地点、同解析后 `person_code`、同动作在 10 秒内重复提交时，通过数据库事务 advisory lock 返回原 scan event/mail job，并标记 `deduplicated=true`；相反动作返回 `SCAN_ACTION_CONFLICT`
 - 客户端可为提交附带 `Idempotency-Key`；服务端只保存 key 与规范请求内容的 SHA-256 哈希，并在 24 小时内重放原 scan event/mail job，禁止同 key 绑定不同动作或人员
 - 浏览器按用户本地时区显示时间；数据库、API 与导出使用 UTC
@@ -142,7 +147,7 @@
 - 12 位 `person_code` 仅是公开定位符：服务端生成、数据库全局唯一；解析仍必须同时限定 JWT tenant 与当前 location，不能作为认证或授权依据
 - 新人员的 `person_code` 是动作码内的公开定位符；扫码写接口只接受 ADR-008 的两张人员动作码，不接受裸 `person_code`、旧 `scan_code`、人工动作选择或按日次数推断
 - 既有扫码和邮件记录的动作标记为 `unknown` / `legacy_unknown`，历史查询不对旧数据反推进入或离开
-- 未映射扫码使用独立 `unmapped_scan_cases` 处理状态；修正映射与历史邮件重发解耦，当前不自动补发
+- ADR-018 已 `Accepted`：服务上线前直接移除 `unmapped_scan_cases`、独立 API/UI 和 `unmapped` 历史状态。格式正确但当前 tenant/location 没有 active 映射时统一返回 `SCAN_CODE_NOT_MAPPED`，不创建 scan event、case、mail job 或补发邮件，也不查询其他 tenant/location 的人员存在性
 - 待删除地点立即停止扫码、人员写入、assignment 新增和 queued 邮件；历史读取仍按 tenant 与现有
   operator assignment 授权。地点终结清理优先级高于其人员各自的期限，并撤销 operator assignments
 

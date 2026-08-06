@@ -11,7 +11,13 @@ export type CreateScanEventResponse = {
   person_code: string;
   action: Exclude<ScanAction, 'unknown'>;
   action_source: ScanActionSource;
-  status: 'queued' | 'processing' | 'sent' | 'failed';
+  status: ScanHistoryStatus;
+  effective_status: 'active' | 'canceled';
+  mail_status: ScanHistoryStatus;
+  can_cancel: boolean;
+  cancel_until: string | null;
+  server_time: string;
+  canceled_at: string | null;
   retry_count: number;
   scheduled_at: string | null;
   error_message: string | null;
@@ -19,11 +25,13 @@ export type CreateScanEventResponse = {
 };
 
 export type ScanHistoryStatus =
-  | 'unmapped'
+  | 'waiting'
   | 'queued'
   | 'processing'
   | 'sent'
-  | 'failed';
+  | 'failed'
+  | 'canceled'
+  | 'delivery_unknown';
 
 export type ScanEventHistoryItem = {
   scan_event_id: string;
@@ -37,6 +45,12 @@ export type ScanEventHistoryItem = {
   action_source: ScanActionSource;
   received_at: string;
   status: ScanHistoryStatus;
+  effective_status: 'active' | 'canceled';
+  mail_status: ScanHistoryStatus;
+  can_cancel: boolean;
+  cancel_until: string | null;
+  server_time: string;
+  canceled_at: string | null;
   mail_job: null | {
     mail_job_id: string;
     status: string;
@@ -44,6 +58,15 @@ export type ScanEventHistoryItem = {
     sent_at: string | null;
     error_message: string | null;
   };
+};
+
+export type CancelScanEventResponse = {
+  scan_event_id: string;
+  mail_job_id: string;
+  effective_status: 'canceled';
+  mail_status: 'canceled';
+  canceled_at: string;
+  server_time: string;
 };
 
 export type ScanEventListResponse = {

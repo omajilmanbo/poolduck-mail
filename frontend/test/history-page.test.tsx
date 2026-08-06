@@ -77,16 +77,6 @@ describe('history workspace', () => {
     expect(shouldPollHistory([queued], 10)).toBe(false);
   });
 
-  it('represents an unmapped scan without a synthetic mail job', () => {
-    const item = historyItem('unmapped');
-    item.scan_type = 'unmapped';
-    item.mail_job = null;
-    expect(historyItemToRecord(item)).toMatchObject({
-      mailJobId: null,
-      status: 'unmapped',
-    });
-  });
-
   it('uses a fallback when historical person name is unavailable', () => {
     const item = historyItem('sent');
     item.person_name = null;

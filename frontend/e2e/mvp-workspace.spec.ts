@@ -18,7 +18,7 @@ async function login(page: Page, input: {
   await expect(page.getByRole('heading', { name: '扫码工作台' })).toBeVisible();
 }
 
-test('MVP GUI: login, unmapped/mapped scan, history refresh, and sandbox result', async ({ page }) => {
+test('MVP GUI: login, rejected/mapped scan, history refresh, and sandbox result', async ({ page }) => {
   await login(page, {
     tenantCode: activeTenantCode,
     identifier: 'local-operator',
@@ -33,17 +33,14 @@ test('MVP GUI: login, unmapped/mapped scan, history refresh, and sandbox result'
 
   await page
     .getByTestId('scan-code-input')
-    .fill('PD1|ENTRY|01K0ABC19999');
+    .fill('V2E01K0ABC19999');
   await page.getByTestId('scan-submit').click();
-  await expect(page.getByTestId('mail-status').first()).toHaveText('未映射');
-  await page.getByRole('link', { name: '未映射扫码' }).click();
-  await expect(page.getByRole('heading', { name: '未映射扫码处理' })).toBeVisible();
-  await expect(page.getByText('01K0ABC19999').first()).toBeVisible();
-  await page.getByRole('link', { name: '返回工作台' }).click();
+  await expect(page.getByText('person_code未在当前 location 找到映射邮箱')).toBeVisible();
+  await expect(page.getByText('01K0ABC19999')).toHaveCount(0);
 
   await page
     .getByTestId('scan-code-input')
-    .fill('PD1|ENTRY|01K0ABC10001');
+    .fill('V2E01K0ABC10001');
   await page.getByTestId('scan-submit').click();
 
   await expect(page.getByTestId('mail-status').first()).toHaveText(
@@ -111,8 +108,8 @@ test('operator can create, edit, deactivate and reactivate a person mapping', as
   await row.getByRole('button', { name: '查看动作码' }).click();
   const codeDialog = page.getByRole('dialog');
   await expect(codeDialog.getByRole('img')).toHaveCount(4);
-  await expect(codeDialog).toContainText(`PD1|ENTRY|${personCode}`);
-  await expect(codeDialog).toContainText(`PD1|EXIT|${personCode}`);
+  await expect(codeDialog).toContainText(`V2E${personCode}`);
+  await expect(codeDialog).toContainText(`V2X${personCode}`);
   const downloadPromise = page.waitForEvent('download');
   await codeDialog.getByRole('button', { name: '下载全部四张图片 ZIP' }).click();
   expect((await downloadPromise).suggestedFilename()).toBe(`${personCode}-action-codes.zip`);

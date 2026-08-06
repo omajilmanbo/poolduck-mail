@@ -13,7 +13,7 @@ describe('mail job retry policy', () => {
     [2, 3, '2026-07-23T00:10:00.000Z', 'queued'],
     [3, 4, null, 'failed'],
   ])('applies the approved retry boundary from retry_count=%s', async (current, next, scheduled, status) => {
-    const { service, prisma, provider } = setup(current, { count: 1 });
+    const { service, prisma, provider } = setup(current, 1);
     const result = await service.processQueuedMailJob('tenant-1', 'job-1', 'user-1');
 
     expect(result).toMatchObject({
@@ -35,26 +35,41 @@ describe('mail job retry policy', () => {
   });
 
   it('does not call the provider when another processor owns the atomic claim', async () => {
-    const { service, provider } = setup(0, { count: 0 }, 'processing');
+    const { service, provider } = setup(0, 0, 'processing');
     await expect(service.processQueuedMailJob('tenant-1', 'job-1', null)).rejects.toBeInstanceOf(ConflictException);
     expect(provider.send).not.toHaveBeenCalled();
   });
 
-  function setup(retryCount: number, claim: { count: number }, currentStatus = 'queued') {
+  function setup(retryCount: number, claim: number, currentStatus = 'queued') {
     const prisma = {
+      $executeRawUnsafe: jest.fn().mockResolvedValue(claim),
       mailJob: {
-        updateMany: jest.fn().mockResolvedValue(claim),
-        findFirst: jest.fn().mockResolvedValue({ id: 'job-1', status: currentStatus, scheduledAt: null }),
+        updateMany: jest.fn().mockResolvedValue({ count: claim }),
+        findFirst: jest.fn().mockResolvedValue({ id: 'job-1', status: currentStatus, scheduledAt: null, sendNotBefore: null }),
         findFirstOrThrow: jest.fn().mockResolvedValue({
           id: 'job-1',
           toEmail: 'recipient@example.local',
           subject: 'subject',
           body: 'Tenant，Officeからのお知らせ：Person　さんは　20260723000000　に退室しました。',
           retryCount,
+          location: { status: 'active' },
+          personMapping: { status: 'active' },
         }),
         update: jest.fn().mockResolvedValue(undefined),
       },
+      mailDeliveryAttempt: {
+        create: jest.fn().mockResolvedValue(undefined),
+        update: jest.fn().mockResolvedValue(undefined),
+        findUnique: jest.fn(),
+      },
     };
+    Object.assign(prisma, {
+      $transaction: jest.fn(async (input: unknown) =>
+        typeof input === 'function'
+          ? (input as (tx: typeof prisma) => unknown)(prisma)
+          : Promise.all(input as Promise<unknown>[]),
+      ),
+    });
     const license = {
       checkTenantLicense: jest.fn().mockResolvedValue({ status: 'active' }),
       assertCanSend: jest.fn(),

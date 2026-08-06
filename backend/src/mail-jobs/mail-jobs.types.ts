@@ -1,6 +1,6 @@
 export type SendMailJobResponse = {
   mail_job_id: string;
-  status: 'queued' | 'sent' | 'failed';
+  status: 'queued' | 'sent' | 'failed' | 'delivery_unknown';
   retry_count: number;
   scheduled_at: string | null;
   provider_result: {
@@ -20,6 +20,9 @@ export type MailJobHistoryItem = {
   error_message: string | null;
   retry_count: number;
   scheduled_at: string | null;
+  cancel_until: string | null;
+  send_not_before: string | null;
+  claimed_at: string | null;
   context: {
     tenant_name: string;
     location_name: string;
