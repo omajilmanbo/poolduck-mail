@@ -43,8 +43,11 @@ test('MVP GUI: login, rejected/mapped scan, history refresh, and sandbox result'
     .fill('V2E01K0ABC10001');
   await page.getByTestId('scan-submit').click();
 
-  await expect(page.getByTestId('mail-status').first()).toHaveText(
+  const latestMailStatus = page.getByTestId('mail-status').first();
+  await expect(latestMailStatus).toHaveText('可取消等待中');
+  await expect(latestMailStatus).toHaveText(
     expectedMailStatus === 'queued' ? '发送中' : '已发送',
+    { timeout: 20_000 },
   );
   await expect(page.getByText('01K0ABC10001').first()).toBeVisible();
   await expect(page.getByTestId('scan-action').first()).toHaveText('进入');
