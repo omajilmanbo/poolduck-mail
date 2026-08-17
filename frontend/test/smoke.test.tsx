@@ -37,7 +37,7 @@ describe('frontend API client', () => {
     await client.createScanEvent(
       'token-1',
       'location-1',
-      'PD1|ENTRY|01K0ABC10001',
+      'V2E01K0ABC10001',
       'scan-test-key-123',
     );
 
@@ -48,7 +48,7 @@ describe('frontend API client', () => {
         body: JSON.stringify(
           createScanEventBody(
             'location-1',
-            'PD1|ENTRY|01K0ABC10001',
+            'V2E01K0ABC10001',
           ),
         ),
         headers: expect.objectContaining({
@@ -61,12 +61,37 @@ describe('frontend API client', () => {
     const body = JSON.parse(request.body as string) as Record<string, unknown>;
     expect(body).toEqual({
       location_id: 'location-1',
-      scan_code: 'PD1|ENTRY|01K0ABC10001',
+      scan_code: 'V2E01K0ABC10001',
     });
     expect(body).not.toHaveProperty('tenant_id');
     expect(body).not.toHaveProperty('custom_message');
     expect(body).not.toHaveProperty('custom_text');
     expect(body).not.toHaveProperty('mail_body');
+  });
+
+  it('cancels by scan event id without client-supplied tenant, location, actor or deadline', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          scan_event_id: 'scan-1',
+          mail_job_id: 'mail-1',
+          effective_status: 'canceled',
+          mail_status: 'canceled',
+          canceled_at: '2026-08-06T00:00:05.000Z',
+          server_time: '2026-08-06T00:00:05.000Z',
+        }),
+        { headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createApiClient({ baseUrl: 'http://api.local/' });
+    await client.cancelScanEvent('cookie-session', 'scan-1');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://api.local/api/scan-events/scan-1/cancel',
+      expect.objectContaining({ method: 'POST', body: undefined }),
+    );
   });
 
   it('turns login network failures into a clear API connection error', async () => {
@@ -112,9 +137,12 @@ describe('workspace helpers', () => {
   });
 
   it('uses MVP status labels for mail jobs', () => {
+    expect(mailStatusLabel('waiting')).toBe('可取消等待中');
     expect(mailStatusLabel('queued')).toBe('发送中');
     expect(mailStatusLabel('sent')).toBe('已发送');
     expect(mailStatusLabel('failed')).toBe('发送失败');
+    expect(mailStatusLabel('canceled')).toBe('已取消');
+    expect(mailStatusLabel('delivery_unknown')).toBe('投递结果未知');
   });
 
   it('uses explicit labels for persisted scan actions', () => {

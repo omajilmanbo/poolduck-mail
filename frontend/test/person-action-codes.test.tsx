@@ -33,11 +33,13 @@ describe('person action codes', () => {
       'exit-code128',
     ]);
     expect(specs.map((spec) => spec.payload)).toEqual([
-      `PD1|ENTRY|${personCode}`,
-      `PD1|ENTRY|${personCode}`,
-      `PD1|EXIT|${personCode}`,
-      `PD1|EXIT|${personCode}`,
+      `V2E${personCode}`,
+      `V2E${personCode}`,
+      `V2X${personCode}`,
+      `V2X${personCode}`,
     ]);
+    expect(specs.every((spec) => /^[A-Z0-9]{15}$/.test(spec.payload))).toBe(true);
+    expect(specs.every((spec) => !/[|\s]/.test(spec.payload))).toBe(true);
     expect(specs.every((spec) => spec.filename.startsWith(personCode))).toBe(true);
     expect(JSON.stringify(specs)).not.toContain('person@example.local');
     expect(JSON.stringify(specs)).not.toContain('44444444-4444-4444-8444-444444444444');
@@ -62,6 +64,17 @@ describe('person action codes', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it('uses product-neutral format tokens without tenant or product prefixes', () => {
+    const payloads = createPersonActionCodeSpecs(personCode).map((spec) => spec.payload);
+    expect(payloads).toEqual([
+      `V2E${personCode}`,
+      `V2E${personCode}`,
+      `V2X${personCode}`,
+      `V2X${personCode}`,
+    ]);
+    expect(payloads.every((payload) => !payload.includes('PD'))).toBe(true);
   });
 
   it('shows four previews and supports individual PNG plus ZIP downloads', async () => {

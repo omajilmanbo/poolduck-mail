@@ -35,7 +35,6 @@ describe('Scan Events API', () => {
       findFirstOrThrow: jest.Mock;
       update: jest.Mock;
     };
-    unmappedScanCase: { create: jest.Mock };
     scanRequestIdempotency: {
       findFirst: jest.Mock;
       upsert: jest.Mock;
@@ -51,8 +50,8 @@ describe('Scan Events API', () => {
   const personMappingId = '77777777-7777-4777-8777-777777777777';
   const personCode = '01K0ABC50001';
   const unmappedPersonCode = '01K0ABC59999';
-  const entryActionCode = `PD1|ENTRY|${personCode}`;
-  const exitActionCode = `PD1|EXIT|${personCode}`;
+  const entryActionCode = `V2E${personCode}`;
+  const exitActionCode = `V2X${personCode}`;
   const email = 'operator@example.local';
   const receivedAt = new Date('2026-06-22T03:04:05.000Z');
 
@@ -98,7 +97,6 @@ describe('Scan Events API', () => {
         }),
         update: jest.fn().mockResolvedValue(undefined),
       },
-      unmappedScanCase: { create: jest.fn().mockResolvedValue(undefined) },
       scanRequestIdempotency: {
         findFirst: jest.fn().mockResolvedValue(null),
         upsert: jest.fn().mockResolvedValue(undefined),
@@ -136,7 +134,13 @@ describe('Scan Events API', () => {
         email: 'taro.yamada@example.local',
       });
       prisma.scanEvent.create.mockResolvedValue({ id: scanEventId });
-      prisma.mailJob.create.mockResolvedValue({ id: mailJobId });
+      prisma.mailJob.create.mockResolvedValue({
+        id: mailJobId,
+        status: 'waiting',
+        createdAt: receivedAt,
+        cancelUntil: new Date(receivedAt.getTime() + 10_000),
+        sendNotBefore: new Date(receivedAt.getTime() + 10_000),
+      });
 
       await request(app.getHttpServer())
         .post('/api/scan-events')
@@ -153,7 +157,13 @@ describe('Scan Events API', () => {
           person_code: personCode,
           action: 'entry',
           action_source: 'person_action_code',
-          status: 'sent',
+          status: 'waiting',
+          effective_status: 'active',
+          mail_status: 'waiting',
+          can_cancel: true,
+          cancel_until: '2026-06-22T03:04:15.000Z',
+          server_time: '2026-06-22T03:04:05.000Z',
+          canceled_at: null,
           retry_count: 0,
           scheduled_at: null,
           error_message: null,
@@ -198,7 +208,7 @@ describe('Scan Events API', () => {
           actionSource: 'person_action_code',
           rawPayload: JSON.stringify({
             location_id: locationId,
-            version: 'PD1',
+            version: 'V2',
             person_code: personCode,
             action: 'entry',
           }),
@@ -223,9 +233,15 @@ describe('Scan Events API', () => {
           subject: 'Office Aからのお知らせ',
           body: 'Poolduck Tenant，Office Aからのお知らせ：山田 太郎　さんは　20260622030405　に入室しました。',
           templateKey: 'scan_entry_notice_v1',
-          status: 'queued',
+          status: 'waiting',
         },
-        select: { id: true },
+        select: {
+          id: true,
+          status: true,
+          createdAt: true,
+          cancelUntil: true,
+          sendNotBefore: true,
+        },
       });
       expect(prisma.$executeRawUnsafe).toHaveBeenCalledWith(
         'SELECT pg_advisory_xact_lock(hashtext($1))',
@@ -274,7 +290,13 @@ describe('Scan Events API', () => {
         body: 'Poolduck Tenant，Office Aからのお知らせ：山田 太郎　さんは　20260622030405　に退室しました。',
         templateKey: 'scan_exit_notice_v1',
       }),
-      select: { id: true },
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        cancelUntil: true,
+        sendNotBefore: true,
+      },
     });
     expect(prisma.scanRequestIdempotency.upsert).toHaveBeenCalledWith({
       where: {
@@ -303,26 +325,78 @@ describe('Scan Events API', () => {
     });
   });
 
-  it('rejects bare person codes and unsupported action-code formats without creating a scan event', async () => {
-    mockAuthenticatedUser();
+  it.each([
+    ['bare person code', personCode],
+    ['legacy PD1 code', `PD1|ENTRY|${personCode}`],
+    ['unknown version', `V3E${personCode}`],
+    ['unknown action', `V2A${personCode}`],
+    ['lowercase token', `V2e${personCode}`],
+    ['truncated code', `V2E${personCode.slice(0, -1)}`],
+    ['extra character', `V2E${personCode}A`],
+    ['leading space', ` V2E${personCode}`],
+    ['trailing space', `V2E${personCode} `],
+    ['internal space', `V2E${personCode.slice(0, 6)} ${personCode.slice(6)}`],
+    ['device prefix', `SCANV2E${personCode}`],
+    ['repeated suffix', `V2E${personCode}\r\n\r\n`],
+    ['legacy/new concatenation', `PD1|ENTRY|${personCode}V2E${personCode}`],
+  ])(
+    'rejects %s without creating a scan event',
+    async (_caseName, scanCode) => {
+      mockAuthenticatedUser();
 
-    const response = await request(app.getHttpServer())
-      .post('/api/scan-events')
-      .set('Authorization', `Bearer ${accessToken()}`)
-      .send({ location_id: locationId, scan_code: personCode })
-      .expect(400);
+      const response = await request(app.getHttpServer())
+        .post('/api/scan-events')
+        .set('Authorization', `Bearer ${accessToken()}`)
+        .send({ location_id: locationId, scan_code: scanCode })
+        .expect(400);
 
-    expect(response.body).toMatchObject({ code: 'ACTION_CODE_INVALID' });
-    expect(prisma.subscription.findUnique).not.toHaveBeenCalled();
-    expect(prisma.scanEvent.create).not.toHaveBeenCalled();
-    expect(prisma.mailJob.create).not.toHaveBeenCalled();
-    expect(prisma.auditLog.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        action: 'scan.action_code.denied',
-        result: 'denied',
-      }),
-    });
-  });
+      expect(response.body).toMatchObject({ code: 'ACTION_CODE_INVALID' });
+      expect(prisma.subscription.findUnique).not.toHaveBeenCalled();
+      expect(prisma.scanEvent.create).not.toHaveBeenCalled();
+      expect(prisma.mailJob.create).not.toHaveBeenCalled();
+      expect(prisma.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'scan.action_code.denied',
+          result: 'denied',
+        }),
+      });
+    },
+  );
+
+  it.each(['\r', '\n', '\r\n'])(
+    'accepts one approved %j submit suffix',
+    async (suffix) => {
+      mockAuthenticatedUser();
+      mockSubscription('active');
+      mockLocation();
+      prisma.personMapping.findFirst.mockResolvedValue({
+        id: personMappingId,
+        personCode,
+        personName: '山田 太郎',
+        email: 'taro.yamada@example.local',
+      });
+      prisma.scanEvent.create.mockResolvedValue({ id: scanEventId });
+      prisma.mailJob.create.mockResolvedValue({
+        id: mailJobId,
+        status: 'waiting',
+        createdAt: receivedAt,
+        cancelUntil: new Date(receivedAt.getTime() + 10_000),
+        sendNotBefore: new Date(receivedAt.getTime() + 10_000),
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/scan-events')
+        .set('Authorization', `Bearer ${accessToken()}`)
+        .send({ location_id: locationId, scan_code: `${entryActionCode}${suffix}` })
+        .expect(201);
+
+      expect(response.body).toMatchObject({
+        person_code: personCode,
+        action: 'entry',
+        action_source: 'person_action_code',
+      });
+    },
+  );
 
   it('rejects malformed idempotency keys without misclassifying the action code', async () => {
     mockAuthenticatedUser();
@@ -475,60 +549,29 @@ describe('Scan Events API', () => {
     expect(prisma.scanEvent.create).not.toHaveBeenCalled();
   });
 
-  it('POST /api/scan-events should record an unmapped scan_event and skip mail_job when scan_code is not mapped', async () => {
+  it('POST /api/scan-events should reject an unmapped code without persisting business records', async () => {
     mockAuthenticatedUser();
     mockSubscription('active');
     mockLocation();
     prisma.personMapping.findFirst.mockResolvedValue(null);
-    prisma.scanEvent.create.mockResolvedValue({ id: scanEventId });
-
     const response = await request(app.getHttpServer())
       .post('/api/scan-events')
       .set('Authorization', `Bearer ${accessToken()}`)
       .send({
         location_id: locationId,
-        scan_code: `PD1|EXIT|${unmappedPersonCode}`,
+        scan_code: `V2X${unmappedPersonCode}`,
       })
       .expect(404);
 
     expect(response.body).toMatchObject({
       code: 'SCAN_CODE_NOT_MAPPED',
       message: 'person_code未在当前 location 找到映射邮箱',
-      scan_event_id: scanEventId,
     });
-    expect(prisma.scanEvent.create).toHaveBeenCalledWith({
-      data: {
-        tenantId,
-        locationId,
-        personCodeSnapshot: unmappedPersonCode,
-        scanCode: unmappedPersonCode,
-        scanType: 'unmapped',
-        action: 'exit',
-        actionSource: 'person_action_code',
-        rawPayload: JSON.stringify({
-          location_id: locationId,
-          version: 'PD1',
-          person_code: unmappedPersonCode,
-          action: 'exit',
-        }),
-        receivedAt,
-        createdByUserId: userId,
-      },
-      select: { id: true },
-    });
+    expect(response.body).not.toHaveProperty('scan_event_id');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.scanEvent.create).not.toHaveBeenCalled();
     expect(prisma.mailJob.create).not.toHaveBeenCalled();
-    expect(prisma.unmappedScanCase.create).toHaveBeenCalledWith({
-      data: { tenantId, scanEventId, locationId },
-    });
-    expect(prisma.auditLog.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        tenantId,
-        actorUserId: userId,
-        action: 'scan.unmapped',
-        resourceId: scanEventId,
-        result: 'failure',
-      }),
-    });
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
   });
 
   it('returns the existing task for a duplicate scan inside the 10 second window', async () => {
@@ -571,6 +614,12 @@ describe('Scan Events API', () => {
         action: 'entry',
         action_source: 'person_action_code',
         status: 'queued',
+        effective_status: 'active',
+        mail_status: 'queued',
+        can_cancel: false,
+        cancel_until: null,
+        server_time: '2026-06-22T03:04:05.000Z',
+        canceled_at: null,
         retry_count: 0,
         scheduled_at: null,
         error_message: null,
@@ -686,6 +735,74 @@ describe('Scan Events API', () => {
     });
     expect(prisma.scanEvent.create).not.toHaveBeenCalled();
     expect(prisma.mailJob.create).not.toHaveBeenCalled();
+  });
+
+  it('POST /api/scan-events/:id/cancel atomically cancels a waiting job', async () => {
+    mockAuthenticatedUser();
+    const canceledAt = new Date('2026-06-22T03:04:08.000Z');
+    prisma.scanEvent.findFirst
+      .mockResolvedValueOnce({
+        id: scanEventId,
+        locationId,
+        canceledAt: null,
+        mailJobs: [{ id: mailJobId, status: 'waiting', cancelUntil: new Date('2026-06-22T03:04:15.000Z') }],
+      })
+      .mockResolvedValueOnce({
+        canceledAt,
+        mailJobs: [{ id: mailJobId, status: 'canceled', cancelUntil: new Date('2026-06-22T03:04:15.000Z') }],
+      });
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/scan-events/${scanEventId}/cancel`)
+      .set('Authorization', `Bearer ${accessToken()}`)
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      scan_event_id: scanEventId,
+      mail_job_id: mailJobId,
+      effective_status: 'canceled',
+      mail_status: 'canceled',
+      canceled_at: canceledAt.toISOString(),
+    });
+    expect(prisma.$executeRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining('CURRENT_TIMESTAMP < "cancel_until"'),
+      mailJobId,
+      tenantId,
+      locationId,
+      scanEventId,
+    );
+  });
+
+  it('POST /api/scan-events/:id/cancel is idempotent after cancellation', async () => {
+    mockAuthenticatedUser();
+    const canceledAt = new Date('2026-06-22T03:04:07.000Z');
+    prisma.scanEvent.findFirst.mockResolvedValue({
+      id: scanEventId,
+      locationId,
+      canceledAt,
+      mailJobs: [{ id: mailJobId, status: 'canceled', cancelUntil: new Date('2026-06-22T03:04:15.000Z') }],
+    });
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/scan-events/${scanEventId}/cancel`)
+      .set('Authorization', `Bearer ${accessToken()}`)
+      .expect(200);
+
+    expect(response.body.canceled_at).toBe(canceledAt.toISOString());
+    expect(prisma.$executeRawUnsafe).not.toHaveBeenCalled();
+  });
+
+  it('POST /api/scan-events/:id/cancel returns one not-found shape outside the authorized location', async () => {
+    mockAuthenticatedUser();
+    prisma.scanEvent.findFirst.mockResolvedValue(null);
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/scan-events/${scanEventId}/cancel`)
+      .set('Authorization', `Bearer ${accessToken()}`)
+      .expect(404);
+
+    expect(response.body).toMatchObject({ code: 'SCAN_EVENT_NOT_FOUND' });
+    expect(prisma.$executeRawUnsafe).not.toHaveBeenCalled();
   });
 
   function mockAuthenticatedUser() {

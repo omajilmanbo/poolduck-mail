@@ -20,8 +20,9 @@ describe('history CSV exports', () => {
       id: 'scan-1', locationId: 'location-1', scanCode: '=SCAN', scanType: 'entry',
       personCodeSnapshot: null, action: 'entry', actionSource: 'person_action_code',
       receivedAt: new Date('2026-07-22T00:00:00.000Z'), createdAt: new Date('2026-07-22T00:00:00.000Z'),
+      canceledAt: null,
       location: { name: '=Office' },
-      mailJobs: [{ id: 'mail-1', status: 'sent', sentAt: new Date('2026-07-22T00:01:00.000Z'), errorMessage: null }],
+      mailJobs: [{ id: 'mail-1', status: 'sent', sentAt: new Date('2026-07-22T00:01:00.000Z'), cancelUntil: null, errorMessage: null }],
     }]);
     const prisma = { scanEvent: { findMany } } as unknown as PrismaService;
     const audit = { record: jest.fn().mockResolvedValue(true) } as unknown as AuditService;
@@ -32,7 +33,6 @@ describe('history CSV exports', () => {
       prisma,
       {} as LicenseService,
       audit,
-      {} as never,
       locationAccess as never,
     );
 
@@ -42,17 +42,47 @@ describe('history CSV exports', () => {
     expect(csv).toContain("'=SCAN");
     expect(csv).toContain('"action","action_source"');
     expect(csv).toContain('"entry","person_action_code"');
+    expect(csv).toContain('"status","effective_status","canceled_at"');
+    expect(csv).toContain('"sent","active",""');
     expect(findMany.mock.calls[0][0].where).toEqual(expect.objectContaining({ tenantId: 'tenant-1' }));
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'scan.export' }));
+  });
+
+  it('exports the original action with canceled effective state and cancellation time', async () => {
+    const canceledAt = new Date('2026-07-22T00:00:05.000Z');
+    const prisma = {
+      scanEvent: {
+        findMany: jest.fn().mockResolvedValue([{
+          id: 'scan-1', locationId: 'location-1', scanCode: 'V2E01K0ABC10001', scanType: 'entry',
+          personCodeSnapshot: '01K0ABC10001', action: 'entry', actionSource: 'person_action_code',
+          receivedAt: new Date('2026-07-22T00:00:00.000Z'), createdAt: new Date('2026-07-22T00:00:00.000Z'),
+          canceledAt,
+          location: { name: 'Office' },
+          mailJobs: [{ id: 'mail-1', status: 'canceled', sentAt: null, cancelUntil: canceledAt, errorMessage: null }],
+        }]),
+      },
+    } as unknown as PrismaService;
+    const service = new ScanEventsService(
+      prisma,
+      {} as LicenseService,
+      { record: jest.fn().mockResolvedValue(true) } as unknown as AuditService,
+      { resourceLocationWhere: jest.fn().mockReturnValue({}) } as never,
+    );
+
+    const csv = await service.exportScanEvents(user, range);
+
+    expect(csv).toContain('"entry","person_action_code","canceled","canceled","2026-07-22T00:00:05.000Z"');
   });
 
   it('partially masks recipient email and never exports mail body or provider secret', async () => {
     const findMany = jest.fn().mockResolvedValue([{
       id: 'mail-1', status: 'sent', createdAt: new Date('2026-07-22T00:00:00.000Z'),
       sentAt: new Date('2026-07-22T00:01:00.000Z'), errorMessage: null, toEmail: 'abcz@example.com',
+      retryCount: 0, scheduledAt: null, cancelUntil: null, sendNotBefore: null, claimedAt: null,
       tenantNameSnapshot: 'Tenant', locationNameSnapshot: 'Office',
       personNameSnapshot: 'Person', personCodeSnapshot: '01K0ABC70001',
       actionSnapshot: 'exit', contextSnapshotSource: 'scan_relation',
+      locationId: 'location-1', location: { locationCode: '10CA1001' },
       scanEvent: {
         id: 'scan-1', locationId: 'location-1', scanCode: '01K0ABC70001',
         action: 'exit', actionSource: 'person_action_code',
@@ -87,7 +117,6 @@ describe('history CSV exports', () => {
       {} as PrismaService,
       {} as LicenseService,
       {} as AuditService,
-      {} as never,
       {} as never,
     );
     await expect(service.exportScanEvents(user, {

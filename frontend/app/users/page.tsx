@@ -241,7 +241,7 @@ export default function UsersPage() {
       removedAssignments.length > 0 &&
       !window.confirm(
         `撤销 ${removedAssignments.map((location) => location.location_name).join('、')} 后，` +
-          `${row.username} 对这些地点的新扫码、人员写入、历史和未映射处理请求会立即被拒绝。确认保存？`,
+          `${row.username} 对这些地点的新扫码、人员写入和历史请求会立即被拒绝。确认保存？`,
       )
     ) {
       return;

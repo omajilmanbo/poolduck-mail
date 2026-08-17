@@ -124,25 +124,6 @@ describe('Tenant-scoped history APIs', () => {
     );
   });
 
-  it('returns unmapped scan history without inventing a mail job', async () => {
-    prisma.scanEvent.findFirst.mockResolvedValue({
-      ...scanRow(scanEventId, 'unmapped'),
-      scanType: 'unmapped',
-      mailJobs: [],
-    });
-
-    const response = await request(app.getHttpServer())
-      .get(`/api/scan-events/${scanEventId}`)
-      .set('Authorization', `Bearer ${token()}`)
-      .expect(200);
-
-    expect(response.body).toMatchObject({
-      scan_event_id: scanEventId,
-      status: 'unmapped',
-      mail_job: null,
-    });
-  });
-
   it('returns legacy scans as unknown without inferring an action', async () => {
     prisma.scanEvent.findFirst.mockResolvedValue({
       ...scanRow(scanEventId, 'sent'),

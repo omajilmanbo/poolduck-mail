@@ -108,6 +108,36 @@ const platformMigrationPath = join(
   '20260729000000_add_platform_control_plane',
   'migration.sql',
 );
+const removeUnmappedMigrationPath = join(
+  __dirname,
+  '..',
+  'prisma',
+  'migrations',
+  '20260806000000_remove_unmapped_scan_cases',
+  'migration.sql',
+);
+const removeUnmappedRollbackPath = join(
+  __dirname,
+  '..',
+  'prisma',
+  'rollback',
+  '20260806000000_remove_unmapped_scan_cases.sql',
+);
+const scanCancellationMigrationPath = join(
+  __dirname,
+  '..',
+  'prisma',
+  'migrations',
+  '20260806010000_add_scan_send_cancellation',
+  'migration.sql',
+);
+const scanCancellationRollbackPath = join(
+  __dirname,
+  '..',
+  'prisma',
+  'rollback',
+  '20260806010000_add_scan_send_cancellation.sql',
+);
 const platformRollbackPath = join(
   __dirname,
   '..',
@@ -145,6 +175,22 @@ describe('Prisma initial schema', () => {
   const tenantCodeRollback = readFileSync(tenantCodeRollbackPath, 'utf8');
   const platformMigration = readFileSync(platformMigrationPath, 'utf8');
   const platformRollback = readFileSync(platformRollbackPath, 'utf8');
+  const removeUnmappedMigration = readFileSync(
+    removeUnmappedMigrationPath,
+    'utf8',
+  );
+  const removeUnmappedRollback = readFileSync(
+    removeUnmappedRollbackPath,
+    'utf8',
+  );
+  const scanCancellationMigration = readFileSync(
+    scanCancellationMigrationPath,
+    'utf8',
+  );
+  const scanCancellationRollback = readFileSync(
+    scanCancellationRollbackPath,
+    'utf8',
+  );
 
   it('defines the MVP initial models', () => {
     for (const model of [
@@ -328,6 +374,28 @@ describe('Prisma initial schema', () => {
     expect(tenantCodeRollback).not.toMatch(/DELETE\s+FROM\s+"tenants"/i);
   });
 
+  it('removes the pre-launch unmapped case workflow with a guarded empty rollback', () => {
+    expect(schema).not.toContain('model UnmappedScanCase');
+    expect(schema).not.toContain('unmappedScanCases');
+    expect(schema).not.toContain('unmappedScanCase');
+    expect(removeUnmappedMigration).toContain(
+      'DROP TABLE "unmapped_scan_cases";',
+    );
+    expect(removeUnmappedMigration).toContain(
+      `DELETE FROM "scan_events"
+WHERE "scan_type" = 'unmapped';`,
+    );
+    expect(removeUnmappedMigration.indexOf('DROP TABLE')).toBeLessThan(
+      removeUnmappedMigration.indexOf('DELETE FROM "scan_events"'),
+    );
+    expect(removeUnmappedRollback).toContain(
+      'CREATE TABLE "unmapped_scan_cases"',
+    );
+    expect(removeUnmappedRollback).not.toMatch(
+      /INSERT\s+INTO\s+"unmapped_scan_cases"/i,
+    );
+  });
+
   it('adds a tenantless platform control plane, safe quota backfill and guarded rollback', () => {
     for (const model of [
       'PlatformAdmin',
@@ -340,9 +408,8 @@ describe('Prisma initial schema', () => {
     expect(platformMigration).toContain(
       'SET "location_limit" = GREATEST(',
     );
-    expect(platformMigration).toContain(
-      `WHERE l."tenant_id" = t."id"
-      AND l."status" <> 'purged'`,
+    expect(platformMigration).toMatch(
+      /WHERE l\."tenant_id" = t\."id"\s+AND l\."status" <> 'purged'/,
     );
     expect(platformMigration).toContain(
       'CREATE UNIQUE INDEX "platform_admins_single_active_key"',
@@ -358,6 +425,31 @@ describe('Prisma initial schema', () => {
     );
     expect(platformRollback).not.toMatch(
       /DELETE\s+FROM\s+"(?:tenants|users|subscriptions|locations|platform_audit_logs)"/i,
+    );
+  });
+
+  it('adds database-time cancellation windows, delivery attempts and a guarded rollback', () => {
+    expect(schema).toContain('model MailDeliveryAttempt');
+    expect(schema).toContain('cancelUntil');
+    expect(schema).toContain('sendNotBefore');
+    expect(schema).toContain('claimAttemptId');
+    expect(scanCancellationMigration).toContain(
+      `ALTER COLUMN "status" SET DEFAULT 'waiting'`,
+    );
+    expect(scanCancellationMigration).toContain(
+      `CURRENT_TIMESTAMP + INTERVAL '10 seconds'`,
+    );
+    expect(scanCancellationMigration).toContain(
+      'CREATE TABLE "mail_delivery_attempts"',
+    );
+    expect(scanCancellationMigration).toContain(
+      'mail_jobs_waiting_window_check',
+    );
+    expect(scanCancellationRollback).toContain(
+      'rollback blocked: waiting mail jobs must be processed or canceled first',
+    );
+    expect(scanCancellationRollback).not.toMatch(
+      /DROP\s+(?:TABLE|COLUMN)|DELETE\s+FROM/i,
     );
   });
 });

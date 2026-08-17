@@ -22,7 +22,7 @@ export class SandboxMailProvider implements MailProvider {
     return {
       provider: 'sandbox',
       success: true,
-      providerMessageId: `sandbox_${input.mailJobId}`,
+      providerMessageId: `sandbox_${input.mailJobId}_${input.attemptId}`,
     };
   }
 }

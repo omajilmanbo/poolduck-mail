@@ -9,6 +9,8 @@ describe('Mail Jobs API', () => {
   let app: INestApplication;
   let jwtService: JwtService;
   let prisma: {
+    $transaction: jest.Mock;
+    $executeRawUnsafe: jest.Mock;
     user: {
       findFirst: jest.Mock;
     };
@@ -20,6 +22,11 @@ describe('Mail Jobs API', () => {
       findFirstOrThrow: jest.Mock;
       updateMany: jest.Mock;
       update: jest.Mock;
+    };
+    mailDeliveryAttempt: {
+      create: jest.Mock;
+      update: jest.Mock;
+      findUnique: jest.Mock;
     };
     auditLog: { create: jest.Mock };
   };
@@ -40,6 +47,12 @@ describe('Mail Jobs API', () => {
     delete process.env.MAIL_MOCK_SEND_RESULT;
 
     prisma = {
+      $transaction: jest.fn(async (input: unknown) =>
+        typeof input === 'function'
+          ? (input as (tx: typeof prisma) => unknown)(prisma)
+          : Promise.all(input as Promise<unknown>[]),
+      ),
+      $executeRawUnsafe: jest.fn(),
       user: {
         findFirst: jest.fn(),
       },
@@ -51,6 +64,11 @@ describe('Mail Jobs API', () => {
         findFirstOrThrow: jest.fn(),
         updateMany: jest.fn(),
         update: jest.fn(),
+      },
+      mailDeliveryAttempt: {
+        create: jest.fn().mockResolvedValue(undefined),
+        update: jest.fn().mockResolvedValue(undefined),
+        findUnique: jest.fn(),
       },
       auditLog: { create: jest.fn().mockResolvedValue(undefined) },
     };
@@ -78,36 +96,33 @@ describe('Mail Jobs API', () => {
     mockMailJob('queued');
     prisma.mailJob.update.mockResolvedValue(undefined);
 
-    await request(app.getHttpServer())
+    const response = await request(app.getHttpServer())
       .post(`/api/mail-jobs/${mailJobId}/send`)
       .set('Authorization', `Bearer ${accessToken()}`)
-      .expect(201)
-      .expect({
-        mail_job_id: mailJobId,
-        status: 'sent',
-        retry_count: 0,
-        scheduled_at: null,
-        provider_result: {
-          provider: 'sandbox',
-          success: true,
-          provider_message_id: `sandbox_${mailJobId}`,
-        },
-      });
-
-    expect(prisma.mailJob.updateMany).toHaveBeenCalledWith({
-      where: {
-        id: mailJobId,
-        tenantId,
-        status: 'queued',
-        OR: [{ scheduledAt: null }, { scheduledAt: { lte: sentAt } }],
-      },
-      data: { status: 'processing' },
+      .expect(201);
+    expect(response.body).toMatchObject({
+      mail_job_id: mailJobId,
+      status: 'sent',
+      retry_count: 0,
+      scheduled_at: null,
+      provider_result: { provider: 'sandbox', success: true },
     });
+    expect(response.body.provider_result.provider_message_id).toMatch(
+      new RegExp(`^sandbox_${mailJobId}_[0-9a-f-]{36}$`),
+    );
+
+    expect(prisma.$executeRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining(`"status" = 'processing'`),
+      expect.any(String),
+      mailJobId,
+      tenantId,
+      false,
+    );
     expect(prisma.mailJob.update).toHaveBeenCalledWith({
       where: { id: mailJobId },
       data: {
         status: 'sent',
-        providerMessageId: `sandbox_${mailJobId}`,
+        providerMessageId: expect.stringMatching(new RegExp(`^sandbox_${mailJobId}_`)),
         errorMessage: null,
         scheduledAt: null,
         sentAt,
@@ -118,7 +133,7 @@ describe('Mail Jobs API', () => {
         action: 'mail.send',
         resourceId: mailJobId,
         result: 'success',
-        metadataJson: { provider: 'sandbox' },
+        metadataJson: expect.objectContaining({ provider: 'sandbox', attempt_id: expect.any(String) }),
       }),
     });
   });
@@ -160,19 +175,19 @@ describe('Mail Jobs API', () => {
       data: expect.objectContaining({
         action: 'mail.retry.scheduled',
         result: 'failure',
-        metadataJson: {
+        metadataJson: expect.objectContaining({
           provider: 'sandbox',
           reason: 'PROVIDER_FAILURE',
           retry_count: 1,
           scheduled_at: '2026-06-22T04:05:36.000Z',
-        },
+        }),
       }),
     });
   });
 
   it('POST /api/mail-jobs/:mail_job_id/send should reject cross-tenant mail_jobs', async () => {
     mockAuthenticatedUser();
-    prisma.mailJob.updateMany.mockResolvedValue({ count: 0 });
+    prisma.$executeRawUnsafe.mockResolvedValue(0);
     prisma.mailJob.findFirst.mockResolvedValue(null);
 
     const response = await request(app.getHttpServer())
@@ -238,6 +253,25 @@ describe('Mail Jobs API', () => {
     expect(prisma.mailJob.update).not.toHaveBeenCalled();
   });
 
+  it('POST /api/mail-jobs/:mail_job_id/send cannot bypass the initial waiting window', async () => {
+    mockAuthenticatedUser();
+    mockMailJob('waiting');
+    prisma.mailJob.findFirst.mockResolvedValue({
+      id: mailJobId,
+      status: 'waiting',
+      scheduledAt: null,
+      sendNotBefore: new Date('2026-06-22T04:05:16.000Z'),
+    });
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/mail-jobs/${mailJobId}/send`)
+      .set('Authorization', `Bearer ${accessToken()}`)
+      .expect(409);
+
+    expect(response.body).toMatchObject({ code: 'MAIL_JOB_STATUS_NOT_SENDABLE' });
+    expect(prisma.mailDeliveryAttempt.create).not.toHaveBeenCalled();
+  });
+
   it('POST /api/mail-jobs/:mail_job_id/send should reject unauthenticated requests', async () => {
     const response = await request(app.getHttpServer())
       .post(`/api/mail-jobs/${mailJobId}/send`)
@@ -270,11 +304,12 @@ describe('Mail Jobs API', () => {
   }
 
   function mockMailJob(status: string) {
-    prisma.mailJob.updateMany.mockResolvedValue({ count: status === 'queued' ? 1 : 0 });
+    prisma.$executeRawUnsafe.mockResolvedValue(status === 'queued' ? 1 : 0);
     prisma.mailJob.findFirst.mockResolvedValue({
       id: mailJobId,
       status,
       scheduledAt: null,
+      sendNotBefore: null,
     });
     prisma.mailJob.findFirstOrThrow.mockResolvedValue({
       id: mailJobId,
@@ -282,6 +317,8 @@ describe('Mail Jobs API', () => {
       subject: 'Office Aからのお知らせ',
       body: 'mail body',
       retryCount: 0,
+      location: { status: 'active' },
+      personMapping: { status: 'active' },
     });
   }
 

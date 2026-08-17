@@ -294,8 +294,8 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T \
   -e API_SMOKE_IDENTIFIER=staging-active-operator \
   -e API_SMOKE_PASSWORD=PoolduckStaging123! \
   -e API_SMOKE_LOCATION_ID=5A6E0001 \
-  -e 'API_SMOKE_SCAN_CODE=PD1|ENTRY|01K0ABC20001' \
-  -e 'API_SMOKE_UNMAPPED_SCAN_CODE=PD1|ENTRY|01K0ABC29999' \
+  -e 'API_SMOKE_SCAN_CODE=V2E01K0ABC20001' \
+  -e 'API_SMOKE_UNMAPPED_SCAN_CODE=V2E01K0ABC29999' \
   backend npm run smoke:api
 ```
 

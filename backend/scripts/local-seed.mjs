@@ -35,7 +35,6 @@ const seed = {
   suspendedOperatorEmail: "suspended-operator@example.local",
   activeScanCode: "01K0ABC10001",
   inactiveScanCode: "01K0ABC10002",
-  unmappedScanCode: "SCAN-LOCAL-UNMAPPED",
 };
 
 async function upsertLocation(data) {

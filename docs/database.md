@@ -125,10 +125,10 @@ UI 在成功响应后仅临时显示并可立即清除。
 - `tenant_id` (fk -> tenants.id)
 - `device_id` (fk -> devices.id, nullable)
 - `location_id` (fk -> locations.id, nullable)
-- `person_mapping_id` (fk -> person_mappings.id, nullable；未映射扫码为空)
-- `person_code_snapshot` (varchar(12), nullable；有效动作码即使未映射也保存解析后的人员码，旧数据可为空)
+- `person_mapping_id` (fk -> person_mappings.id, nullable；旧数据可为空，新成功扫码必须存在)
+- `person_code_snapshot` (varchar(12), nullable；新成功扫码保存解析后的人员码，旧数据可为空)
 - `scan_code` (varchar)
-- `scan_type` (varchar) - entry/exit/unmapped（旧数据保留兼容值）
+- `scan_type` (varchar) - entry/exit（旧数据可保留其他 legacy 值）
 - `action` (varchar) - entry/exit/unknown
 - `action_source` (varchar) - person_action_code/legacy_unknown
 - `raw_payload` (text)
@@ -185,7 +185,7 @@ UI 在成功响应后仅临时显示并可立即清除。
 
 > `person_code` 为 12 位大写 Crockford Base32：前 7 位编码 Unix 秒，后 5 位为密码学随机后缀。同一进程同秒生成时后缀单调递增；数据库全局唯一约束与最多 5 次重试处理跨节点碰撞。客户端不能指定或修改该值。
 >
-> 查询约束：扫码写接口只接受 `PD1|ENTRY|<person_code>` / `PD1|EXIT|<person_code>`。解析后必须同时带上服务端认证得到的 `tenant_id` 与当前 `location_id` 查人，禁止仅按全局唯一 `person_code` 查询，也不接受裸 `person_code` 或旧 `scan_code`。
+> 查询约束：扫码写接口只接受 ADR-015 的 `V2E<person_code>` / `V2X<person_code>`。解析后必须同时带上服务端认证得到的 `tenant_id` 与当前 `location_id` 查人，禁止仅按全局唯一 `person_code` 查询，也不接受 `PD1`、裸 `person_code` 或旧 `scan_code`。
 
 ## 8. mail_jobs
 
@@ -206,16 +206,33 @@ UI 在成功响应后仅临时显示并可立即清除。
 - `subject` (varchar)
 - `body` (text)
 - `template_key` (varchar)
-- `status` (varchar) - queued/processing/sent/failed
+- `status` (varchar) - waiting/queued/processing/sent/failed/canceled/delivery_unknown
 - `retry_count` (int)
 - `provider_message_id` (varchar, nullable)
 - `error_message` (text, nullable)
 - `scheduled_at` (timestamp, nullable)
+- `cancel_until` (timestamp, nullable；新任务数据库默认 T0 + 10 秒)
+- `send_not_before` (timestamp, nullable；新任务数据库默认 T0 + 10 秒)
+- `claimed_at` (timestamp, nullable)
+- `claim_attempt_id` (uuid, nullable)
 - `sent_at` (timestamp, nullable)
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
 
+> ADR-017 本地迁移已实现：新任务以 `waiting` 开始，并以独立
+> `cancel_until/send_not_before` 表示首次 10 秒犹豫期；`scheduled_at` 只保留给 provider retry。
+> `scan_event` 保留不可变原始动作并增加取消元数据，`mail_job` 增加 `canceled` 终态与 claim/attempt
+> 证据。既有 `queued` 记录不追溯获得取消窗口，guarded rollback 不得把 `canceled` 映射回
+> `queued`。`mail_delivery_attempts` 持久化领取、provider 调用边界、完成结果和安全错误码；迁移为
+> `20260806010000_add_scan_send_cancellation`。guarded rollback 遇到任何 `waiting` 任务即拒绝，且保留取消与 attempt 证据。
+
 > `id` 继续作为所有内部主外键目标；普通登录只提交 `tenant_code`。迁移按 `created_at, id` 稳定顺序回填旧 tenant，最多重试 5 次，并保留 UUID 关系用于回滚。
+
+## 8a. mail_delivery_attempts
+
+- 保存 `tenant_id`、`mail_job_id`、attempt ID、`claimed_at`、`provider_invoked_at`、`completed_at`、结果与安全错误码。
+- provider 调用前先持久化 `provider_invoked_at`；崩溃恢复只有在能够证明未越过该边界时才重新入队。
+- attempt 和取消证据属于审计数据，rollback 不删除，也不把不确定投递重新变为可发送。
 
 ## 9. scan_request_idempotency
 
@@ -232,20 +249,7 @@ UI 在成功响应后仅临时显示并可立即清除。
 - `created_at` (timestamp)
 - unique (`tenant_id`, `route`, `key_hash`)
 
-## 10. unmapped_scan_cases
-
-> 用法：把未找到 active 人员映射的扫码事件形成可处理队列。处理状态与原始 `scan_events` 分离；`resolved` 只表示数据修正，不触发历史邮件补发。
-
-- `id` (pk, uuid)
-- `tenant_id` (fk -> tenants.id)
-- `scan_event_id` (unique fk -> scan_events.id)
-- `location_id` (fk -> locations.id, nullable)
-- `status` (varchar) - open/resolved/ignored
-- `handled_by_user_id` (fk -> users.id, nullable)
-- `handled_at` (timestamp, nullable)
-- `created_at` / `updated_at` (timestamp)
-
-## 11. audit_logs
+## 10. audit_logs
 
 > 用法：审计日志表，记录管理员关键操作、资源对象与执行结果，满足合规与问题追踪。
 
@@ -259,7 +263,7 @@ UI 在成功响应后仅临时显示并可立即清除。
 - `metadata_json` (jsonb)
 - `created_at` (timestamp)
 
-## 12. 索引建议
+## 11. 索引建议
 
 - `users (tenant_id, username)` unique
 - `users (tenant_id, email)` unique
@@ -280,12 +284,11 @@ UI 在成功响应后仅临时显示并可立即清除。
 - `mail_jobs (tenant_id, status, created_at)`
 - `mail_jobs (tenant_id, location_id, created_at)`
 - `mail_jobs (tenant_id, person_mapping_id, created_at)`
-- `unmapped_scan_cases (tenant_id, status, created_at)`
 - `scan_request_idempotency (tenant_id, route, key_hash)` unique
 - `scan_request_idempotency (expires_at)`
 - `audit_logs (tenant_id, created_at)`
 
-## 13. Migration baseline (Issue #21)
+## 12. Migration baseline (Issue #21)
 
 The initial migration is implemented with Prisma under `backend/prisma/`.
 
@@ -293,7 +296,7 @@ Implementation notes:
 
 - Prisma schema: `backend/prisma/schema.prisma`.
 - Initial migration SQL: `backend/prisma/migrations/20260622000000_init/migration.sql`.
-- The implementation includes the MVP tables: `tenants`, `users`, `subscriptions`, `devices`, `locations`, `operator_location_assignments`, `person_mappings`, `scan_events`, `mail_jobs`, `scan_request_idempotency`, `unmapped_scan_cases`, `audit_logs`, and `sessions`.
+- The implementation includes the MVP tables: `tenants`, `users`, `subscriptions`, `devices`, `locations`, `operator_location_assignments`, `person_mappings`, `scan_events`, `mail_jobs`, `scan_request_idempotency`, `audit_logs`, and `sessions`.
 - `sessions` stores one row per device login. Only a SHA-256 refresh-token hash is stored; sessions have expiry, last-used, and revocation timestamps, supporting independent multi-device logout and rotation.
 - Status fields remain `varchar` columns at the database layer to match this document; business validation will be enforced in service/API layers in later issues.
 - `scan_events.location_id` is included as a nullable foreign key to `locations.id` so scan history can be queried by the selected location context described in ADR-002 and `docs/api.md`.
@@ -310,9 +313,10 @@ Implementation notes:
 - Issue #99 回滚脚本为 `backend/prisma/rollback/20260724030000_add_user_login_identities.sql`。存在
   `email IS NULL` 的 operator 时脚本会停止；必须先保留 username-capable 版本并由 tenant_manager
   补齐邮箱，不得删除账号以完成回滚。
+- ADR-018 通过 `20260806000000_remove_unmapped_scan_cases` 删除上线前未使用的 `unmapped_scan_cases`，并清除开发/合成的 `scan_type=unmapped` 事件。guarded rollback 只重建空表，不恢复已删除数据；执行前必须停止写流量并确认环境没有业务数据。
 - Issue #104 为 `locations` 与 `person_mappings` 增加 `deleted_at`、`purge_after`、
   `deleted_from_status` 及到期扫描索引。`pending_delete` 记录保留 14 天；`purged` 记录保留不可复用的
-  公开业务 ID 和关系锚点，但地点名称、人员姓名和邮箱被匿名化。扫码、邮件、未映射和审计历史不删除。
+  公开业务 ID 和关系锚点，但地点名称、人员姓名和邮箱被匿名化。成功扫码、邮件和审计历史不删除。
 - `20260728020000_add_delayed_deletion` 仅增加可空列与索引，不回填或删除现有数据。该生命周期迁移
   不提供破坏性 SQL 回滚；需要回滚应用时保留新增列，待恢复版本再次接管到期清理。
 - Core tenant-scoped indexes are included for users, devices, locations, person mappings, scan events, mail jobs, and audit logs.

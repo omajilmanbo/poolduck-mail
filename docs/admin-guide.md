@@ -48,7 +48,8 @@ Local/CI/Staging 合成账号另用显式 opt-in 的 `platform:seed`；Productio
   包含身份原文、密码或密码哈希
 - 新建和既有 operator 默认没有 location 权限。tenant_manager 必须通过 assignment API 显式设置一个或多个 active location；空数组表示撤销全部，单地点也可单独撤销
 - “用户管理”的“地点权限”列显示每个 operator 当前已分配地点；点击“配置地点”可多选当前 tenant 的 active location 并原子保存。可分配地点使用独立滚动列表，弹窗会适配较小窗口并保持取消、保存按钮可见。停用地点会明确标记且不能新增分配
-- 撤销一个或多个 assignment 前页面会列出影响并要求确认；保存成功后列表立即刷新。operator 的新扫码、人员映射写入、历史与未映射处理请求立即被拒绝，不需要等待 token 过期或重新登录
+- 撤销一个或多个 assignment 前页面会列出影响并要求确认；保存成功后列表立即刷新。operator 的新扫码、人员映射写入与历史请求立即被拒绝，不需要等待 token 过期或重新登录
+- ADR-018 已移除未映射处理页和 case API。格式正确但没有当前 active 映射的输入只返回统一拒绝，不保存业务记录，不得把跨 tenant/location 或随机合法码当作可修正人员工单
 - 页面在停用与密码重置前要求确认；新密码提交后即从表单清除，后续应通过租户批准的安全渠道交付
 - 定期审查高权限账号
 
@@ -74,8 +75,9 @@ Local/CI/Staging 合成账号另用显式 opt-in 的 `platform:seed`；Productio
 - “停用”只暂停人员业务使用；“删除”进入 14 天恢复期。恢复入口紧邻删除状态并显示剩余天数，
   到期后当前姓名和邮箱被匿名化，公开人员 ID 与历史记录保留且不可复用
 - 已停用人员可在人员管理页“重新启用”；地点本身必须处于启用状态，重新启用不会改变人员 ID 或历史记录
-- 新增人员时由服务端生成不可编辑的 12 位 `person_code`；该人员使用 `PD1|ENTRY|<person_code>` 与 `PD1|EXIT|<person_code>` 两张动作码，管理员不得手工指定、复用人员 ID 或把裸人员码当作扫码写入值
+- 新增人员时由服务端生成不可编辑的 12 位 `person_code`；该人员使用 `V2E<person_code>` 与 `V2X<person_code>` 两张动作码，管理员不得手工指定、复用人员 ID 或把 `PD1`/裸人员码当作扫码写入值
 - 人员列表的“查看动作码”在受控浏览器内临时生成进入/离开 × 二维码/Code 128 共四张图片，支持单张 PNG 与四张图片 ZIP 下载。下载文件名仅使用 `person_code`、动作和格式；图片不得包含姓名、邮箱、tenant/location UUID 或内部人员 UUID，也不得上传到第三方图片服务或持久化
+- ADR-015 已批准上线前直接使用产品名无关的 `V2E<person_code>` / `V2X<person_code>` 替换 `PD1|...`，不实施双读、旧资产重印或撤销流程。解析器与四资产必须同步切换；完成前不得混用格式。兼容验证面向 USB HID/Windows 布局，不把厂牌/型号列为应用准入前提
 - 进入与离开图片除颜色外还使用方向图形和显著文字区分，便于黑白打印和人工核对；人员 ID 缺失或格式非法时不得生成或下载，也不得回退到内部 UUID
 - 进入/离开由动作码显式决定，不设置操作员手动动作开关，也不按租户时区零点或每日扫码次数重置/推断
 - 邮件任务保存发送时的 tenant/location/person 名称与 `person_code` 快照。后续改名不改写历史；审计和普通日志不得记录完整邮箱、邮件正文或批量 UUID/人员码对应关系
@@ -86,3 +88,13 @@ Local/CI/Staging 合成账号另用显式 opt-in 的 `platform:seed`；Productio
 - `operator` 只能维护当前租户已显式授权地点内的人员映射；只有 `tenant_manager` 可新增、编辑、停用或启用地点
 - 关注 denied/fail 事件峰值
 - 发生安全事件时保全日志并升级处理
+
+## 7. ADR-017 扫码取消管理边界
+
+- ADR-017 已批准同 location 当前授权 operator 与 tenant_manager 在数据库截止前取消等待任务；不要求
+  自由文本原因，审计使用固定安全原因码并保留真实 actor、时间、目标内部 ID 和结果。
+- 取消同时使误扫动作不再参与当前派生状态，但不删除或覆盖原始扫码、邮件快照、幂等、审计或
+  provider 回执。管理员也不能把已取消任务改回 `queued` 或在 provider 领取后宣称撤回。
+- 跨 tenant/location、无 assignment 与未知 ID 统一 not-found；assignment/session 撤销立即影响取消
+  权限。person/location 停用或待删除不会阻止仍具授权者在窗口内执行降低误发风险的取消。
+- 本地代码和工作台已实现该能力；管理员不得直接修改数据库把 `canceled` 或 `delivery_unknown` 恢复为可发送状态。

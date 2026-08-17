@@ -10,7 +10,6 @@ import { MailJobsModule } from './mail-jobs/mail-jobs.module';
 import { ScanEventsModule } from './scan-events/scan-events.module';
 import { AuditModule } from './audit/audit.module';
 import { AuditApiModule } from './audit/audit-api.module';
-import { UnmappedScansModule } from './unmapped-scans/unmapped-scans.module';
 import { UsersModule } from './users/users.module';
 import { LocationAccessModule } from './location-access/location-access.module';
 import { PlatformModule } from './platform/platform.module';
@@ -29,7 +28,6 @@ import { PlatformModule } from './platform/platform.module';
     LocationsModule,
     MailJobsModule,
     ScanEventsModule,
-    UnmappedScansModule,
     UsersModule,
     PlatformModule,
   ],

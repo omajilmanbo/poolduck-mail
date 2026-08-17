@@ -36,6 +36,11 @@ type ScanRecord = {
   personName: string;
   receivedAt: string;
   providerMessage?: string;
+  canCancel: boolean;
+  cancelUntil: string | null;
+  canceledAt: string | null;
+  effectiveStatus: 'active' | 'canceled';
+  serverOffsetMs: number;
 };
 
 export function historyItemToRecord(item: ScanHistoryItem): ScanRecord {
@@ -49,6 +54,11 @@ export function historyItemToRecord(item: ScanHistoryItem): ScanRecord {
     personName: item.person_name ?? '-',
     receivedAt: item.received_at,
     providerMessage: item.mail_job?.error_message ?? undefined,
+    canCancel: item.can_cancel,
+    cancelUntil: item.cancel_until,
+    canceledAt: item.canceled_at,
+    effectiveStatus: item.effective_status,
+    serverOffsetMs: new Date(item.server_time).getTime() - Date.now(),
   };
 }
 
@@ -56,7 +66,10 @@ export function shouldPollHistory(records: ScanRecord[], attempts: number) {
   return (
     attempts < HISTORY_MAX_POLL_ATTEMPTS &&
     records.some(
-      (record) => record.status === 'queued' || record.status === 'processing',
+      (record) =>
+        record.status === 'waiting' ||
+        record.status === 'queued' ||
+        record.status === 'processing',
     )
   );
 }
@@ -110,9 +123,17 @@ export default function HomePage() {
   const [scanLoading, setScanLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyPollAttempts, setHistoryPollAttempts] = useState(0);
+  const [cancelingScanEventId, setCancelingScanEventId] = useState('');
+  const [clockTick, setClockTick] = useState(0);
 
   const canSend = isSendAllowed(license);
   const selectedLocation = locations.find((location) => location.location_id === selectedLocationId);
+
+  useEffect(() => {
+    if (!records.some((record) => record.status === 'waiting')) return;
+    const timer = window.setInterval(() => setClockTick((value) => value + 1), 1_000);
+    return () => window.clearInterval(timer);
+  }, [records]);
 
   const clearSession = useCallback(
     (message?: string) => {
@@ -297,7 +318,7 @@ export default function HomePage() {
     setWorkspaceError('');
 
     try {
-      const response = await api.createScanEvent(token, selectedLocation.location_id, scanCode.trim());
+      const response = await api.createScanEvent(token, selectedLocation.location_id, scanCode);
       setRecords((current) => [
         {
           scanEventId: response.scan_event_id,
@@ -312,6 +333,11 @@ export default function HomePage() {
               ?.person_name ?? '-',
           receivedAt: new Date().toISOString(),
           providerMessage: response.error_message ?? undefined,
+          canCancel: response.can_cancel,
+          cancelUntil: response.cancel_until,
+          canceledAt: response.canceled_at,
+          effectiveStatus: response.effective_status,
+          serverOffsetMs: new Date(response.server_time).getTime() - Date.now(),
         },
         ...current,
       ]);
@@ -326,6 +352,40 @@ export default function HomePage() {
       await loadHistory(token, selectedLocation.location_id, true);
     } finally {
       setScanLoading(false);
+    }
+  }
+
+  async function handleCancel(record: ScanRecord) {
+    if (!token || !record.canCancel || record.status !== 'waiting') return;
+    setCancelingScanEventId(record.scanEventId);
+    setWorkspaceError('');
+    try {
+      const response = await api.cancelScanEvent(token, record.scanEventId);
+      setRecords((current) => current.map((item) =>
+        item.scanEventId === record.scanEventId
+          ? {
+              ...item,
+              status: response.mail_status,
+              effectiveStatus: response.effective_status,
+              canCancel: false,
+              canceledAt: response.canceled_at,
+              serverOffsetMs: new Date(response.server_time).getTime() - Date.now(),
+            }
+          : item,
+      ));
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        clearSession('登录已失效，请重新登录');
+        return;
+      }
+      setWorkspaceError(
+        error instanceof ApiError && error.status === 409
+          ? '取消窗口已结束或发送已开始，正在刷新权威状态。'
+          : '取消结果未知，正在刷新权威状态。',
+      );
+      if (selectedLocationId) await loadHistory(token, selectedLocationId, true);
+    } finally {
+      setCancelingScanEventId('');
     }
   }
 
@@ -429,9 +489,6 @@ export default function HomePage() {
             </span>
             <a href="/people" className="rounded-md border border-slate-300 px-3 py-2 font-medium hover:bg-slate-50">
               人员管理
-            </a>
-            <a href="/unmapped" className="rounded-md border border-slate-300 px-3 py-2 font-medium hover:bg-slate-50">
-              未映射扫码
             </a>
             {user?.role === 'tenant_manager' ? (
               <>
@@ -538,7 +595,7 @@ export default function HomePage() {
                   className="mt-2 w-full rounded-md border border-slate-300 px-3 py-3 font-mono text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
                   disabled={!canSend || workspaceLoading}
                   autoFocus
-                  placeholder="PD1|ENTRY|<person_code> 或 PD1|EXIT|<person_code>"
+                  placeholder="V2E<person_code> 或 V2X<person_code>"
                 />
               </label>
               <button
@@ -635,13 +692,43 @@ export default function HomePage() {
                           className={`rounded-md px-2 py-1 text-xs font-semibold ${
                             record.status === 'sent'
                               ? 'bg-emerald-100 text-emerald-800'
-                              : record.status === 'failed' || record.status === 'unmapped'
+                              : record.status === 'failed'
                                 ? 'bg-red-100 text-red-700'
                                 : 'bg-amber-100 text-amber-800'
                           }`}
                         >
                           {mailStatusLabel(record.status)}
                         </span>
+                        <div className="mt-2">
+                          {record.status === 'waiting' ? (() => {
+                            const remaining = record.cancelUntil
+                              ? Math.max(
+                                  0,
+                                  Math.ceil(
+                                    (new Date(record.cancelUntil).getTime() -
+                                      (Date.now() + record.serverOffsetMs)) /
+                                      1_000,
+                                  ),
+                                )
+                              : 0;
+                            void clockTick;
+                            return (
+                              <button
+                                type="button"
+                                data-testid="scan-cancel"
+                                disabled={!record.canCancel || remaining <= 0 || cancelingScanEventId === record.scanEventId}
+                                onClick={() => void handleCancel(record)}
+                                className="rounded-md border border-red-300 bg-white px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
+                              >
+                                {cancelingScanEventId === record.scanEventId
+                                  ? '取消中…'
+                                  : remaining > 0
+                                    ? `取消发送 (${remaining}s)`
+                                    : '窗口已结束'}
+                              </button>
+                            );
+                          })() : null}
+                        </div>
                       </td>
                     </tr>
                   ))}

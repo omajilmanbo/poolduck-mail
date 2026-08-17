@@ -25,8 +25,8 @@ export function validatePersonCode(personCode: string): string {
 export function createPersonActionCodeSpecs(personCode: string): PersonActionCodeSpec[] {
   const validPersonCode = validatePersonCode(personCode);
   return (['entry', 'exit'] as const).flatMap((action) => {
-    const actionToken = action.toUpperCase();
-    const payload = `PD1|${actionToken}|${validPersonCode}`;
+    const actionToken = action === 'entry' ? 'E' : 'X';
+    const payload = `V2${actionToken}${validPersonCode}`;
     const actionLabel = action === 'entry' ? '进入' : '离开';
     return (['qr', 'code128'] as const).map((format) => ({
       action,

@@ -10,11 +10,11 @@ import { AuditService } from '../audit/audit.service';
 import { AuthenticatedUserResponse } from '../auth/auth.types';
 import { LicenseService } from '../license/license.service';
 import { LocationAccessService } from '../location-access/location-access.service';
-import { MailJobsService } from '../mail-jobs/mail-jobs.service';
 import { PrismaService } from '../prisma.service';
 import { CreateScanEventDto, ExportScanEventsDto, ListScanEventsDto } from './dto';
 import {
   CreateScanEventResponse,
+  CancelScanEventResponse,
   ScanAction,
   ScanActionSource,
   ScanEventHistoryItem,
@@ -29,8 +29,7 @@ const MAIL_TEMPLATE_KEYS = {
 const SCAN_DEDUPLICATION_WINDOW_MS = 10_000;
 const IDEMPOTENCY_RETENTION_MS = 24 * 60 * 60 * 1000;
 const SCAN_ROUTE = 'POST:/api/scan-events';
-const ACTION_CODE_PATTERN =
-  /^PD1\|(ENTRY|EXIT)\|([0-9A-HJKMNP-TV-Z]{12})$/;
+const ACTION_CODE_PATTERN = /^V2([EX])([0-9A-HJKMNP-TV-Z]{12})$/;
 
 type ParsedActionCode = {
   personCode: string;
@@ -53,7 +52,6 @@ export class ScanEventsService {
     private readonly prisma: PrismaService,
     private readonly licenseService: LicenseService,
     private readonly audit: AuditService,
-    private readonly mailJobs: MailJobsService,
     private readonly locationAccess: LocationAccessService,
   ) {}
 
@@ -80,11 +78,9 @@ export class ScanEventsService {
             },
           }
         : {}),
-      ...(query.status === 'unmapped'
-        ? { scanType: 'unmapped' }
-        : query.status
-          ? { mailJobs: { some: { status: query.status } } }
-          : {}),
+      ...(query.status
+        ? { mailJobs: { some: { status: query.status } } }
+        : {}),
       ...(cursor
         ? {
             OR: [
@@ -151,9 +147,9 @@ export class ScanEventsService {
         ...(!query.location_id
           ? this.locationAccess.resourceLocationWhere(user, true)
           : {}),
-        ...(query.status === 'unmapped'
-          ? { scanType: 'unmapped' }
-          : query.status ? { mailJobs: { some: { status: query.status } } } : {}),
+        ...(query.status
+          ? { mailJobs: { some: { status: query.status } } }
+          : {}),
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: 5000,
@@ -177,6 +173,8 @@ export class ScanEventsService {
         'action',
         'action_source',
         'status',
+        'effective_status',
+        'canceled_at',
         'mail_job_id',
       ],
       ...rows.map((row) => {
@@ -189,6 +187,8 @@ export class ScanEventsService {
           item.action,
           item.action_source,
           item.status,
+          item.effective_status,
+          item.canceled_at ?? '',
           item.mail_job?.mail_job_id ?? '',
         ];
       }),
@@ -332,52 +332,15 @@ export class ScanEventsService {
 
     const rawPayload = JSON.stringify({
       location_id: dto.location_id,
-      version: 'PD1',
+      version: 'V2',
       person_code: parsedCode.personCode,
       action: parsedCode.action,
     });
 
     if (!personMapping) {
-      const scanEvent = await this.prisma.$transaction(async (tx) => {
-        const created = await tx.scanEvent.create({
-          data: {
-            tenantId: user.tenant_id,
-            locationId: internalLocationId,
-            personCodeSnapshot: parsedCode.personCode,
-            scanCode: parsedCode.personCode,
-            scanType: 'unmapped',
-            action: parsedCode.action,
-            actionSource: 'person_action_code',
-            rawPayload,
-            receivedAt,
-            createdByUserId: user.user_id,
-          },
-          select: { id: true },
-        });
-        await tx.unmappedScanCase.create({
-          data: {
-            tenantId: user.tenant_id,
-            scanEventId: created.id,
-            locationId: internalLocationId,
-          },
-        });
-        return created;
-      });
-
-      await this.audit.record({
-        tenantId: user.tenant_id,
-        actorUserId: user.user_id,
-        action: 'scan.unmapped',
-        resourceType: 'scan_event',
-        resourceId: scanEvent.id,
-        result: 'failure',
-        metadata: { location_id: dto.location_id },
-      });
-
       throw new NotFoundException({
         code: 'SCAN_CODE_NOT_MAPPED',
         message: 'person_code未在当前 location 找到映射邮箱',
-        scan_event_id: scanEvent.id,
       });
     }
 
@@ -415,7 +378,7 @@ export class ScanEventsService {
             locationId: internalLocationId,
             personMappingId: personMapping.id,
             receivedAt: { gt: duplicateAfter },
-            mailJobs: { some: {} },
+            mailJobs: { some: { status: { not: 'canceled' } } },
           },
           orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
           select: {
@@ -432,6 +395,7 @@ export class ScanEventsService {
                 status: true,
                 retryCount: true,
                 scheduledAt: true,
+                cancelUntil: true,
                 errorMessage: true,
               },
             },
@@ -458,6 +422,15 @@ export class ScanEventsService {
             action: parsedCode.action,
             action_source: existing.actionSource as ScanActionSource,
             status: existingMailJob.status as CreateScanEventResponse['status'],
+            effective_status: 'active',
+            mail_status: existingMailJob.status as CreateScanEventResponse['mail_status'],
+            can_cancel:
+              existingMailJob.status === 'waiting' &&
+              existingMailJob.cancelUntil !== null &&
+              receivedAt < existingMailJob.cancelUntil,
+            cancel_until: existingMailJob.cancelUntil?.toISOString() ?? null,
+            server_time: receivedAt.toISOString(),
+            canceled_at: null,
             retry_count: existingMailJob.retryCount,
             scheduled_at:
               existingMailJob.scheduledAt?.toISOString() ?? null,
@@ -516,9 +489,15 @@ export class ScanEventsService {
             subject: mailSubject,
             body: mailBody,
             templateKey: MAIL_TEMPLATE_KEYS[parsedCode.action],
-            status: 'queued',
+            status: 'waiting',
           },
-          select: { id: true },
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+            cancelUntil: true,
+            sendNotBefore: true,
+          },
         });
 
         const created: CreateScanEventResponse = {
@@ -528,7 +507,19 @@ export class ScanEventsService {
           person_code: personMapping.personCode,
           action: parsedCode.action,
           action_source: 'person_action_code',
-          status: 'queued',
+          status: 'waiting',
+          effective_status: 'active',
+          mail_status: 'waiting',
+          can_cancel:
+            mailJob.status === 'waiting' &&
+            (mailJob.cancelUntil === null ||
+              mailJob.cancelUntil === undefined ||
+              (mailJob.createdAt ?? receivedAt) < mailJob.cancelUntil),
+          cancel_until:
+            mailJob.cancelUntil?.toISOString() ??
+            new Date(receivedAt.getTime() + 10_000).toISOString(),
+          server_time: (mailJob.createdAt ?? receivedAt).toISOString(),
+          canceled_at: null,
           retry_count: 0,
           scheduled_at: null,
           error_message: null,
@@ -566,33 +557,180 @@ export class ScanEventsService {
       return result;
     }
 
-    const delivery = await this.mailJobs.processQueuedMailJob(
-      user.tenant_id,
-      result.mail_job_id,
-      user.user_id,
-    );
+    return result;
+  }
+
+  async cancelScanEvent(
+    user: AuthenticatedUserResponse,
+    scanEventId: string,
+  ): Promise<CancelScanEventResponse> {
+    const event = await this.prisma.scanEvent.findFirst({
+      where: {
+        id: scanEventId,
+        tenantId: user.tenant_id,
+        ...this.locationAccess.resourceLocationWhere(user, true),
+      },
+      select: {
+        id: true,
+        locationId: true,
+        personCodeSnapshot: true,
+        canceledAt: true,
+        mailJobs: {
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 1,
+          select: { id: true, status: true, cancelUntil: true },
+        },
+      },
+    });
+
+    const mailJob = event?.mailJobs[0];
+    if (!event || !event.locationId || !mailJob) {
+      await this.audit.record({
+        tenantId: user.tenant_id,
+        actorUserId: user.user_id,
+        action: 'scan.cancel',
+        resourceType: 'scan_event',
+        resourceId: scanEventId,
+        result: 'denied',
+        metadata: { reason: 'SCAN_EVENT_NOT_FOUND' },
+      });
+      throw new NotFoundException({
+        code: 'SCAN_EVENT_NOT_FOUND',
+        message: 'scan_event does not exist in the authorized location',
+      });
+    }
+
+    if (event.canceledAt && mailJob.status === 'canceled') {
+      await this.recordCancellationAudit(user, event.id, mailJob.id, event.locationId, 'already_canceled');
+      return this.canceledResponse(event.id, mailJob.id, event.canceledAt);
+    }
+
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        `${user.tenant_id}:${event.locationId}:${event.personCodeSnapshot ?? event.id}`,
+      );
+      const canceledCount = await tx.$executeRawUnsafe(
+        `UPDATE "mail_jobs"
+         SET "status" = 'canceled', "updated_at" = CURRENT_TIMESTAMP
+         WHERE "id" = $1::uuid
+           AND "tenant_id" = $2::uuid
+           AND "location_id" = $3::uuid
+           AND "scan_event_id" = $4::uuid
+           AND "status" = 'waiting'
+           AND CURRENT_TIMESTAMP < "cancel_until"`,
+        mailJob.id,
+        user.tenant_id,
+        event.locationId,
+        event.id,
+      );
+
+      if (canceledCount === 1) {
+        await tx.$executeRawUnsafe(
+          `UPDATE "scan_events"
+           SET "canceled_at" = CURRENT_TIMESTAMP,
+               "canceled_by_user_id" = $1::uuid,
+               "cancel_reason_code" = 'OPERATOR_MISTAKE'
+           WHERE "id" = $2::uuid
+             AND "tenant_id" = $3::uuid
+             AND "location_id" = $4::uuid
+             AND "canceled_at" IS NULL`,
+          user.user_id,
+          event.id,
+          user.tenant_id,
+          event.locationId,
+        );
+      }
+
+      const current = await tx.scanEvent.findFirst({
+        where: { id: event.id, tenantId: user.tenant_id, locationId: event.locationId },
+        select: {
+          canceledAt: true,
+          mailJobs: {
+            where: { id: mailJob.id },
+            take: 1,
+            select: { id: true, status: true, cancelUntil: true },
+          },
+        },
+      });
+      return { canceledCount, current };
+    });
+
+    const currentJob = outcome.current?.mailJobs[0];
+    if (outcome.current?.canceledAt && currentJob?.status === 'canceled') {
+      const result = outcome.canceledCount === 1 ? 'success' : 'already_canceled';
+      await this.recordCancellationAudit(user, event.id, mailJob.id, event.locationId, result);
+      return this.canceledResponse(event.id, mailJob.id, outcome.current.canceledAt);
+    }
+
+    if (currentJob?.status === 'waiting') {
+      await this.recordCancellationAudit(user, event.id, mailJob.id, event.locationId, 'expired');
+      throw new ConflictException({
+        code: 'SCAN_CANCEL_WINDOW_EXPIRED',
+        message: 'The cancellation window has expired',
+      });
+    }
+
+    await this.recordCancellationAudit(user, event.id, mailJob.id, event.locationId, 'not_available');
+    throw new ConflictException({
+      code: 'SCAN_CANCEL_NOT_AVAILABLE',
+      message: 'This scan can no longer be canceled',
+    });
+  }
+
+  private canceledResponse(
+    scanEventId: string,
+    mailJobId: string,
+    canceledAt: Date,
+  ): CancelScanEventResponse {
     return {
-      ...result,
-      status: delivery.status,
-      retry_count: delivery.retry_count,
-      scheduled_at: delivery.scheduled_at,
-      error_message: delivery.provider_result.error_message ?? null,
+      scan_event_id: scanEventId,
+      mail_job_id: mailJobId,
+      effective_status: 'canceled',
+      mail_status: 'canceled',
+      canceled_at: canceledAt.toISOString(),
+      server_time: new Date().toISOString(),
     };
   }
 
+  private async recordCancellationAudit(
+    user: AuthenticatedUserResponse,
+    scanEventId: string,
+    mailJobId: string,
+    locationId: string,
+    result: 'success' | 'already_canceled' | 'expired' | 'race_lost' | 'not_available',
+  ): Promise<void> {
+    await this.audit.record({
+      tenantId: user.tenant_id,
+      actorUserId: user.user_id,
+      action: 'scan.cancel',
+      resourceType: 'scan_event',
+      resourceId: scanEventId,
+      result: result === 'success' || result === 'already_canceled' ? 'success' : 'denied',
+      metadata: {
+        location_id: locationId,
+        mail_job_id: mailJobId,
+        reason: result === 'success' || result === 'already_canceled' ? 'OPERATOR_MISTAKE' : result,
+      },
+    });
+  }
+
   private parseActionCode(value: string): ParsedActionCode {
-    const raw = value.trim();
+    const raw = value.endsWith('\r\n')
+      ? value.slice(0, -2)
+      : value.endsWith('\r') || value.endsWith('\n')
+        ? value.slice(0, -1)
+        : value;
     const match = ACTION_CODE_PATTERN.exec(raw);
     if (!match) {
       throw new BadRequestException({
         code: 'ACTION_CODE_INVALID',
-        message:
-          '动作码格式无效，应为 PD1|ENTRY|<person_code> 或 PD1|EXIT|<person_code>',
+        message: '动作码格式无效，应为 V2E<person_code> 或 V2X<person_code>',
       });
     }
 
     return {
-      action: match[1] === 'ENTRY' ? 'entry' : 'exit',
+      action: match[1] === 'E' ? 'entry' : 'exit',
       personCode: match[2],
     };
   }
@@ -664,6 +802,7 @@ export class ScanEventsService {
         status: true,
         retryCount: true,
         scheduledAt: true,
+        cancelUntil: true,
         errorMessage: true,
         actionSnapshot: true,
         scanEvent: {
@@ -672,6 +811,7 @@ export class ScanEventsService {
             personCodeSnapshot: true,
             action: true,
             actionSource: true,
+            canceledAt: true,
           },
         },
       },
@@ -692,6 +832,8 @@ export class ScanEventsService {
       });
     }
 
+    const serverTime = new Date();
+    const canceled = mailJob.status === 'canceled';
     return {
       scan_event_id: mailJob.scanEvent.id,
       mail_job_id: mailJob.id,
@@ -700,6 +842,15 @@ export class ScanEventsService {
       action: mailJob.scanEvent.action as Exclude<ScanAction, 'unknown'>,
       action_source: mailJob.scanEvent.actionSource as ScanActionSource,
       status: mailJob.status as CreateScanEventResponse['status'],
+      effective_status: canceled ? 'canceled' : 'active',
+      mail_status: mailJob.status as CreateScanEventResponse['mail_status'],
+      can_cancel:
+        mailJob.status === 'waiting' &&
+        mailJob.cancelUntil !== null &&
+        serverTime < mailJob.cancelUntil,
+      cancel_until: mailJob.cancelUntil?.toISOString() ?? null,
+      server_time: serverTime.toISOString(),
+      canceled_at: mailJob.scanEvent.canceledAt?.toISOString() ?? null,
       retry_count: mailJob.retryCount,
       scheduled_at: mailJob.scheduledAt?.toISOString() ?? null,
       error_message: this.safeFailureMessage(mailJob.errorMessage),
@@ -795,6 +946,7 @@ export class ScanEventsService {
       actionSource: true,
       receivedAt: true,
       createdAt: true,
+      canceledAt: true,
       location: { select: { locationCode: true, name: true } },
       mailJobs: {
         orderBy: [{ createdAt: 'desc' as const }, { id: 'desc' as const }],
@@ -803,6 +955,7 @@ export class ScanEventsService {
           id: true,
           status: true,
           sentAt: true,
+          cancelUntil: true,
           errorMessage: true,
           locationNameSnapshot: true,
           personNameSnapshot: true,
@@ -822,11 +975,13 @@ export class ScanEventsService {
     action: string;
     actionSource: string;
     receivedAt: Date;
+    canceledAt: Date | null;
     location: { locationCode: string; name: string } | null;
     mailJobs: Array<{
       id: string;
       status: string;
       sentAt: Date | null;
+      cancelUntil: Date | null;
       errorMessage: string | null;
       locationNameSnapshot: string;
       personNameSnapshot: string;
@@ -836,9 +991,9 @@ export class ScanEventsService {
   }): ScanEventHistoryItem {
     const mailJob = row.mailJobs[0] ?? null;
     const status: ScanHistoryStatus =
-      row.scanType === 'unmapped'
-        ? 'unmapped'
-        : (mailJob?.status as ScanHistoryStatus | undefined) ?? 'queued';
+      (mailJob?.status as ScanHistoryStatus | undefined) ?? 'queued';
+    const serverTime = new Date();
+    const canceled = row.canceledAt !== null || status === 'canceled';
 
     return {
       scan_event_id: row.id,
@@ -854,6 +1009,16 @@ export class ScanEventsService {
       action_source: row.actionSource as ScanActionSource,
       received_at: row.receivedAt.toISOString(),
       status,
+      effective_status: canceled ? 'canceled' : 'active',
+      mail_status: status,
+      can_cancel:
+        status === 'waiting' &&
+        mailJob?.cancelUntil !== null &&
+        mailJob?.cancelUntil !== undefined &&
+        serverTime < mailJob.cancelUntil,
+      cancel_until: mailJob?.cancelUntil?.toISOString() ?? null,
+      server_time: serverTime.toISOString(),
+      canceled_at: row.canceledAt?.toISOString() ?? null,
       mail_job: mailJob
         ? {
             mail_job_id: mailJob.id,

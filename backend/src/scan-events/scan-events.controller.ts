@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -42,6 +42,15 @@ export class ScanEventsController {
     @Param('scan_event_id') scanEventId: string,
   ) {
     return this.scanEventsService.getScanEvent(user, scanEventId);
+  }
+
+  @Post(':scan_event_id/cancel')
+  @HttpCode(200)
+  cancel(
+    @CurrentUser() user: AuthenticatedUserResponse,
+    @Param('scan_event_id') scanEventId: string,
+  ) {
+    return this.scanEventsService.cancelScanEvent(user, scanEventId);
   }
 
   @Post()

@@ -77,16 +77,6 @@ describe('history workspace', () => {
     expect(shouldPollHistory([queued], 10)).toBe(false);
   });
 
-  it('represents an unmapped scan without a synthetic mail job', () => {
-    const item = historyItem('unmapped');
-    item.scan_type = 'unmapped';
-    item.mail_job = null;
-    expect(historyItemToRecord(item)).toMatchObject({
-      mailJobId: null,
-      status: 'unmapped',
-    });
-  });
-
   it('uses a fallback when historical person name is unavailable', () => {
     const item = historyItem('sent');
     item.person_name = null;
@@ -169,6 +159,12 @@ function historyItem(status: ScanHistoryItem['status']): ScanHistoryItem {
     action_source: 'person_action_code',
     received_at: '2026-07-20T01:02:03.000Z',
     status,
+    effective_status: status === 'canceled' ? 'canceled' : 'active',
+    mail_status: status,
+    can_cancel: status === 'waiting',
+    cancel_until: status === 'waiting' ? '2026-07-20T01:02:13.000Z' : null,
+    server_time: '2026-07-20T01:02:04.000Z',
+    canceled_at: status === 'canceled' ? '2026-07-20T01:02:05.000Z' : null,
     mail_job: {
       mail_job_id: '66666666-6666-4666-8666-666666666666',
       status,
