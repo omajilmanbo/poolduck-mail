@@ -143,6 +143,7 @@ jobs:
       NEXT_PUBLIC_API_BASE_URL: http://localhost:3001
       MAIL_MOCK_SEND_RESULT: ${{ matrix.mail_result }}
       E2E_EXPECT_MAIL_STATUS: ${{ matrix.expected_status }}
+      PLAYWRIGHT_CHANNEL: chrome
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -162,10 +163,8 @@ jobs:
           npm --prefix backend run db:deploy
           npm --prefix backend run local:seed
 
-      - name: Install frontend and Chromium
-        run: |
-          npm --prefix frontend ci
-          npx --prefix frontend playwright install --with-deps chromium
+      - name: Install frontend
+        run: npm --prefix frontend ci
 
       - name: Start application
         run: |
