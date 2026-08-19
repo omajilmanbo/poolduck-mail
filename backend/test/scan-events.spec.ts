@@ -12,6 +12,7 @@ describe('Scan Events API', () => {
   let prisma: {
     $transaction: jest.Mock;
     $executeRawUnsafe: jest.Mock;
+    $queryRawUnsafe: jest.Mock;
     user: {
       findFirst: jest.Mock;
     };
@@ -68,6 +69,7 @@ describe('Scan Events API', () => {
         callback(prisma),
       ),
       $executeRawUnsafe: jest.fn().mockResolvedValue(1),
+      $queryRawUnsafe: jest.fn().mockResolvedValue([{ now: receivedAt }]),
       user: {
         findFirst: jest.fn(),
       },
@@ -181,6 +183,9 @@ describe('Scan Events API', () => {
             },
           },
         }),
+      );
+      expect(prisma.$queryRawUnsafe).toHaveBeenCalledWith(
+        'SELECT CURRENT_TIMESTAMP AS now',
       );
       expect(prisma.personMapping.findFirst).toHaveBeenCalledWith({
         where: {
@@ -765,7 +770,7 @@ describe('Scan Events API', () => {
       canceled_at: canceledAt.toISOString(),
     });
     expect(prisma.$executeRawUnsafe).toHaveBeenCalledWith(
-      expect.stringContaining('CURRENT_TIMESTAMP < "cancel_until"'),
+      expect.stringContaining(`date_trunc('milliseconds', CURRENT_TIMESTAMP) < "cancel_until"`),
       mailJobId,
       tenantId,
       locationId,

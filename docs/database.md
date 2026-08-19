@@ -225,6 +225,9 @@ UI 在成功响应后仅临时显示并可立即清除。
 > 证据。既有 `queued` 记录不追溯获得取消窗口，guarded rollback 不得把 `canceled` 映射回
 > `queued`。`mail_delivery_attempts` 持久化领取、provider 调用边界、完成结果和安全错误码；迁移为
 > `20260806010000_add_scan_send_cancellation`。guarded rollback 遇到任何 `waiting` 任务即拒绝，且保留取消与 attempt 证据。
+> 所有截止列使用 `timestamp(3)`；运行时先把 PostgreSQL 当前时间截断到毫秒，再执行严格
+> `db_now < cancel_until` / `db_now >= send_not_before` 条件更新。一次性数据库准入脚本会重复验证
+> 截止前 1ms、恰好截止和截止后 1ms，并在事务中演练 rollback guard。
 
 > `id` 继续作为所有内部主外键目标；普通登录只提交 `tenant_code`。迁移按 `created_at, id` 稳定顺序回填旧 tenant，最多重试 5 次，并保留 UUID 关系用于回滚。
 

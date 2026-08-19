@@ -179,7 +179,9 @@ A公司，B办事处からのお知らせ：C员工　さんは　20260520143000
 3. 取消成功使原动作从当前派生进出状态中失效，并把任务置为 `canceled`；原始动作、邮件快照、幂等、审计和 provider 证据继续保留。
 4. 取消后使用新 `Idempotency-Key` 可立即重扫正确动作；原 key 只返回已取消的原结果。
 5. 首次 `cancel_until/send_not_before` 与失败重试 `scheduled_at` 独立；每次实际发送仍重新执行订阅与资源门禁。
-6. 本地代码已实现 1 秒 worker、取消 API 和工作台按钮；这不表示任何 Staging/Production 环境已部署。
+6. 本地代码已实现 1 秒 worker、取消 API 和工作台按钮；`npm run validate:adr017` 在一次性数据库
+   验证毫秒边界、竞态、多 worker、恢复、生命周期、SLO 和 guarded rollback。这不表示本轮已部署
+   任何 Staging/Production 环境。
 
 #### 3.3.7 未找到对应邮箱时
 1. 对格式正确但未映射的动作码提示“未找到对应邮箱”，并保持在当前页面

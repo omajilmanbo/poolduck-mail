@@ -74,6 +74,21 @@ export function shouldPollHistory(records: ScanRecord[], attempts: number) {
   );
 }
 
+export function cancellationSecondsRemaining(
+  cancelUntil: string | null,
+  serverOffsetMs: number,
+  clientNowMs = Date.now(),
+) {
+  if (!cancelUntil) return 0;
+  return Math.max(
+    0,
+    Math.ceil(
+      (new Date(cancelUntil).getTime() - (clientNowMs + serverOffsetMs)) /
+        1_000,
+    ),
+  );
+}
+
 function formatDateTime(value?: string | null) {
   if (!value) {
     return '-';
@@ -701,16 +716,10 @@ export default function HomePage() {
                         </span>
                         <div className="mt-2">
                           {record.status === 'waiting' ? (() => {
-                            const remaining = record.cancelUntil
-                              ? Math.max(
-                                  0,
-                                  Math.ceil(
-                                    (new Date(record.cancelUntil).getTime() -
-                                      (Date.now() + record.serverOffsetMs)) /
-                                      1_000,
-                                  ),
-                                )
-                              : 0;
+                            const remaining = cancellationSecondsRemaining(
+                              record.cancelUntil,
+                              record.serverOffsetMs,
+                            );
                             void clockTick;
                             return (
                               <button

@@ -178,7 +178,7 @@ describe('Prisma initial schema', () => {
   const removeUnmappedMigration = readFileSync(
     removeUnmappedMigrationPath,
     'utf8',
-  );
+  ).replace(/\r\n/g, '\n');
   const removeUnmappedRollback = readFileSync(
     removeUnmappedRollbackPath,
     'utf8',

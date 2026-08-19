@@ -18,6 +18,7 @@ import {
   MailJobListResponse,
   SendMailJobResponse,
 } from './mail-jobs.types';
+import { CLAIM_DUE_MAIL_JOB_SQL } from './mail-job-claim.sql';
 
 @Injectable()
 export class MailJobsService {
@@ -208,15 +209,7 @@ export class MailJobsService {
     const attemptId = randomUUID();
     const mailJob = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.$executeRawUnsafe(
-        `UPDATE "mail_jobs"
-         SET "status" = 'processing', "claimed_at" = CURRENT_TIMESTAMP,
-             "claim_attempt_id" = $1::uuid, "updated_at" = CURRENT_TIMESTAMP
-         WHERE "id" = $2::uuid AND "tenant_id" = $3::uuid
-           AND (
-             ($4::boolean AND "status" = 'waiting' AND CURRENT_TIMESTAMP >= "send_not_before")
-             OR ("status" = 'queued' AND "scheduled_at" IS NOT NULL AND CURRENT_TIMESTAMP >= "scheduled_at")
-             OR ("status" = 'queued' AND "scheduled_at" IS NULL AND "send_not_before" IS NULL)
-           )`,
+        CLAIM_DUE_MAIL_JOB_SQL,
         attemptId,
         mailJobId,
         tenantId,

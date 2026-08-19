@@ -97,4 +97,6 @@ Local/CI/Staging 合成账号另用显式 opt-in 的 `platform:seed`；Productio
   provider 回执。管理员也不能把已取消任务改回 `queued` 或在 provider 领取后宣称撤回。
 - 跨 tenant/location、无 assignment 与未知 ID 统一 not-found；assignment/session 撤销立即影响取消
   权限。person/location 停用或待删除不会阻止仍具授权者在窗口内执行降低误发风险的取消。
+- 准入验证覆盖 `trial/active/expired/suspended`、person/location 启停/待删除/清除/恢复以及多 worker；
+  管理员不得用手工状态修改绕过这些领取时门禁。
 - 本地代码和工作台已实现该能力；管理员不得直接修改数据库把 `canceled` 或 `delivery_unknown` 恢复为可发送状态。

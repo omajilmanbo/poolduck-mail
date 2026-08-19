@@ -40,10 +40,107 @@ describe('mail job retry policy', () => {
     expect(provider.send).not.toHaveBeenCalled();
   });
 
+  it('allows only one of two workers to create an attempt and invoke the provider', async () => {
+    const { service, prisma, provider } = setup(0, 1);
+    prisma.$executeRawUnsafe
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(0);
+
+    const results = await Promise.allSettled([
+      service.processQueuedMailJob('tenant-1', 'job-1', null),
+      service.processQueuedMailJob('tenant-1', 'job-1', null),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(prisma.mailDeliveryAttempt.create).toHaveBeenCalledTimes(1);
+    expect(provider.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a stale pre-provider claim to waiting without invoking the provider', async () => {
+    const { service, prisma, provider } = setup(0, 0);
+    prisma.mailJob.findMany.mockResolvedValue([
+      {
+        id: 'job-1',
+        tenantId: 'tenant-1',
+        claimAttemptId: 'attempt-1',
+        retryCount: 0,
+        sendNotBefore: now,
+      },
+    ]);
+    prisma.mailDeliveryAttempt.findUnique.mockResolvedValue({
+      providerInvokedAt: null,
+      completedAt: null,
+    });
+
+    await expect(service.recoverStaleProcessingJobs(now)).resolves.toBe(1);
+
+    expect(prisma.mailJob.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'job-1',
+        tenantId: 'tenant-1',
+        status: 'processing',
+        claimAttemptId: 'attempt-1',
+      },
+      data: {
+        status: 'waiting',
+        claimedAt: null,
+        claimAttemptId: null,
+        errorMessage: null,
+      },
+    });
+    expect(prisma.mailDeliveryAttempt.update).toHaveBeenCalledWith({
+      where: { id: 'attempt-1' },
+      data: {
+        status: 'abandoned',
+        completedAt: now,
+        errorCode: 'STALE_BEFORE_PROVIDER',
+      },
+    });
+    expect(provider.send).not.toHaveBeenCalled();
+  });
+
+  it('moves a stale invoked claim to delivery_unknown and never auto-retries it', async () => {
+    const { service, prisma, provider } = setup(0, 0);
+    prisma.mailJob.findMany.mockResolvedValue([
+      {
+        id: 'job-1',
+        tenantId: 'tenant-1',
+        claimAttemptId: 'attempt-1',
+        retryCount: 0,
+        sendNotBefore: now,
+      },
+    ]);
+    prisma.mailDeliveryAttempt.findUnique.mockResolvedValue({
+      providerInvokedAt: new Date(now.getTime() - 1_000),
+      completedAt: null,
+    });
+
+    await expect(service.recoverStaleProcessingJobs(now)).resolves.toBe(1);
+
+    expect(prisma.mailJob.updateMany).toHaveBeenCalledWith({
+      where: { id: 'job-1', tenantId: 'tenant-1', status: 'processing' },
+      data: {
+        status: 'delivery_unknown',
+        errorMessage: 'PROVIDER_OUTCOME_UNKNOWN',
+      },
+    });
+    expect(prisma.mailDeliveryAttempt.update).toHaveBeenCalledWith({
+      where: { id: 'attempt-1' },
+      data: {
+        status: 'delivery_unknown',
+        completedAt: now,
+        errorCode: 'PROVIDER_OUTCOME_UNKNOWN',
+      },
+    });
+    expect(provider.send).not.toHaveBeenCalled();
+  });
+
   function setup(retryCount: number, claim: number, currentStatus = 'queued') {
     const prisma = {
       $executeRawUnsafe: jest.fn().mockResolvedValue(claim),
       mailJob: {
+        findMany: jest.fn().mockResolvedValue([]),
         updateMany: jest.fn().mockResolvedValue({ count: claim }),
         findFirst: jest.fn().mockResolvedValue({ id: 'job-1', status: currentStatus, scheduledAt: null, sendNotBefore: null }),
         findFirstOrThrow: jest.fn().mockResolvedValue({

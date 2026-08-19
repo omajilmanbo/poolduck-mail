@@ -150,8 +150,10 @@ async function main() {
   const suspendedLocationCount = await prisma.location.count({
     where: { tenantId: seed.suspendedTenantId, status: { not: "purged" } },
   });
-  const activeLocationLimit = Math.max(4, activeLocationCount);
-  const suspendedLocationLimit = Math.max(2, suspendedLocationCount);
+  // Preserve prior synthetic E2E rows while leaving capacity for the next
+  // create/delete/recover rehearsal. Seed reruns must not require cleanup.
+  const activeLocationLimit = Math.max(4, activeLocationCount + 2);
+  const suspendedLocationLimit = Math.max(2, suspendedLocationCount + 1);
 
   await prisma.tenant.upsert({
     where: { id: seed.activeTenantId },
@@ -333,7 +335,20 @@ async function main() {
   });
 
   console.log("Local seed data is ready.");
-  console.log(JSON.stringify(seed, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        environment: "local",
+        synthetic_only: true,
+        tenants: 2,
+        locations: 3,
+        people: 2,
+        operator_assignments: 2,
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 main()

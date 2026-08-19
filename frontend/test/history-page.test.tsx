@@ -1,6 +1,10 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import HomePage, { historyItemToRecord, shouldPollHistory } from '../app/page';
+import HomePage, {
+  cancellationSecondsRemaining,
+  historyItemToRecord,
+  shouldPollHistory,
+} from '../app/page';
 import type { ScanHistoryItem } from '../src/api/client';
 
 const locationId = '44444444-4444-4444-8444-444444444444';
@@ -83,6 +87,47 @@ describe('history workspace', () => {
 
     expect(historyItemToRecord(item).personName).toBe('-');
   });
+
+  it('uses server offset for countdown and never extends a slept or skewed client deadline', () => {
+    const clientNow = new Date('2026-07-20T02:02:04.000Z').getTime();
+    const serverNow = new Date('2026-07-20T01:02:04.000Z').getTime();
+    const offset = serverNow - clientNow;
+
+    expect(
+      cancellationSecondsRemaining(
+        '2026-07-20T01:02:13.000Z',
+        offset,
+        clientNow,
+      ),
+    ).toBe(9);
+    expect(
+      cancellationSecondsRemaining(
+        '2026-07-20T01:02:13.000Z',
+        offset,
+        clientNow + 10_000,
+      ),
+    ).toBe(0);
+  });
+
+  it('shows cancellation result unknown and refreshes instead of claiming success', async () => {
+    vi.stubGlobal(
+      'fetch',
+      createWorkspaceFetch(
+        { items: [historyItem('waiting')], next_cursor: null },
+        new TypeError('Failed to fetch'),
+      ),
+    );
+    render(<HomePage />);
+
+    const cancel = await screen.findByTestId('scan-cancel');
+    fireEvent.click(cancel);
+
+    expect(
+      await screen.findByText('取消结果未知，正在刷新权威状态。'),
+    ).not.toBeNull();
+    expect(screen.getByTestId('mail-status').textContent).toContain('可取消等待中');
+    expect(screen.queryByText('已取消')).toBeNull();
+  });
 });
 
 function createWorkspaceFetch(
@@ -90,6 +135,7 @@ function createWorkspaceFetch(
     | { items: ScanHistoryItem[]; next_cursor: null }
     | { status: 401 }
     | TypeError,
+  cancelError?: TypeError,
 ) {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -134,6 +180,17 @@ function createWorkspaceFetch(
         return jsonResponse({ code: 'UNAUTHORIZED', message: '登录已失效' }, history.status);
       }
       return jsonResponse(history);
+    }
+    if (url.includes('/api/scan-events/') && url.endsWith('/cancel')) {
+      if (cancelError) throw cancelError;
+      return jsonResponse({
+        scan_event_id: '55555555-5555-4555-8555-555555555555',
+        mail_job_id: '66666666-6666-4666-8666-666666666666',
+        effective_status: 'canceled',
+        mail_status: 'canceled',
+        canceled_at: '2026-07-20T01:02:05.000Z',
+        server_time: '2026-07-20T01:02:05.000Z',
+      });
     }
     throw new Error(`Unexpected URL: ${url}`);
   });
