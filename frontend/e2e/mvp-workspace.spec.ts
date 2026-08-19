@@ -93,10 +93,16 @@ test('ADR-017 cancellation survives refresh/relogin and treats a network failure
   await page.getByTestId('scan-submit').click();
   const cancel = page.getByTestId('scan-cancel').first();
   await expect(cancel).toContainText('取消发送');
+  await cancel.scrollIntoViewIfNeeded();
   const statusBox = await page.getByTestId('mail-status').first().boundingBox();
   const cancelBox = await cancel.boundingBox();
   expect(statusBox).not.toBeNull();
   expect(cancelBox).not.toBeNull();
+  expect(statusBox?.x ?? -1).toBeGreaterThanOrEqual(0);
+  expect((statusBox?.x ?? 390) + (statusBox?.width ?? 0)).toBeLessThanOrEqual(390);
+  expect(cancelBox?.x ?? -1).toBeGreaterThanOrEqual(0);
+  expect((cancelBox?.x ?? 390) + (cancelBox?.width ?? 0)).toBeLessThanOrEqual(390);
+  expect(cancelBox?.y ?? -1).toBeGreaterThanOrEqual(0);
   expect((cancelBox?.y ?? 0) + (cancelBox?.height ?? 0)).toBeLessThan(844);
   await cancel.click();
   await expect(page.getByTestId('mail-status').first()).toHaveText('已取消');
