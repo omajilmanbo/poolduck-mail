@@ -235,7 +235,8 @@ ADR-018 已 `Accepted`：服务未上线且没有业务数据，直接删除未�
 ADR-017 已 `Accepted`，schema/API/worker/Frontend 已在本地实现。本节既是自动化回归矩阵，也是进入
 任何部署审批前必须复核的准入清单；本地通过不代表 Staging/Production 已部署。
 
-2026-08-06 本地实现证据见 `docs/testing/local-adr-017-2026-08-06.md`。
+2026-08-06 初始实现证据见 `docs/testing/local-adr-017-2026-08-06.md`；2026-08-19 完整准入与可重复命令
+见 `docs/testing/local-adr-017-2026-08-19.md`。
 
 - 正常：T0 原子创建 `waiting`，截止前取消且 provider attempt 为 0；未取消任务到期自动发送；重复
   取消返回首次结果；刷新/重登恢复权威状态；取消后以新 key 立即重扫。
@@ -253,6 +254,10 @@ ADR-017 已 `Accepted`，schema/API/worker/Frontend 已在本地实现。本节�
   历史/CSV、派生状态、not-mapped 拒绝、location access 与敏感日志过滤保持一致。
 - 人工：只用合成人员与 `.example.local` 地址，在浏览器观察 10 秒按钮、取消/到期竞态、刷新/重登、
   网络断开恢复和小窗口；从 sandbox attempt 记录证明成功取消任务从未调用 provider。
+
+可重复数据库准入命令：在 `backend` 运行 `npm run validate:adr017`。脚本建立一次性数据库、应用全部
+migration、运行生产取消/领取 SQL 与两个真实 worker 实例、演练 guarded rollback，并在 `finally`
+删除该数据库；脚本拒绝非 Local/CI 或非本地主机。
 
 ### 4.8 Issue #96 operator-location 授权验证
 

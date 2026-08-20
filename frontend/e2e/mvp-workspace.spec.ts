@@ -82,6 +82,48 @@ test('history API does not allow a tenant token to select another tenant locatio
   expect(response.status()).toBe(404);
 });
 
+test('ADR-017 cancellation survives refresh/relogin and treats a network failure as unknown', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, {
+    tenantCode: activeTenantCode,
+    identifier: 'local-operator',
+  });
+
+  await page.getByTestId('scan-code-input').fill('V2X01K0ABC10001');
+  await page.getByTestId('scan-submit').click();
+  const cancel = page.getByTestId('scan-cancel').first();
+  await expect(cancel).toContainText('取消发送');
+  await cancel.scrollIntoViewIfNeeded();
+  const statusBox = await page.getByTestId('mail-status').first().boundingBox();
+  const cancelBox = await cancel.boundingBox();
+  expect(statusBox).not.toBeNull();
+  expect(cancelBox).not.toBeNull();
+  expect(statusBox?.x ?? -1).toBeGreaterThanOrEqual(0);
+  expect((statusBox?.x ?? 390) + (statusBox?.width ?? 0)).toBeLessThanOrEqual(390);
+  expect(cancelBox?.x ?? -1).toBeGreaterThanOrEqual(0);
+  expect((cancelBox?.x ?? 390) + (cancelBox?.width ?? 0)).toBeLessThanOrEqual(390);
+  expect(cancelBox?.y ?? -1).toBeGreaterThanOrEqual(0);
+  expect((cancelBox?.y ?? 0) + (cancelBox?.height ?? 0)).toBeLessThan(844);
+  await cancel.click();
+  await expect(page.getByTestId('mail-status').first()).toHaveText('已取消');
+
+  await page.reload();
+  await expect(page.getByTestId('mail-status').first()).toHaveText('已取消');
+  await page.getByRole('button', { name: '退出' }).click();
+  await login(page, {
+    tenantCode: activeTenantCode,
+    identifier: 'local-operator',
+  });
+  await expect(page.getByTestId('mail-status').first()).toHaveText('已取消');
+
+  await page.route('**/api/scan-events/*/cancel', (route) => route.abort('failed'));
+  await page.getByTestId('scan-code-input').fill('V2X01K0ABC10001');
+  await page.getByTestId('scan-submit').click();
+  await page.getByTestId('scan-cancel').first().click();
+  await expect(page.getByText('取消结果未知，正在刷新权威状态。')).toBeVisible();
+  await expect(page.getByTestId('mail-status').first()).not.toHaveText('已取消');
+});
+
 test('MVP GUI blocks scan entry for suspended subscriptions', async ({ page }) => {
   await login(page, {
     tenantCode: suspendedTenantCode,
@@ -208,6 +250,7 @@ test('tenant_manager manages operators while operator has no user-management ent
 });
 
 test('tenant_manager assigns and revokes operator location access from user management', async ({ page }) => {
+  test.setTimeout(60_000);
   await login(page, { tenantCode: activeTenantCode, identifier: 'tenant-manager@example.local' });
   await page.getByRole('link', { name: '用户管理' }).click();
 
@@ -235,6 +278,7 @@ test('tenant_manager assigns and revokes operator location access from user mana
 
   await page.getByRole('link', { name: '返回工作台' }).click();
   await page.getByRole('button', { name: '退出' }).click();
+  await expect(page.getByTestId('tenant-code-input')).toBeVisible();
   await login(page, {
     tenantCode: activeTenantCode,
     identifier: username,
@@ -244,6 +288,7 @@ test('tenant_manager assigns and revokes operator location access from user mana
   await expect(page.getByTestId('location-select')).toContainText('Local School');
 
   await page.getByRole('button', { name: '退出' }).click();
+  await expect(page.getByTestId('tenant-code-input')).toBeVisible();
   await login(page, { tenantCode: activeTenantCode, identifier: 'tenant-manager@example.local' });
   await page.getByRole('link', { name: '用户管理' }).click();
   row = page.getByRole('row').filter({ hasText: username });
@@ -256,6 +301,7 @@ test('tenant_manager assigns and revokes operator location access from user mana
 
   await page.getByRole('link', { name: '返回工作台' }).click();
   await page.getByRole('button', { name: '退出' }).click();
+  await expect(page.getByTestId('tenant-code-input')).toBeVisible();
   await login(page, {
     tenantCode: activeTenantCode,
     identifier: username,

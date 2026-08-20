@@ -34,6 +34,10 @@ ADR-017 本地运行时代码已落地，按以下 Runbook 排查：
 4. 进程崩溃后，未领取的 `waiting` 可恢复处理；无法证明 provider 未调用的任务进入
    `delivery_unknown` 并人工排查，不自动重发。
 5. 取消、领取、订阅/资源阻断和竞态审计仅使用内部 ID 与安全原因码，不复制邮箱、正文或完整动作码。
+6. Local/CI 发布前在 `backend` 运行 `npm run validate:adr017`。脚本仅允许 local/test PostgreSQL，创建
+   并最终删除独立临时数据库；失败时不得把当前环境视为通过准入。
+7. worker 会输出聚合事件 `mail_job.claim_latency_batch`；发现任一观测领取延迟超过 5 秒时改为
+   `mail_job.claim_latency_slo_breach` 警告。事件只含数量和延迟，不含 tenant/job、邮箱、正文或动作码。
 
 ## 3. 订阅异常
 

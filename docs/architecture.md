@@ -57,6 +57,8 @@
 > `canceled` 或 `processing` 唯一胜者；首次 `send_not_before/cancel_until` 与 retry `scheduled_at`
 > 分离。worker 每秒扫描并以数据库条件领取，多实例不依赖进程内锁；provider 边界前持久化 attempt，
 > stale claim 在未调用 provider 时恢复，投递结果不确定时进入 `delivery_unknown` 且不自动重发。
+> T0 在创建事务中读取 PostgreSQL `CURRENT_TIMESTAMP`；取消与领取共用生产 SQL，并将数据库时间
+> 统一到 `timestamp(3)` 毫秒精度后比较，避免应用节点时钟或微秒舍入改变截止边界。
 
 ## 4. 数据层
 

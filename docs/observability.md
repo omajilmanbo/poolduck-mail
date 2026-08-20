@@ -58,6 +58,11 @@ Production 超过 90 天的在线日志应删除或转入经批准的合规归�
 | 订阅拒绝 | 10 分钟内 >= 20 次 | P2 |
 | 跨租户拒绝 | 任意一次 | P1 安全事件 |
 
+worker 当前以安全聚合日志实现本地/CI 可验证出口：`mail_job.claim_latency_batch` 记录 `count`、
+`p95Ms`、`p99Ms`、`maxMs`、`overAlertThreshold`；任一延迟超过 5 秒时使用
+`mail_job.claim_latency_slo_breach` 和 warn 级别。该出口不包含任务、tenant、人员或地址标签；真实
+通知通道仍需部署环境单独批准，不能把本地 warn 宣称为 Production 告警已接通。
+
 告警先发送到经批准的运维邮箱。相同 `event + tenant_id + error_code` 在 10 分钟内合并，避免告警风暴；告警内容同样遵守脱敏规则。
 
 ## 6. 响应与责任

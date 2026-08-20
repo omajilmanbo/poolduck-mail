@@ -25,6 +25,7 @@
     "start:dev": "ts-node-dev --respawn --transpile-only src/main.ts",
     "test": "jest --runInBand",
     "test:db": "npm run prisma:generate && node scripts/prisma-smoke-test.mjs",
+    "validate:adr017": "npm run build && node scripts/adr017-release-validation.mjs",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
   },

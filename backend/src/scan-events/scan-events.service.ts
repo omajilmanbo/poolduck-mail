@@ -21,6 +21,10 @@ import {
   ScanEventListResponse,
   ScanHistoryStatus,
 } from './scan-events.types';
+import {
+  CANCEL_WAITING_MAIL_JOB_SQL,
+  MARK_SCAN_EVENT_CANCELED_SQL,
+} from './scan-cancellation.sql';
 
 const MAIL_TEMPLATE_KEYS = {
   entry: 'scan_entry_notice_v1',
@@ -233,7 +237,7 @@ export class ScanEventsService {
       throw error;
     }
 
-    const receivedAt = new Date();
+    const requestReceivedAt = await this.databaseNow(this.prisma);
     const authorizedLocation = await this.locationAccess.assertLocation(
       user,
       dto.location_id,
@@ -258,7 +262,7 @@ export class ScanEventsService {
         this.prisma,
         user.tenant_id,
         idempotency,
-        receivedAt,
+        requestReceivedAt,
       );
       if (replay) {
         await this.recordScanAudit(user, replay, dto.location_id);
@@ -347,6 +351,10 @@ export class ScanEventsService {
     let result: CreateScanEventResponse;
     try {
       result = await this.prisma.$transaction(async (tx) => {
+        // ADR-017 uses one PostgreSQL timestamp for the scan fact, the
+        // cancellation deadline and the first-send deadline. Application-node
+        // clock skew must never change either authorization boundary.
+        const receivedAt = await this.databaseNow(tx);
         if (idempotency) {
           await tx.$executeRawUnsafe(
             'SELECT pg_advisory_xact_lock(hashtext($1))',
@@ -602,23 +610,22 @@ export class ScanEventsService {
 
     if (event.canceledAt && mailJob.status === 'canceled') {
       await this.recordCancellationAudit(user, event.id, mailJob.id, event.locationId, 'already_canceled');
-      return this.canceledResponse(event.id, mailJob.id, event.canceledAt);
+      return this.canceledResponse(
+        event.id,
+        mailJob.id,
+        event.canceledAt,
+        await this.databaseNow(this.prisma),
+      );
     }
 
     const outcome = await this.prisma.$transaction(async (tx) => {
+      const serverTime = await this.databaseNow(tx);
       await tx.$executeRawUnsafe(
         'SELECT pg_advisory_xact_lock(hashtext($1))',
         `${user.tenant_id}:${event.locationId}:${event.personCodeSnapshot ?? event.id}`,
       );
       const canceledCount = await tx.$executeRawUnsafe(
-        `UPDATE "mail_jobs"
-         SET "status" = 'canceled', "updated_at" = CURRENT_TIMESTAMP
-         WHERE "id" = $1::uuid
-           AND "tenant_id" = $2::uuid
-           AND "location_id" = $3::uuid
-           AND "scan_event_id" = $4::uuid
-           AND "status" = 'waiting'
-           AND CURRENT_TIMESTAMP < "cancel_until"`,
+        CANCEL_WAITING_MAIL_JOB_SQL,
         mailJob.id,
         user.tenant_id,
         event.locationId,
@@ -627,14 +634,7 @@ export class ScanEventsService {
 
       if (canceledCount === 1) {
         await tx.$executeRawUnsafe(
-          `UPDATE "scan_events"
-           SET "canceled_at" = CURRENT_TIMESTAMP,
-               "canceled_by_user_id" = $1::uuid,
-               "cancel_reason_code" = 'OPERATOR_MISTAKE'
-           WHERE "id" = $2::uuid
-             AND "tenant_id" = $3::uuid
-             AND "location_id" = $4::uuid
-             AND "canceled_at" IS NULL`,
+          MARK_SCAN_EVENT_CANCELED_SQL,
           user.user_id,
           event.id,
           user.tenant_id,
@@ -653,14 +653,19 @@ export class ScanEventsService {
           },
         },
       });
-      return { canceledCount, current };
+      return { canceledCount, current, serverTime };
     });
 
     const currentJob = outcome.current?.mailJobs[0];
     if (outcome.current?.canceledAt && currentJob?.status === 'canceled') {
       const result = outcome.canceledCount === 1 ? 'success' : 'already_canceled';
       await this.recordCancellationAudit(user, event.id, mailJob.id, event.locationId, result);
-      return this.canceledResponse(event.id, mailJob.id, outcome.current.canceledAt);
+      return this.canceledResponse(
+        event.id,
+        mailJob.id,
+        outcome.current.canceledAt,
+        outcome.serverTime,
+      );
     }
 
     if (currentJob?.status === 'waiting') {
@@ -682,6 +687,7 @@ export class ScanEventsService {
     scanEventId: string,
     mailJobId: string,
     canceledAt: Date,
+    serverTime: Date,
   ): CancelScanEventResponse {
     return {
       scan_event_id: scanEventId,
@@ -689,7 +695,7 @@ export class ScanEventsService {
       effective_status: 'canceled',
       mail_status: 'canceled',
       canceled_at: canceledAt.toISOString(),
-      server_time: new Date().toISOString(),
+      server_time: serverTime.toISOString(),
     };
   }
 
@@ -832,7 +838,7 @@ export class ScanEventsService {
       });
     }
 
-    const serverTime = new Date();
+    const serverTime = now;
     const canceled = mailJob.status === 'canceled';
     return {
       scan_event_id: mailJob.scanEvent.id,
@@ -1038,6 +1044,19 @@ export class ScanEventsService {
     return message === 'Sandbox provider simulated failure'
       ? message
       : '邮件发送失败';
+  }
+
+  private async databaseNow(client: {
+    $queryRawUnsafe<T = unknown>(query: string, ...values: unknown[]): Promise<T>;
+  }): Promise<Date> {
+    const rows = await client.$queryRawUnsafe<Array<{ now: Date }>>(
+      'SELECT CURRENT_TIMESTAMP AS now',
+    );
+    const now = rows[0]?.now;
+    if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+      throw new Error('PostgreSQL did not return a valid current timestamp');
+    }
+    return now;
   }
 
   private encodeCursor(createdAt: Date, id: string) {

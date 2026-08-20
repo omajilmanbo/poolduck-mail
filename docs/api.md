@@ -126,6 +126,8 @@ platform token 调用租户业务 API、tenant token 调用上述平台 API 时�
 > `effective_status`、`mail_status`、`can_cancel`、`cancel_until`、`server_time` 与 `canceled_at`；
 > `POST /api/scan-events/{scan_event_id}/cancel` 是受支持的取消入口。客户端倒计时仅作提示，最终结果
 > 仍由服务端数据库时间和持久化状态决定。
+> 创建响应的 `server_time` 与 `received_at` 来自同一创建事务的 PostgreSQL 时间；取消成功响应的
+> `server_time` 也来自取消事务，不使用浏览器或应用节点时间决定权限。
 
 ADR-017 当前契约：
 

@@ -1,4 +1,5 @@
 import { config } from "dotenv";
+import { Client } from "pg";
 
 config({ path: "../.env", quiet: true });
 config({ path: ".env", quiet: true });
@@ -173,18 +174,61 @@ async function main() {
     `Uncanceled waiting task was not sent by the worker: ${JSON.stringify(delivered?.body)}`,
   );
 
+  let deliveryEvidence = { database_check: "skipped" };
+  if (process.env.DATABASE_URL) {
+    const database = new Client({ connectionString: process.env.DATABASE_URL });
+    await database.connect();
+    try {
+      const evidence = await database.query(
+        `SELECT
+           mj.id,
+           mj.status,
+           mj.send_not_before,
+           mj.claimed_at,
+           COUNT(mda.id)::int AS attempt_count,
+           COUNT(mda.provider_invoked_at)::int AS provider_invocation_count
+         FROM mail_jobs mj
+         LEFT JOIN mail_delivery_attempts mda ON mda.mail_job_id = mj.id
+         WHERE mj.id = ANY($1::uuid[])
+         GROUP BY mj.id`,
+        [[scan.body.mail_job_id, rescan.body.mail_job_id]],
+      );
+      const canceled = evidence.rows.find((row) => row.id === scan.body.mail_job_id);
+      const sent = evidence.rows.find((row) => row.id === rescan.body.mail_job_id);
+      assert(
+        canceled?.status === "canceled" &&
+          canceled.attempt_count === 0 &&
+          canceled.provider_invocation_count === 0,
+        "Canceled smoke job created a provider attempt.",
+      );
+      assert(
+        sent?.status === "sent" &&
+          sent.attempt_count === 1 &&
+          sent.provider_invocation_count === 1 &&
+          sent.claimed_at >= sent.send_not_before,
+        "Delivered smoke job did not have one post-deadline provider attempt.",
+      );
+      deliveryEvidence = {
+        database_check: "passed",
+        canceled_attempts: canceled.attempt_count,
+        canceled_provider_invocations: canceled.provider_invocation_count,
+        sent_attempts: sent.attempt_count,
+        sent_provider_invocations: sent.provider_invocation_count,
+        early_claims: 0,
+      };
+    } finally {
+      await database.end();
+    }
+  }
+
   console.log("API smoke test completed.");
   console.log(
     JSON.stringify(
       {
-        tenant_code: smoke.tenantCode,
-        location_id: smoke.locationId,
-        scan_event_id: scan.body.scan_event_id,
-        mail_job_id: scan.body.mail_job_id,
         initial_send_status: scan.body.status,
         final_send_status: cancellation.body.mail_status,
-        rescan_event_id: rescan.body.scan_event_id,
         rescan_final_status: delivered.body.mail_status,
+        ...deliveryEvidence,
       },
       null,
       2,
