@@ -223,12 +223,14 @@ describe('Platform control plane', () => {
     expect(JSON.stringify(list.body)).not.toContain('manager@example.local');
     expect(list.body[0]).not.toHaveProperty('tenant_id');
 
+    const startAt = new Date(Date.now() - 60_000).toISOString();
+    const endAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1_000).toISOString();
     const body = {
       name: 'Synthetic Tenant',
       manager_email: 'manager@example.local',
       subscription_status: 'trial',
-      start_at: '2026-07-29T00:00:00.000Z',
-      end_at: '2026-08-29T00:00:00.000Z',
+      start_at: startAt,
+      end_at: endAt,
       location_limit: 1,
     };
     const created = await agent
