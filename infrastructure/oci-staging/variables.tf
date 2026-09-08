@@ -66,25 +66,25 @@ variable "instance_shape" {
   default     = "VM.Standard.A1.Flex"
 }
 
-# A1 Flex OCPU；Always Free 池为 tenancy 级配额，实施前必须确认未被其他资源占用。
+# #116 拟调整目标；2026-09-08 官方免费池为 2 OCPU / 12 GB，实施前核对 tenancy 剩余额度。
 variable "instance_ocpus" {
   description = "OCPUs for VM.Standard.A1.Flex. Ignored for non-Flex shapes."
   type        = number
-  default     = 1
+  default     = 2
 }
 
-# A1 Flex 内存；Staging 单机运行 Node.js + PostgreSQL + Docker 时不建议低于 6GB。
+# A1 Flex 内存；与 2 OCPU 配套的拟调整目标，修改默认值不代表现有 VM 已扩容。
 variable "instance_memory_gb" {
   description = "Memory in GB for VM.Standard.A1.Flex. Ignored for non-Flex shapes."
   type        = number
-  default     = 6
+  default     = 12
 }
 
-# 启动盘大小；OCI Always Free Block Volume 合计额度需由人工确认，本值仅作为 staging 最小基线。
+# #116 启动盘目标 100 GB，容纳 PostgreSQL 数据、镜像和日志；扩容后不能原地缩小。
 variable "boot_volume_size_gb" {
   description = "Boot volume size for the compute instance."
   type        = number
-  default     = 50
+  default     = 100
 }
 
 # Ubuntu 版本；cloud-init 以 Ubuntu 为目标系统安装 Docker 与基础目录。

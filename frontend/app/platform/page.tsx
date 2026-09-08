@@ -8,6 +8,13 @@ import {
   PlatformTenantSummary,
   createPlatformApiClient,
 } from '../../src/api/client';
+import { downloadTenantProvisioningCsv } from '../../src/platform/tenant-provisioning-csv';
+
+type CreatedTenantProvisioning = {
+  tenant: CreatedPlatformTenant;
+  initialName: string;
+  managerEmail: string;
+};
 
 function localInput(date: Date) {
   const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
@@ -33,7 +40,7 @@ export default function PlatformPage() {
   const [selectedCode, setSelectedCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [created, setCreated] = useState<CreatedPlatformTenant | null>(null);
+  const [created, setCreated] = useState<CreatedTenantProvisioning | null>(null);
   const [name, setName] = useState('');
   const [managerEmail, setManagerEmail] = useState('');
   const [status, setStatus] = useState<'trial' | 'active'>('trial');
@@ -92,10 +99,12 @@ export default function PlatformPage() {
     setError('');
     setCreated(null);
     try {
+      const initialName = name.trim();
+      const initialManagerEmail = managerEmail.trim().toLowerCase();
       const result = await api.createTenant(
         {
-          name,
-          manager_email: managerEmail,
+          name: initialName,
+          manager_email: initialManagerEmail,
           subscription_status: status,
           start_at: new Date(startAt).toISOString(),
           end_at: new Date(endAt).toISOString(),
@@ -103,7 +112,11 @@ export default function PlatformPage() {
         },
         crypto.randomUUID(),
       );
-      setCreated(result);
+      setCreated({
+        tenant: result,
+        initialName,
+        managerEmail: initialManagerEmail,
+      });
       setName('');
       setManagerEmail('');
       await load();
@@ -214,15 +227,35 @@ export default function PlatformPage() {
             仅通过已批准的安全渠道交付。关闭此区域后无法从控制台再次读取。
           </p>
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-            <div><dt className="text-slate-400">tenant_code</dt><dd className="font-mono">{created.tenant_code}</dd></div>
-            <div><dt className="text-slate-400">临时密码</dt><dd data-testid="temporary-password" className="break-all font-mono">{created.temporary_password}</dd></div>
+            <div><dt className="text-slate-400">租户名称</dt><dd>{created.initialName}</dd></div>
+            <div><dt className="text-slate-400">tenant_code</dt><dd className="font-mono">{created.tenant.tenant_code}</dd></div>
+            <div><dt className="text-slate-400">tenant_manager 邮箱</dt><dd className="break-all">{created.managerEmail}</dd></div>
+            <div><dt className="text-slate-400">临时密码</dt><dd data-testid="temporary-password" className="break-all font-mono">{created.tenant.temporary_password}</dd></div>
           </dl>
-          <button
-            onClick={() => setCreated(null)}
-            className="mt-4 rounded-md bg-amber-400 px-3 py-2 text-sm font-semibold text-slate-950"
-          >
-            我已安全保存，清除显示
-          </button>
+          <p className="mt-4 text-xs text-amber-100">
+            CSV 包含明文临时密码；请安全保存，交付后及时删除。
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => downloadTenantProvisioningCsv({
+                tenantName: created.initialName,
+                tenantCode: created.tenant.tenant_code,
+                managerEmail: created.managerEmail,
+                temporaryPassword: created.tenant.temporary_password,
+              })}
+              className="rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950"
+            >
+              下载创建信息 CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreated(null)}
+              className="rounded-md bg-amber-400 px-3 py-2 text-sm font-semibold text-slate-950"
+            >
+              我已安全保存，清除显示
+            </button>
+          </div>
         </section>
       ) : null}
 

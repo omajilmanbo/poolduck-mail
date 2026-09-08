@@ -18,7 +18,9 @@ ADR-006/ADR-013 已 Accepted；运行时已由 #110–#112 在本地实现。pla
   创建平台账号，不得提交默认凭据
 - 人工创建 tenant 时显式填写 name、首个 tenant_manager 邮箱、trial/active 时间区间和
   正整数 location_limit；tenant_code 和一次性临时密码由服务端生成
-- 临时密码只显示一次，离开页面后清除；必须通过批准的安全渠道交付并要求首次登录改密
+- 临时密码只显示一次；可在该区域一键下载包含初始 tenant name、`tenant_code`、
+  首个 tenant_manager 邮箱和临时密码的 UTF-8 CSV。CSV 包含明文凭据，必须安全保存、
+  通过批准的安全渠道交付，并在交付后删除；首次登录仍强制改密
 - 暂停/恢复、subscription 和额度变更前核对 tenant name + tenant_code、影响摘要和 version，
   并完成二次确认
 - platform_admin 只能查看 tenant/subscription/额度/脱敏 manager 摘要，不读取人员、扫码、

@@ -12,7 +12,10 @@ admin_ssh_cidr = "203.0.113.10/32"
 # Public key only. Never store private keys in the repository.
 ssh_public_key = "ssh-ed25519 AAAA... poolduck-staging-admin"
 
-# Defaults target an Always Free A1 Flex instance. If capacity is unavailable, switch manually and re-plan.
-instance_shape     = "VM.Standard.A1.Flex"
-instance_ocpus     = 1
-instance_memory_gb = 6
+# Issue #116 target, verified against Oracle docs on 2026-09-08.
+# Requires the tenancy's entire available A1 free pool; verify account usage before apply.
+# Existing terraform.tfvars overrides defaults and must be updated separately at the approved resize step.
+instance_shape      = "VM.Standard.A1.Flex"
+instance_ocpus      = 2
+instance_memory_gb  = 12
+boot_volume_size_gb = 100
