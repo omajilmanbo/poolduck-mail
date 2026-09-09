@@ -21,6 +21,15 @@
 
 ## 2. 维护规则
 
+### #116 Staging 规格准备记录（2026-09-08）
+
+- 2026-09-08 Terraform plan 刷新及 SSH 核验：A1 Flex、1 OCPU、6 GB、50 GB 启动盘；根分区约 49 GB、已用 15 GB，四个容器 healthy。
+- 仓库默认值及示例目标：2 OCPU / 12 GB，启动盘扩至 100 GB；尚未 apply，不能记为已部署规格。
+- 官方额度、tenancy 共享池核算、维护窗口、计划审核与回退统一维护于
+  [OCI Staging 参数准备说明](../../infrastructure/oci-staging/README.md)。
+- 实施后用 OCI 实际值和验证日期替换本准备记录，不按示例推断实际性能。
+- 当前扩容 plan 因 `metadata` 差异要求替换实例，已停止 apply；处理差异并生成原地调整计划后再实施。
+
 - 云资源新增、变更规格、迁移区域、删除时，必须同步更新本表。
 - 关键参数变更必须在 PR 中标注影响环境、风险与回滚方案。
 - 任何敏感值（密钥、口令、连接串、私钥）仅记录在 `docs/inventory/secrets-inventory.md` 的“名称/位置”维度，不写真实值。

@@ -63,6 +63,12 @@ test('platform UI is independent, responsive, and clears one-time credentials', 
     .fill('manager@example.local');
   await page.getByRole('button', { name: '确认并创建' }).click();
   await expect(page.getByTestId('temporary-password')).toBeVisible();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: '下载创建信息 CSV' }).click();
+  expect((await downloadPromise).suggestedFilename()).toMatch(
+    /^poolduck-tenant-[0-9A-Z]{10}-credentials\.csv$/,
+  );
   await page.getByRole('button', { name: '我已安全保存，清除显示' }).click();
   await expect(page.getByTestId('temporary-password')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '下载创建信息 CSV' })).toHaveCount(0);
 });

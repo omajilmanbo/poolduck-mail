@@ -33,6 +33,10 @@
 
 ### 2.2 Terraform state 与 OCI Console 对齐
 
+#116 扩容前先按 [OCI Staging 参数准备说明](../infrastructure/oci-staging/README.md) 核对当前免费额度。
+2026-09-08 拟将 A1 1 OCPU / 6 GB 调整为 2 OCPU / 12 GB；尚未执行，实际规格须实时复核。
+规格变更需维护窗口、备份和新的完整 plan；发现实例替换或无关漂移时停止。
+
 本地确认方法：
 
 ```bash
