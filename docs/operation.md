@@ -56,3 +56,10 @@ ADR-017 本地运行时代码已落地，按以下 Runbook 排查：
 4. 立即阻断可疑访问并升级处理
 
 任意跨租户拒绝均按 P1 安全事件处理；确认发生数据读取或误发时升级为 P0。排障只使用 request ID、tenant/resource 内部 ID 和稳定错误码，不复制完整邮箱、姓名、token 或邮件正文。
+
+## 5. Staging 容量测试
+
+Issue #116 的执行与恢复使用 [`docs/testing/staging-capacity-runbook.md`](testing/staging-capacity-runbook.md)。
+运维人员负责确认测试窗口、备份、mock provider、宿主机采集和停止条件；测试负责人负责外部负载机、
+阶梯与结果报告。出现提前 provider 调用、真实误发、跨租户读取、OOM/restart、数据库异常或持续 5xx 时，
+立即停止负载，保留聚合证据并按 P0/P1 流程处理。

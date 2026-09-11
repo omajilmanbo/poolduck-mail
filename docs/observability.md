@@ -75,3 +75,15 @@ worker 当前以安全聚合日志实现本地/CI 可验证出口：`mail_job.cl
 ## 7. 验证
 
 后续日志实现必须以合成数据验证正常、错误、权限、租户隔离和边界路径，并断言输出不包含密码、Bearer token、完整邮箱、姓名或邮件正文。
+
+## 8. Issue #116 低成本性能采集方案
+
+容量测试第一阶段不安装新的常驻采集组件：使用 OCI 已有主机指标、5 秒一次的短期宿主机/容器 TSV、
+现有 `mail_job.claim_latency_*` 聚合日志，以及按测试时间窗执行的 PostgreSQL 聚合查询。
+原始测试指标只在 Staging 保存 30 天、权限 `0600`；容量报告只保留分位数、吞吐、状态计数和资源水位。
+
+该方案避免在确认采集开销、免费额度、保留责任和告警接收方前引入 Prometheus/Grafana 或付费 APM。
+正式长期监控仍需人工确认 OCI Monitoring 采集点、Notifications 用量、告警接收方与值班责任。
+主机 CPU/内存不能替代 API 延迟、mail claim 延迟、积压、数据库连接/锁等待和容器 restart/OOM；
+这些信号必须在同一 UTC 时间窗关联。采集命令、停止条件和脱敏边界见
+[`staging-capacity-runbook.md`](testing/staging-capacity-runbook.md)。

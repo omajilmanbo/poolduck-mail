@@ -4,8 +4,9 @@ terraform {
 
   required_providers {
     oci = {
-      source  = "oracle/oci"
-      version = "~> 8.15"
+      source = "oracle/oci"
+      # 8.19.0 fixes UpdateInstance sending localVolumeSizeInGBs=0 on A1 Flex.
+      version = "= 8.19.0"
     }
   }
 }

@@ -220,13 +220,20 @@ resource "oci_core_instance" "app" {
 
   source_details {
     source_type             = "image"
-    source_id               = data.oci_core_images.ubuntu.images[0].id
+    source_id               = coalesce(var.instance_image_ocid, data.oci_core_images.ubuntu.images[0].id)
     boot_volume_size_in_gbs = var.boot_volume_size_gb
   }
 
   metadata = {
     ssh_authorized_keys = var.ssh_public_key
     user_data           = base64encode(local.cloud_init)
+  }
+
+  # ADR-005: cloud-init is creation-time bootstrap. Existing hosts are maintained
+  # through the Staging Runbook; template edits must not replace a stateful VM.
+  # Keep SSH keys and all other metadata/resource attributes under drift checks.
+  lifecycle {
+    ignore_changes = [metadata["user_data"]]
   }
 }
 # 读取 Compute 主 VNIC attachment，用于输出 ephemeral public IP，避免人工到 Console 中手动查找。
