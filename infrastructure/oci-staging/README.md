@@ -42,22 +42,29 @@ terraform apply tfplan
 
 ## #116：免费规格核对与 Staging 扩容准备（2026-09-08）
 
-本次更新参数默认值、示例与操作文档；已生成完整 plan，尚未修改云端服务器、执行 apply 或开始压测。
-本地 `terraform.tfvars` 与未刷新 state 记录 A1 **1 OCPU / 6 GB / 50 GB 启动盘**；
-这不是本次实时云端核验结果。私有 tfvars 保持原值，会覆盖新的变量默认值。
+**执行更新：已完成 2 OCPU / 12 GB / 100 GB 原地扩容，四个容器 healthy，完整 plan 为 No changes。**
+详见 [执行记录](../../docs/testing/staging-resize-2026-09-08.md)。下文准备阶段记录为历史证据。
+provider 固定为 8.19.0；既有主机使用 `instance_image_ocid` 固定原镜像，避免动态最新镜像触发启动盘替换。
+执行时 CPU/内存与现有卷扩容分开完成，不能复用此前携带镜像差异的旧 plan。
+
+准备阶段先更新参数默认值、示例与操作文档；2026-09-08 后续已完成云端扩容并刷新 state。
+当前私有 `terraform.tfvars`、state 与云端均为 A1 **2 OCPU / 12 GB / 100 GB 启动盘**；
+实际容量仍须在每次测试前实时核验。
 
 2026-09-08 后续只读核验：Staging `app01` 实测 1 CPU、约 6 GB 内存；根分区约 49 GB，
 已用 15 GB；四个 Compose 容器均 healthy，部署 commit 为 `abc95ad18183a3f78a4a1818aa0c23625ed73718`。
 使用 2/12/100 参数生成的完整 Terraform plan 要求 `oci_core_instance.app` delete/create，
-replacement 路径为 `metadata`。该计划禁止执行；需先审查 bootstrap metadata 差异并准备保留实例/数据卷的
-原地更新方案，再生成和审核新计划。计划仅保存在 gitignored 本地文件中。
+replacement 路径为 `metadata`，该旧计划禁止执行。随后限定忽略创建期 `metadata["user_data"]`，
+新的完整计划先收敛为原地更新；执行完成后的完整刷新 plan 为 No changes。
+差异、主机现状与验证见 [cloud-init 差异处理记录](../../docs/testing/staging-cloud-init-drift-2026-09-08.md)。
+计划仅保存在 gitignored 本地文件中；既有主机仍通过 Runbook 维护，新建实例使用最新模板。
 
-| 参数 | 本地配置/state 基线 | 拟调整目标 |
+| 参数 | 扩容前基线 | 当前实测/配置 |
 |---|---|---|
 | `instance_shape` | `VM.Standard.A1.Flex` | 保持 A1 Arm |
 | `instance_ocpus` | 1 | 2 |
-| `instance_memory_gb` | 6 | 12 |
-| `boot_volume_size_gb` | 50 | 100（2026-09-08 用户确认） |
+| `instance_memory_gb` | 6 | 12 GB |
+| `boot_volume_size_gb` | 50 | 100 GB（10 VPU/GB） |
 
 Oracle 当前 [Always Free 资源说明](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm)
 给出的 A1 免费池为每月 **1,500 OCPU 小时 / 9,000 GB 小时**，对应 **2 OCPU / 12 GB**。
@@ -82,7 +89,7 @@ Always Free 闲置实例可能被回收，扩容不等于可用性保证。
 因此暂记“2026 年 6 月中旬已有调整报告，8 月有执行停用报告”；不能把 6 月 15 日
 表述为已获官方公告确认的日期，也不能将所有账户的文档更新、计费生效和停用日期混为一谈。
 
-### 扩容执行顺序（待批准维护窗口）
+### 扩容执行顺序（已执行 Runbook，供复核与未来变更使用）
 
 1. 在 OCI Console 核对 home region、Staging 实例、账户免费资格、Limits/Quotas/Usage、
    所有 compartment 的 A1 占用与当月累计用量、卷/备份用量和费用预估；确认目标仍为 0 成本。

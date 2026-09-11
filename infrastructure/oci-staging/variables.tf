@@ -88,6 +88,12 @@ variable "boot_volume_size_gb" {
 }
 
 # Ubuntu 版本；cloud-init 以 Ubuntu 为目标系统安装 Docker 与基础目录。
+variable "instance_image_ocid" {
+  description = "Pinned launch image OCID for an existing VM; null selects the latest compatible image for initial provisioning."
+  type        = string
+  default     = null
+}
+
 variable "ubuntu_os_version" {
   description = "Canonical Ubuntu image version used by the staging compute instance."
   type        = string

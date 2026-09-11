@@ -149,8 +149,9 @@ Local/CI/Staging 合成验证，Production 会拒绝执行。
 
 ## 5. Staging 部署
 
-#116 的 A1 免费规格核对、2 OCPU / 12 GB 拟调整参数及扩容回退流程见
-[OCI Staging 参数准备说明](../infrastructure/oci-staging/README.md)；参数目标不代表云端已完成调整。
+#116 的 A1 免费规格、2 OCPU / 12 GB / 100 GB 扩容结果及回退边界见
+[OCI Staging 参数说明](../infrastructure/oci-staging/README.md)；容量测试方法见
+[`docs/testing/staging-capacity-runbook.md`](testing/staging-capacity-runbook.md)。
 
 - 使用独立数据库与邮件沙箱配置
 - cloud-init 只负责安装 Docker/Compose、配置主机用户/目录和基础防火墙，不部署应用

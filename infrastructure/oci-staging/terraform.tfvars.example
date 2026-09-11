@@ -19,3 +19,6 @@ instance_shape      = "VM.Standard.A1.Flex"
 instance_ocpus      = 2
 instance_memory_gb  = 12
 boot_volume_size_gb = 100
+
+# Existing VM: pin its original image OCID before any resize; never adopt a newer image implicitly.
+# instance_image_ocid = "ocid1.image.oc1..example"

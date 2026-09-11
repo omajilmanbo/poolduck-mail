@@ -34,8 +34,18 @@
 ### 2.2 Terraform state 与 OCI Console 对齐
 
 #116 扩容前先按 [OCI Staging 参数准备说明](../infrastructure/oci-staging/README.md) 核对当前免费额度。
-2026-09-08 拟将 A1 1 OCPU / 6 GB 调整为 2 OCPU / 12 GB；尚未执行，实际规格须实时复核。
+2026-09-08 已将 A1 调整为 2 OCPU / 12 GB，启动盘 100 GB；完整 plan 无变更，见 [执行记录](testing/staging-resize-2026-09-08.md)。
 规格变更需维护窗口、备份和新的完整 plan；发现实例替换或无关漂移时停止。
+实例创建后的 `metadata["user_data"]` 不随模板修改更新；新模板只用于新实例。
+既有主机的包、权限及安全修复必须通过本 Runbook 单独核验和实施，不能用重跑 cloud-init 代替部署。
+2026-09-08 差异及原地更新计划见 [处理记录](testing/staging-cloud-init-drift-2026-09-08.md)。
+
+### 2.3 Issue #116 容量测试
+
+Staging 扩容本身不代表扫码发信容量。正式压测统一使用
+[`docs/testing/staging-capacity-runbook.md`](testing/staging-capacity-runbook.md)，从 VM 外生成负载，
+仅使用专用合成 tenant 与 mock/sandbox provider。每次执行必须先批准窗口、备份、记录精确 commit 和
+实际规格，并同时采集宿主机、容器、API、mail queue 与 PostgreSQL 指标；达到停止条件立即停止加压。
 
 本地确认方法：
 
