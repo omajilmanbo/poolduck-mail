@@ -450,6 +450,9 @@ npm run test:e2e
 Issue #116 的 OCI Staging 容量方法、合成数据、阶梯、停止条件、聚合数据库报告和宿主机采集见
 [`docs/testing/staging-capacity-runbook.md`](testing/staging-capacity-runbook.md)。正式压测必须使用
 VM 外负载机、mock/sandbox provider 与人工批准窗口；单负载机不得绕过登录限流来模拟超过 50 个独立 session。
+2026-09-24 的实测结果见
+[`docs/testing/staging-capacity-result-2026-09-24.md`](testing/staging-capacity-result-2026-09-24.md)：端到端最大可持续容量为
+20 并发、约 19 次有效扫码/秒；40/50 并发虽可接收请求，但 mail claim 延迟和积压不满足 SLO。
 
 - 单元测试通过率 100%（新增/改动相关）
 - 高风险模块必须包含至少 1 个失败场景测试
