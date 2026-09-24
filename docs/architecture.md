@@ -108,6 +108,11 @@
 - 扫码事务提交后同步调用 sandbox provider；失败任务由进程内轮询器原子领取，按 30 秒、2 分钟、10 分钟退避，三次重试耗尽后标记为终态 `failed`
 - 每个映射扫码事件保存 `person_mapping_id`、`person_code_snapshot`、`action` 与 `action_source`；邮件任务同时保存 person/location/tenant 外键及发送时的名称/人员码/动作快照。历史读取和重试使用快照及已固化正文，不因后续改名或扫描而改变。
 
+> ADR-019 当前为 Proposed：Issue #85 拟在现有抽象下增加 OCI Email Delivery HTTPS Submission，
+> 并以 Compute Instance Principal、显式真实发送开关、Staging 收件 allowlist、provider 错误分类和
+> OCI Email Domain 日志/指标作为安全边界。ADR 被人工接受且另行批准 Staging 启用前，当前运行行为
+> 仍是 mock/sandbox；发件域、From、region、SPF/DKIM/DMARC 与启用窗口均未由仓库代选。
+
 ## 7. 租户模型
 
 - tenant 为一级隔离边界

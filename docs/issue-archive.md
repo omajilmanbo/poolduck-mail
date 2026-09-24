@@ -26,6 +26,7 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #61 | 自动处理扫码后创建的 `queued` mail job，并移除 GUI 手动发送按钮；真实 SMTP/provider 不在该项范围内 | 已完成并关闭 | 是，改变邮件发送行为 |
 | #73 | 实现 tenant_manager 的 location 管理 API 与安全停用规则 | 已完成并关闭；不依赖商业配额或计费配置 | 是，停用行为与 queued 任务处理已确认 |
 | #83 | 商业订阅概览、location allowance 与续订提醒 | 已关闭为 `not_planned`；MVP 仅保留 #64/#65 的安全门禁与页面修正 | 是，商业化范围延后 |
+| #85 | 接入经过批准的真实邮件 provider 与投递回执 | ADR-019 Proposed；拟采用 OCI Email Delivery HTTPS Submission，尚未实现或启用 | 是，需决定发件域、From、region、SPF/DKIM/DMARC、allowlist、配额与启用窗口 |
 | #90 | 用 ADR 定义 tenant、location、person 的短业务 ID、内部主键与 location 简化模型 | ADR-007 Accepted，已关闭 | 是，已确认 |
 | #91 | 按批准的 ID ADR 引入 8–12 位 tenant 公共 ID 并迁移登录入口 | 已完成并关闭；纳入本次阶段 PR | 是，涉及认证与数据迁移 |
 | #92 | 自动生成 location ID，将类型统一为 `location`，简化创建并补充地点/人员重新启用 | 已完成并关闭；纳入本次阶段 PR | 是，ADR-007 已 Accepted |
