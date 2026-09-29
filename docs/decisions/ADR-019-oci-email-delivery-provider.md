@@ -1,6 +1,6 @@
 # ADR-019：使用 OCI Email Delivery HTTPS Submission 作为首个真实邮件 Provider
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-09-24
 - 相关 Issue：#85, #116
 
@@ -264,3 +264,7 @@ bounce 和 complaint 自动生效，不能 opt out：
 - 隔离：跨 tenant/job/attempt 不可读取或改变，客户端不能指定 From、recipient、region 或 provider；
 - 安全：allowlist fail closed，日志/API/审计不含邮箱、正文、credential，容器外无多余 IAM 权限；
 - 运维：配额节流、queue backlog、accepted/relayed、bounce/complaint/suppressed、unknown 告警与 mock 回滚。
+
+2026-09-29 人工接受记录：用户确认接受 ADR-019，并要求将上述 Follow-up 拆分为 Issue。
+实施与验证跟踪为 #136–#145；可选产品级异步投递状态设计为 #146。真实 Staging
+发件域、DNS 与启用窗口仍由用户另行决定和批准。
