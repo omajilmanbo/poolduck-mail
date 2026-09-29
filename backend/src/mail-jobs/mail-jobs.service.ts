@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,7 +12,13 @@ import { AuthenticatedUserResponse } from '../auth/auth.types';
 import { LicenseService } from '../license/license.service';
 import { LocationAccessService } from '../location-access/location-access.service';
 import { PrismaService } from '../prisma.service';
-import { SandboxMailProvider } from './sandbox-mail.provider';
+import { MailProvider } from './mail-provider.types';
+import {
+  MAIL_PROVIDER_CONFIG_TOKEN,
+  MAIL_PROVIDER_TOKEN,
+  MailProviderConfig,
+  isRecipientAllowed,
+} from './mail-provider.config';
 import { ExportMailJobsDto, ListMailJobsDto } from './dto';
 import {
   MailJobHistoryItem,
@@ -25,9 +32,10 @@ export class MailJobsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly licenseService: LicenseService,
-    private readonly mailProvider: SandboxMailProvider,
+    @Inject(MAIL_PROVIDER_TOKEN) private readonly mailProvider: MailProvider,
     private readonly audit: AuditService,
     private readonly locationAccess: LocationAccessService,
+    @Inject(MAIL_PROVIDER_CONFIG_TOKEN) private readonly mailProviderConfig: MailProviderConfig,
   ) {}
 
   async listMailJobs(
@@ -262,6 +270,9 @@ export class MailJobsService {
     if (mailJob.location.status !== 'active' || mailJob.personMapping.status !== 'active') {
       return this.blockClaimedJob(tenantId, mailJob.id, attemptId, actorUserId, mailJob.retryCount, 'RESOURCE_NOT_SENDABLE');
     }
+    if (!isRecipientAllowed(this.mailProviderConfig, mailJob.toEmail)) {
+      return this.blockClaimedJob(tenantId, mailJob.id, attemptId, actorUserId, mailJob.retryCount, 'REAL_MAIL_RECIPIENT_NOT_ALLOWED');
+    }
 
     await this.prisma.mailDeliveryAttempt.update({
       where: { id: attemptId },
@@ -383,7 +394,7 @@ export class MailJobsService {
     attemptId: string,
     actorUserId: string | null,
     retryCount: number,
-    errorCode: 'SUBSCRIPTION_NOT_SENDABLE' | 'RESOURCE_NOT_SENDABLE',
+    errorCode: 'SUBSCRIPTION_NOT_SENDABLE' | 'RESOURCE_NOT_SENDABLE' | 'REAL_MAIL_RECIPIENT_NOT_ALLOWED',
   ): Promise<SendMailJobResponse> {
     const completedAt = new Date();
     await this.prisma.$transaction([
@@ -399,7 +410,11 @@ export class MailJobsService {
     await this.audit.record({
       tenantId,
       actorUserId,
-      action: errorCode === 'SUBSCRIPTION_NOT_SENDABLE' ? 'subscription.mail_send.denied' : 'resource.mail_send.denied',
+      action: errorCode === 'SUBSCRIPTION_NOT_SENDABLE'
+        ? 'subscription.mail_send.denied'
+        : errorCode === 'RESOURCE_NOT_SENDABLE'
+          ? 'resource.mail_send.denied'
+          : 'mail.recipient.denied',
       resourceType: 'mail_job',
       resourceId: mailJobId,
       result: 'denied',

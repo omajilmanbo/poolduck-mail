@@ -1,7 +1,6 @@
 import { AuditService } from '../src/audit/audit.service';
 import { LicenseService } from '../src/license/license.service';
 import { MailJobsService } from '../src/mail-jobs/mail-jobs.service';
-import { SandboxMailProvider } from '../src/mail-jobs/sandbox-mail.provider';
 import { PrismaService } from '../src/prisma.service';
 import { ScanEventsService } from '../src/scan-events/scan-events.service';
 
@@ -97,9 +96,10 @@ describe('history CSV exports', () => {
     const service = new MailJobsService(
       prisma,
       {} as LicenseService,
-      {} as SandboxMailProvider,
+      {} as never,
       audit,
       locationAccess as never,
+      { kind: 'mock' },
     );
 
     const csv = await service.exportMailJobs(user, range);

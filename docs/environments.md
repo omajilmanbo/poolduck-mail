@@ -13,7 +13,7 @@
 | 用户对象 | 开发者 | 内部测试/验收 | 真实客户 |
 | 数据类型 | 本地测试数据 | 非真实客户数据 | 真实业务数据 |
 | 数据库 | 本地 PostgreSQL（Compose） | Staging VM 内 PostgreSQL 16 容器（与 Production 隔离） | 独立 Production DB |
-| Mail Provider | Mock/Sandbox | Sandbox（独立账号） | 正式 Provider（非 sandbox-only） |
+| Mail Provider | Mock | 当前默认 Mock；OCI 仅在后续适配器和人工批准后可启用 | 待独立批准 |
 | 域名与协议 | localhost（HTTP） | `app.poolducktest.com`（Caddy + Let's Encrypt HTTPS） | 正式域名（HTTPS，待独立决策） |
 | Secrets | 本地 `.env` | 当前 VM 本地 `.env`（仓库外）；目标为 Staging secrets store | Production secrets store |
 | 日志监控 | 本地日志 | 当前容器日志；集中日志与基础监控待补齐 | 集中日志+监控+告警 |
@@ -33,7 +33,7 @@
 - `APP_PORT`：按部署平台分配。
 - `DATABASE_URL`：环境独立。
 - `JWT_SECRET`：环境独立、定期轮换。
-- `MAIL_PROVIDER`：Local/Staging 允许 sandbox/mock；Production 指向正式通道。
+- `MAIL_PROVIDER`：只接受 `mock` 或 `oci_email_delivery_https`；当前实际可启动的仅为 `mock`，OCI 还依赖 #137。
 - `FRONTEND_BASE_URL`、`API_BASE_URL`：按环境域名区分。
 
 ## 5. 验收检查清单（文档级）
@@ -59,7 +59,7 @@ Staging is an internal verification environment. It validates configuration, dep
 - Staging and Production must not share a database, schema, secret, mail provider account, or customer data source.
 - Staging data must be synthetic or manually seeded test data.
 - Staging secrets must be generated separately from Production secrets.
-- Staging mail must use `mock` or `sandbox`; real customer delivery is prohibited.
+- Staging defaults to `mock`; real customer delivery is prohibited. ADR-019's future OCI mode is limited to approved synthetic test recipients.
 - `TENANT_CONTEXT_ENFORCED=true` is mandatory for Staging.
 
 ### 6.3 Staging variable baseline
@@ -75,7 +75,10 @@ Staging is an internal verification environment. It validates configuration, dep
 | `DATABASE_URL` | Secret Staging PostgreSQL URL | Yes | Isolated Staging database only. |
 | `JWT_SECRET` | Generated Staging-only secret | Yes | Do not reuse Local or Production. |
 | `REFRESH_TOKEN_SECRET` | Generated Staging-only secret | Yes | Do not reuse Local or Production. |
-| `MAIL_PROVIDER` | `sandbox` or `mock` | No | Production provider is out of scope. |
+| `MAIL_PROVIDER` | `mock` | No | `sandbox` is not a valid selector; OCI mode remains unavailable until #137. |
+| `REAL_MAIL_SEND_ENABLED` | `false` | No | A separate explicit gate; enabling it alone does not send mail. |
+| `OCI_EMAIL_REGION` / `OCI_EMAIL_FROM_ADDRESS` / `OCI_EMAIL_MESSAGE_ID_DOMAIN` | Empty until approved | No | Required together for future Staging OCI mode. |
+| `STAGING_REAL_MAIL_RECIPIENT_ALLOWLIST` | Empty until approved | Yes, when populated | Exact comma-separated addresses in a protected runtime env file; never commit or print its values. |
 | `MAIL_FROM_ADDRESS` | Staging placeholder or sandbox sender | Yes/Placeholder | Must not be a production sender. |
 | `LOG_LEVEL` | `info` | No | `debug` only for temporary troubleshooting. |
 | `TENANT_CONTEXT_ENFORCED` | `true` | No | Must not be disabled. |

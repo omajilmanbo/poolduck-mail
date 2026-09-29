@@ -6,7 +6,7 @@
 - 后端：NestJS（Node.js 20 LTS，REST API）
 - 数据库：PostgreSQL 16 + Prisma
 - 认证：JWT（access + refresh）+ RBAC
-- 邮件服务：MVP 使用 Sandbox/Mock Provider（不接入真实供应商）
+- 邮件服务：当前运行时仅能使用 Mock Provider；ADR-019 的 OCI 真实发信仍待独立适配器与人工启用。
 
 ### 1.1 Local 容器运行拓扑（Issue #60）
 
@@ -51,6 +51,7 @@
 - Subscription 模块：订阅状态与有效期校验
 - Scan 模块：按 ADR-015 严格解析产品名无关的 `V2E<person_code>` / `V2X<person_code>`、扫码事件入库、幂等与冲突处理；不双读 `PD1|...` 或迁移旧资产
 - Mail 模块：邮件任务创建、发送、重试
+- Mail Provider 选择器只接受 `mock` 与 `oci_email_delivery_https`；后者要求 Staging 专用的显式开关、region、From、Message-ID domain 和独立精确地址 allowlist。#137 适配器接入前，OCI 模式即使配置完整也拒绝启动。收件人始终来自已持久化的任务快照，allowlist 外地址在调用 provider 前终态阻断。
 - Audit 模块：以 best-effort 方式写入关键操作审计日志；审计写入失败不改变主业务结果
 
 > ADR-017 已在本地实现：首次发送使用数据库时间权威的 10 秒 `waiting` 犹豫期，并以原子条件更新决定

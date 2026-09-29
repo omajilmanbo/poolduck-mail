@@ -37,11 +37,20 @@
   `AUTH_LOGIN_MAX_PER_TENANT` / `AUTH_LOGIN_MAX_PER_IDENTIFIER` /
   `AUTH_LOGIN_MAX_PER_COMPOSITE`
 - `MAIL_PROVIDER`
+- `REAL_MAIL_SEND_ENABLED` / `OCI_EMAIL_REGION` / `OCI_EMAIL_FROM_ADDRESS` /
+  `OCI_EMAIL_MESSAGE_ID_DOMAIN` / `STAGING_REAL_MAIL_RECIPIENT_ALLOWLIST`（仅未来 Staging OCI 模式）
 - `MAIL_SMTP_HOST` / `MAIL_SMTP_USER` / `MAIL_SMTP_PASS`
 - `MAIL_FROM_ADDRESS`
 - `LOG_LEVEL`
 - `CORS_ORIGIN`
 - `TENANT_CONTEXT_ENFORCED`
+
+当前 `MAIL_PROVIDER` 只接受 `mock` 与 `oci_email_delivery_https`。默认 `mock`；未知值启动失败。
+OCI 模式要求 `APP_ENV=staging`、`REAL_MAIL_SEND_ENABLED=true`、有效的 region/From/Message-ID domain
+以及非空精确地址 allowlist；Local、CI、Production 不可启用。#137 适配器尚未接入，配置全部满足时仍会以
+`OCI_EMAIL_PROVIDER_NOT_IMPLEMENTED` 拒绝启动，不会实际发信。allowlist 从受保护的运行时环境文件提供，
+可能包含个人邮箱，须按 PII 以 `0600` 权限管理；不要把值写入仓库、命令输出、日志或 PR。数据库人员邮箱
+只决定任务的不可变收件快照，不能替代独立的 Staging allowlist。
 
 平台三个 Secret 必须彼此独立且不同于 tenant JWT/refresh Secret。缺失时平台认证与开通 API
 fail closed，但 tenant 工作台继续运行。`PLATFORM_SYNTHETIC_*` 仅用于显式 opt-in 的

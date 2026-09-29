@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { MailJobsService } from '../src/mail-jobs/mail-jobs.service';
+import { MailProviderConfig } from '../src/mail-jobs/mail-provider.config';
 
 describe('mail job retry policy', () => {
   const now = new Date('2026-07-23T00:00:00.000Z');
@@ -55,6 +56,45 @@ describe('mail job retry policy', () => {
     expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
     expect(prisma.mailDeliveryAttempt.create).toHaveBeenCalledTimes(1);
     expect(provider.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks an address outside the staging allowlist before provider invocation', async () => {
+    const { service, prisma, provider } = setup(0, 1, 'queued', {
+      kind: 'oci_email_delivery_https',
+      region: 'ap-tokyo-1',
+      fromAddress: 'sender@example.com',
+      messageIdDomain: 'mail.example.com',
+      recipientAllowlist: new Set(['approved@example.local']),
+    });
+
+    const result = await service.processQueuedMailJob('tenant-1', 'job-1', null);
+
+    expect(result).toMatchObject({ status: 'failed' });
+    expect(provider.send).not.toHaveBeenCalled();
+    expect(prisma.mailDeliveryAttempt.update).toHaveBeenCalledWith({
+      where: { id: expect.any(String) },
+      data: expect.objectContaining({ status: 'blocked', errorCode: 'REAL_MAIL_RECIPIENT_NOT_ALLOWED' }),
+    });
+    expect(prisma.mailJob.update).toHaveBeenCalledWith({
+      where: { id: 'job-1' },
+      data: expect.objectContaining({ status: 'failed', errorMessage: 'REAL_MAIL_RECIPIENT_NOT_ALLOWED' }),
+    });
+  });
+
+  it('uses the persisted recipient snapshot when the staging address is allowlisted', async () => {
+    const { service, provider } = setup(0, 1, 'queued', {
+      kind: 'oci_email_delivery_https',
+      region: 'ap-tokyo-1',
+      fromAddress: 'sender@example.com',
+      messageIdDomain: 'mail.example.com',
+      recipientAllowlist: new Set(['recipient@example.local']),
+    });
+
+    await service.processQueuedMailJob('tenant-1', 'job-1', null);
+
+    expect(provider.send).toHaveBeenCalledWith(expect.objectContaining({
+      toEmail: 'recipient@example.local',
+    }));
   });
 
   it('returns a stale pre-provider claim to waiting without invoking the provider', async () => {
@@ -136,7 +176,7 @@ describe('mail job retry policy', () => {
     expect(provider.send).not.toHaveBeenCalled();
   });
 
-  function setup(retryCount: number, claim: number, currentStatus = 'queued') {
+  function setup(retryCount: number, claim: number, currentStatus = 'queued', config: MailProviderConfig = { kind: 'mock' }) {
     const prisma = {
       $executeRawUnsafe: jest.fn().mockResolvedValue(claim),
       mailJob: {
@@ -188,6 +228,7 @@ describe('mail job retry policy', () => {
         provider as never,
         audit as never,
         {} as never,
+        config,
       ),
     };
   }
