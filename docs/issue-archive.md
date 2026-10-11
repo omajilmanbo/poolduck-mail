@@ -78,7 +78,7 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #141 | 基础设施 | 为 Staging Compute 配置最小范围的 Instance Principal 发信权限 | Terraform 已创建单实例 Dynamic Group 与精确 sender policy，均为 ACTIVE；完整 plan 无漂移；HTTPS 权限映射、容器身份 preflight 和负面权限测试未验证 | 是，运行时验证仍待完成 |
 | #142 | 运维 | 建立 OCI Email Domain 投递日志、指标、告警和人工对账路径 | 90 天保留及可能费用获批准；用户已指定当前唯一 OCI 管理员担任读取人、告警接收人和回滚负责人，保守停止规则获批准；两类 90 天日志与三条原生告警 ACTIVE、邮箱订阅 ACTIVE，合成通知已确认送达；应用级异常告警与实际邮件事件仍待验证 | 是，需完成权限边界、应用级告警及真实事件验收 |
 | #143 | 工程改进 | 对齐 OCI provider 的环境、部署、运维和测试文档 | 文档与 inventory 已更新 Terraform 实况、停止阈值和回滚责任人；真实发信 Runbook 尚待人工审核，#145 前不宣称上线 | 是，需审查真实发信 Runbook |
-| #145 | 运维 | 在受控窗口启用 Staging OCI 发信并验证单封、小批量与回滚 | 用户已批准有人值守单发并确认受控邮箱；本地 selector 已接通、测试通过，Staging 仍为 mock；待完成目标容器权限、应用告警及发布预检后再切换 | 是，预检失败不得启用 |
+| #145 | 运维 | 在受控窗口启用 Staging OCI 发信并验证单封、小批量与回滚 | 用户已批准有人值守单发并确认受控邮箱；commit `5ca587d` 已在 Staging 以 mock 部署并完成增量迁移、健康检查和容器内 Instance Principal 认证预检；负面 IAM、应用级自动告警及真实事件仍未验收，尚未切换或发信 | 是，预检失败不得启用 |
 | 待建 Issue | 工程改进 | 按 ADR-005 实现幂等 Staging 部署脚本；人工审批触发，并保留恢复 Runbook | 已批准设计，尚未实现 | 是 |
 | #86 | 基础设施 | Staging 域名、TLS 与访问控制 | ADR-012 Accepted；总体跟踪，Caddy/Let's Encrypt 实施见 #107 | 是 |
 | #107 | 基础设施 | 按 ADR-012 为 Staging 接入 Caddy、Let's Encrypt、HTTPS 路由与证书续期 | 已完成并部署；80/443 公网入口于 2026-07-29 人工批准 | 是，ADR-012 与公网入口已确认 |
