@@ -6,7 +6,7 @@
 - 后端：NestJS（Node.js 20 LTS，REST API）
 - 数据库：PostgreSQL 16 + Prisma
 - 认证：JWT（access + refresh）+ RBAC
-- 邮件服务：当前运行时仅能使用 Mock Provider；ADR-019 的 OCI 真实发信仍待独立适配器与人工启用。
+- 邮件服务：当前 Staging 运行时仍使用 Mock Provider；ADR-019 的 OCI HTTPS adapter、结果分类和节流已有本地实现，selector 已在 #145 批准后接通，但目标容器尚未部署或完成 #141–#144 预检，真实发信仍关闭。
 
 ### 1.1 Local 容器运行拓扑（Issue #60）
 
@@ -51,7 +51,7 @@
 - Subscription 模块：订阅状态与有效期校验
 - Scan 模块：按 ADR-015 严格解析产品名无关的 `V2E<person_code>` / `V2X<person_code>`、扫码事件入库、幂等与冲突处理；不双读 `PD1|...` 或迁移旧资产
 - Mail 模块：邮件任务创建、发送、重试
-- Mail Provider 选择器只接受 `mock` 与 `oci_email_delivery_https`；后者要求 Staging 专用的显式开关、region、From、Message-ID domain 和独立精确地址 allowlist。#137 适配器接入前，OCI 模式即使配置完整也拒绝启动。收件人始终来自已持久化的任务快照，allowlist 外地址在调用 provider 前终态阻断。
+- Mail Provider 选择器只接受 `mock` 与 `oci_email_delivery_https`；后者要求 Staging 专用的显式开关、region、approved sender compartment、From 和 Message-ID domain。#137 的 OCI HTTPS adapter 使用 Instance Principal、禁用 SDK 自动重试，并在 tenant-scoped attempt 上保存调用前 Message-ID 与响应标识；#138 将 OCI 结果明确分为 accepted、transient、permanent、suppressed、unknown，只有明确未被接受的 transient 可有限重试，unknown 不自动重发。#139 阶段性以 PostgreSQL 跨实例预约确保 OCI 提交至少间隔 50 ms（应用侧最多 20 次/秒），不设应用侧每日上限；这不是 OCI 实际配额。本地 selector 已接通真实 adapter，但 Staging 当前仍保持 mock，只有受控预检通过后才可切换。收件人始终来自按 tenant/location/person 映射创建的不可变任务快照；新增人员邮箱不需维护第二份地址清单。Staging 真实启用前须人工核查测试数据。
 - Audit 模块：以 best-effort 方式写入关键操作审计日志；审计写入失败不改变主业务结果
 
 > ADR-017 已在本地实现：首次发送使用数据库时间权威的 10 秒 `waiting` 犹豫期，并以原子条件更新决定
@@ -110,7 +110,7 @@
 - 每个映射扫码事件保存 `person_mapping_id`、`person_code_snapshot`、`action` 与 `action_source`；邮件任务同时保存 person/location/tenant 外键及发送时的名称/人员码/动作快照。历史读取和重试使用快照及已固化正文，不因后续改名或扫描而改变。
 
 > ADR-019 已 Accepted：Issue #85 将在现有抽象下增加 OCI Email Delivery HTTPS Submission，
-> 并以 Compute Instance Principal、显式真实发送开关、Staging 收件 allowlist、provider 错误分类和
+> 并以 Compute Instance Principal、显式真实发送开关、Staging 测试数据核查、provider 错误分类和
 > OCI Email Domain 日志/指标作为安全边界。实现与另行批准 Staging 启用前，当前运行行为
 > 仍是 mock/sandbox；发件域、From、region、SPF/DKIM/DMARC 与启用窗口均未由仓库代选。
 

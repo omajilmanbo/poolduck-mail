@@ -33,7 +33,8 @@
 - `APP_PORT`：按部署平台分配。
 - `DATABASE_URL`：环境独立。
 - `JWT_SECRET`：环境独立、定期轮换。
-- `MAIL_PROVIDER`：只接受 `mock` 或 `oci_email_delivery_https`；当前实际可启动的仅为 `mock`，OCI 还依赖 #137。
+- `MAIL_PROVIDER`：只接受 `mock` 或 `oci_email_delivery_https`；当前实际可启动的仅为 `mock`，OCI adapter、分类与阶段性 20 次/秒节流已实现，但真实发信仍等待独立人工启用。
+- OCI HTTPS 使用 Compute Instance Principal 和非秘密的 `OCI_EMAIL_*` 容器环境配置，不使用 SMTP username/password 或 API private key；#141–#143 准入及未决项见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。
 - `FRONTEND_BASE_URL`、`API_BASE_URL`：按环境域名区分。
 
 ## 5. 验收检查清单（文档级）
@@ -75,11 +76,9 @@ Staging is an internal verification environment. It validates configuration, dep
 | `DATABASE_URL` | Secret Staging PostgreSQL URL | Yes | Isolated Staging database only. |
 | `JWT_SECRET` | Generated Staging-only secret | Yes | Do not reuse Local or Production. |
 | `REFRESH_TOKEN_SECRET` | Generated Staging-only secret | Yes | Do not reuse Local or Production. |
-| `MAIL_PROVIDER` | `mock` | No | `sandbox` is not a valid selector; OCI mode remains unavailable until #137. |
+| `MAIL_PROVIDER` | `mock` | No | `sandbox` is not a valid selector; OCI mode remains unavailable until explicit approval. |
 | `REAL_MAIL_SEND_ENABLED` | `false` | No | A separate explicit gate; enabling it alone does not send mail. |
-| `OCI_EMAIL_REGION` / `OCI_EMAIL_FROM_ADDRESS` / `OCI_EMAIL_MESSAGE_ID_DOMAIN` | Empty until approved | No | Required together for future Staging OCI mode. |
-| `STAGING_REAL_MAIL_RECIPIENT_ALLOWLIST` | Empty until approved | Yes, when populated | Exact comma-separated addresses in a protected runtime env file; never commit or print its values. |
-| `MAIL_FROM_ADDRESS` | Staging placeholder or sandbox sender | Yes/Placeholder | Must not be a production sender. |
+| `OCI_EMAIL_REGION` / `OCI_EMAIL_SENDER_COMPARTMENT_ID` / `OCI_EMAIL_FROM_ADDRESS` / `OCI_EMAIL_MESSAGE_ID_DOMAIN` | Empty until approved | No | Non-secret container environment values required together for future Staging OCI mode; not stored in the database. |
 | `LOG_LEVEL` | `info` | No | `debug` only for temporary troubleshooting. |
 | `TENANT_CONTEXT_ENFORCED` | `true` | No | Must not be disabled. |
 

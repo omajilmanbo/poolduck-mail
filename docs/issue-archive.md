@@ -26,7 +26,7 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #61 | 自动处理扫码后创建的 `queued` mail job，并移除 GUI 手动发送按钮；真实 SMTP/provider 不在该项范围内 | 已完成并关闭 | 是，改变邮件发送行为 |
 | #73 | 实现 tenant_manager 的 location 管理 API 与安全停用规则 | 已完成并关闭；不依赖商业配额或计费配置 | 是，停用行为与 queued 任务处理已确认 |
 | #83 | 商业订阅概览、location allowance 与续订提醒 | 已关闭为 `not_planned`；MVP 仅保留 #64/#65 的安全门禁与页面修正 | 是，商业化范围延后 |
-| #85 | 接入经过批准的真实邮件 provider 与投递回执 | ADR-019 Accepted；#136–#145 为实施和验证任务，#146 为可选后续；尚未启用 | 是，需决定发件域、DNS、allowlist、配额与启用窗口 |
+| #85 | 接入经过批准的真实邮件 provider 与投递回执 | ADR-019 Accepted；#136–#145 为实施和验证任务，#146 为可选后续；尚未启用 | 是，需决定发件域、DNS、Staging 测试数据、配额与启用窗口 |
 | #90 | 用 ADR 定义 tenant、location、person 的短业务 ID、内部主键与 location 简化模型 | ADR-007 Accepted，已关闭 | 是，已确认 |
 | #91 | 按批准的 ID ADR 引入 8–12 位 tenant 公共 ID 并迁移登录入口 | 已完成并关闭；纳入本次阶段 PR | 是，涉及认证与数据迁移 |
 | #92 | 自动生成 location ID，将类型统一为 `location`，简化创建并补充地点/人员重新启用 | 已完成并关闭；纳入本次阶段 PR | 是，ADR-007 已 Accepted |
@@ -57,13 +57,14 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #127 | 实现到期发送 worker、多实例原子领取、订阅/资源重检与安全恢复 | 本地已实现并验证；尚未部署 | 是，涉及自动发信、故障恢复与 SLO |
 | #128 | 实现扫码记录右侧取消按钮、服务端倒计时与历史终态 | 本地已实现并验证；尚未部署 | 是，涉及安全 UX 与服务端权威状态 |
 | #129 | 完成 ADR-017 竞态/E2E/smoke、迁移回滚、文档与运维准入 | 2026-08-19 本地准入实现与证据已完成，待 PR 人工审核；本轮未部署 Staging/Production | 是，需人工审核完整准入证据 |
-| #136 | 为 OCI 邮件 provider 增加选择器、配置校验与 Staging 收件 allowlist 门禁 | ADR-019 实施项；本地已实现并验证，OCI 适配器与真实启用仍待后续 Issue | 是，涉及真实发信门禁 |
-| #137 | 在现有邮件抽象下接入 OCI HTTPS 提交、Instance Principal 与可追溯标识 | ADR-019 实施项；当前未实现 | 是，涉及真实发信与数据模型 |
-| #138 | 区分 OCI accepted、transient、permanent、suppressed 与 unknown 结果 | ADR-019 实施项；当前未实现 | 是，涉及重试和误发风险 |
-| #139 | 按 OCI 实际配额进行 provider 节流与积压观测 | ADR-019 实施项；当前未实现 | 是，需批准实际配额和运行上限 |
-| #140 | 建立 fake OCI client 契约测试与安全异常回归 | ADR-019 验证项；当前未实现 | 是，涉及 tenant/邮件目标地址异常 |
-| #144 | 确认 Staging 发件域、DNS、收件 allowlist、配额与启用前提 | ADR-019 人工决策项；未选择具体值 | 是，用户决定并验证 |
+| #136 | 为 OCI 邮件 provider 增加选择器与真实发信配置门禁 | ADR-019 收件规则已修订；本地已实现并验证，OCI 适配器与真实启用仍待后续 Issue | 是，涉及真实发信门禁 |
+| #137 | 在现有邮件抽象下接入 OCI HTTPS 提交、Instance Principal 与可追溯标识 | 本地已实现 adapter、可空标识迁移与 fake 测试；#145 批准后本地 selector 已接通，目标 Staging 仍保持 mock | 是，涉及真实发信与数据模型 |
+| #138 | 区分 OCI accepted、transient、permanent、suppressed 与 unknown 结果 | 本地已实现分类与安全重试测试；真实模式尚未部署或启用 | 是，涉及重试和误发风险 |
+| #139 | 按 OCI 实际配额进行 provider 节流与积压观测 | 阶段性全局 20 次/秒节流和聚合积压观测已在本地实现；OCI Limits API 返回 18000/分钟、50000/24 小时、2008192 字节，但 compartment 有效 quota 未返回数值；用户要求 Issue 保持开放以便随时调整，真实发送未启用 | 是，需核实有效 quota、成本与发送观察 |
+| #140 | 建立 fake OCI client 契约测试与安全异常回归 | 本地已加入合成数据 fake OCI 贯穿契约与安全回归；原 Issue 独立 allowlist 条款已由修订 ADR-019 的不可变 `mail_job.to_email` 快照规则取代；真实发送未启用 | 是，涉及 tenant/邮件目标地址异常 |
+| #144 | 确认 Staging 发件域、DNS、人员邮箱测试数据、配额与启用前提 | Email Domain、DKIM、approved sender 实时复核均 Active；权威 DNS 已确认 DKIM、DMARC `p=none` 和唯一 SPF；用户决定不启用 custom return path；Staging 的 `test1` 地点有 1 条 active 人员记录，租户订阅有效，其邮箱与用户更正后的测试地址精确匹配（不记录地址）；用户已确认邮箱控制权、接收同意及有人值守单发窗口；compartment 有效 quota 仍待核实，真实发送未启用 | 是，仍需有效 quota 与启用前预检 |
 | #146 | 设计 OCI 异步回执同步为产品级投递状态的方案 | P3 可选后续；不阻塞 #85 首次真实 provider | 是，涉及 tenant scope、PII 与 schema |
+| #149 | 在租户管理员和平台管理员界面只读显示当前生效的 mock/OCI 发信模式 | 后续产品改进；实时状态见 GitHub | 否，仅展示模式，不启用真实发信 |
 
 后续所有产品能力、用户体验和业务流程改进 Issue 均追加到本节。
 
@@ -74,10 +75,10 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #38 | 运维 | PostgreSQL 备份与恢复策略 | 当前跟进项，实时状态见 GitHub | 是 |
 | #39 | 运维 | 日志、监控与告警策略 | 策略文档已完成并关闭；集中采集与真实告警仍待独立实施 | 是 |
 | #116 | 运维 | 测量 OCI Always Free 单机的最大可持续并发扫码发信容量，并检讨低成本性能监控方案 | 2026-09-24 steady/burst/mixed-success 已完成：端到端上限 20 并发、约 19 次有效扫码/秒；provider-failure 与常驻告警落地待后续 Issue | 是，告警接收方、worker 扩容方案与 provider-failure 窗口仍需人工批准 |
-| #141 | 基础设施 | 为 Staging Compute 配置最小范围的 Instance Principal 发信权限 | ADR-019 实施项；具体 OCI 资源待用户确认 | 是，应用 IAM 前审批 |
-| #142 | 运维 | 建立 OCI Email Domain 投递日志、指标、告警和人工对账路径 | ADR-019 实施项；当前未启用 | 是，需确认日志权限、保留期与告警接收方 |
-| #143 | 工程改进 | 对齐 OCI provider 的环境、部署、运维和测试文档 | ADR-019 文档项；随实现更新 | 是，需审查真实发信 Runbook |
-| #145 | 运维 | 在受控窗口启用 Staging OCI 发信并验证单封、小批量与回滚 | ADR-019 最终验证项；依赖 #136–#144 | 是，真实发信需再次批准 |
+| #141 | 基础设施 | 为 Staging Compute 配置最小范围的 Instance Principal 发信权限 | Terraform 已创建单实例 Dynamic Group 与精确 sender policy，均为 ACTIVE；完整 plan 无漂移；HTTPS 权限映射、容器身份 preflight 和负面权限测试未验证 | 是，运行时验证仍待完成 |
+| #142 | 运维 | 建立 OCI Email Domain 投递日志、指标、告警和人工对账路径 | 90 天保留及可能费用获批准；用户已指定当前唯一 OCI 管理员担任读取人、告警接收人和回滚负责人，保守停止规则获批准；两类 90 天日志与三条原生告警 ACTIVE、邮箱订阅 ACTIVE，合成通知已确认送达；应用级异常告警与实际邮件事件仍待验证 | 是，需完成权限边界、应用级告警及真实事件验收 |
+| #143 | 工程改进 | 对齐 OCI provider 的环境、部署、运维和测试文档 | 文档与 inventory 已更新 Terraform 实况、停止阈值和回滚责任人；真实发信 Runbook 尚待人工审核，#145 前不宣称上线 | 是，需审查真实发信 Runbook |
+| #145 | 运维 | 在受控窗口启用 Staging OCI 发信并验证单封、小批量与回滚 | 用户已批准有人值守单发并确认受控邮箱；本地 selector 已接通、测试通过，Staging 仍为 mock；待完成目标容器权限、应用告警及发布预检后再切换 | 是，预检失败不得启用 |
 | 待建 Issue | 工程改进 | 按 ADR-005 实现幂等 Staging 部署脚本；人工审批触发，并保留恢复 Runbook | 已批准设计，尚未实现 | 是 |
 | #86 | 基础设施 | Staging 域名、TLS 与访问控制 | ADR-012 Accepted；总体跟踪，Caddy/Let's Encrypt 实施见 #107 | 是 |
 | #107 | 基础设施 | 按 ADR-012 为 Staging 接入 Caddy、Let's Encrypt、HTTPS 路由与证书续期 | 已完成并部署；80/443 公网入口于 2026-07-29 人工批准 | 是，ADR-012 与公网入口已确认 |

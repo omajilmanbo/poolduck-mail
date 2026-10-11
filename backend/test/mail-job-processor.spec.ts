@@ -78,4 +78,27 @@ describe('mail job processor observability', () => {
     expect(Number(summary.p95Ms)).toBeGreaterThanOrEqual(1_100);
     expect(summary.p99Ms).toBe(summary.p95Ms);
   });
+
+  it('reports global due backlog and rate deferrals without tenant or recipient labels', async () => {
+    const debug = jest.spyOn(Logger.prototype, 'debug').mockImplementation();
+    const prisma = {
+      $queryRawUnsafe: jest.fn()
+        .mockResolvedValueOnce([{ id: 'job-1', tenantId: 'tenant-1', overdueMs: 100 }])
+        .mockResolvedValueOnce([{ dueCount: 7, oldestDueMs: 4_000 }]),
+    };
+    const mailJobs = {
+      recoverStaleProcessingJobs: jest.fn().mockResolvedValue(0),
+      processQueuedMailJob: jest.fn().mockResolvedValue({
+        status: 'queued', provider_result: { error_message: 'PROVIDER_RATE_LIMITED' },
+      }),
+    };
+
+    await new MailJobProcessorService(prisma as never, mailJobs as never).processDueJobs();
+
+    const event = debug.mock.calls.map(([value]) => JSON.parse(String(value)) as Record<string, unknown>)
+      .find((value) => value.event === 'mail_job.backlog_snapshot');
+    expect(event).toMatchObject({ dueCount: 7, oldestDueMs: 4_000, rateDeferredCount: 1 });
+    expect(JSON.stringify(event)).not.toContain('tenant-1');
+    expect(JSON.stringify(event)).not.toContain('job-1');
+  });
 });

@@ -125,3 +125,59 @@ variable "freeform_tags" {
     issue       = "48"
   }
 }
+
+# ADR-019: these public identifiers are approved for Staging only. No DNS
+# provider credential or OCI-generated DNS record value is stored in Terraform.
+variable "email_domain_name" {
+  description = "Approved staging Email Delivery domain."
+  type        = string
+  default     = "mail.poolducktest.com"
+}
+
+variable "email_dkim_selector" {
+  description = "Existing OCI DKIM selector, imported into Terraform state."
+  type        = string
+  default     = "stg202610"
+}
+
+variable "email_sender_address" {
+  description = "Exact approved staging sender address; not a recipient allowlist."
+  type        = string
+  default     = "no-reply@mail.poolducktest.com"
+}
+
+variable "tenancy_ocid" {
+  description = "Tenancy OCID for the optional Dynamic Group and root-compartment IAM policy."
+  type        = string
+  default     = null
+}
+
+variable "enable_email_instance_principal" {
+  description = "Create the narrowly scoped staging Dynamic Group and IAM policy only after separate policy approval."
+  type        = bool
+  default     = false
+}
+
+variable "email_log_retention_days" {
+  description = "Approved raw OCI Email Delivery log retention; null defers creating PII-bearing logs until access is reviewed."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.email_log_retention_days == null || contains([30, 60, 90, 120, 150, 180], var.email_log_retention_days)
+    error_message = "OCI service log retention must be null or a 30-day increment from 30 through 180 days."
+  }
+}
+
+variable "enable_email_delivery_alerts" {
+  description = "Create the Staging Email Delivery notification topic, email subscription, and native metric alarms."
+  type        = bool
+  default     = false
+}
+
+variable "email_alert_endpoint" {
+  description = "Operator mailbox for the OCI Notifications EMAIL subscription; keep this value only in ignored local tfvars."
+  type        = string
+  default     = null
+  sensitive   = true
+}

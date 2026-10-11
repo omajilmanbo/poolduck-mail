@@ -19,8 +19,12 @@
 | DATABASE_URL | 数据库连接串 | `postgresql://poolduck_local:poolduck_local_password@localhost:5432/poolduck_mail` | `Secret` | `Secret` | Yes | Local 为 compose 示例值；不写真实环境值 |
 | JWT_SECRET | JWT 签名密钥 | `local-placeholder` | `Secret` | `Secret` | Yes | 不写真实值 |
 | REFRESH_TOKEN_SECRET | 刷新令牌签名密钥 | `local-placeholder` | `Secret` | `Secret` | Yes | 不写真实值 |
-| MAIL_PROVIDER | 邮件 provider 类型 | `mock` | `sandbox` | `TBD` | No | MVP 优先 sandbox/mock |
-| MAIL_FROM_ADDRESS | 发件地址标识 | `no-reply@example.local` | `Secret/Placeholder` | `Secret/Placeholder` | Yes | 不写真实邮箱账号凭据 |
+| MAIL_PROVIDER | 邮件 provider 类型 | `mock` | `mock`（OCI 待 #145） | `TBD` | No | 仅 `mock` 当前可启动；`sandbox` 不是 selector |
+| REAL_MAIL_SEND_ENABLED | 真实发送独立门禁 | `false` | `false`（#145 前） | `false` | No | 单独设置为 true 仍不能绕过代码门禁 |
+| OCI_EMAIL_REGION | OCI HTTPS region | 空 | `ap-tokyo-1`（资源已建，真实发送未批准） | TBD | No | sender/Email Domain/endpoint 须同 region |
+| OCI_EMAIL_SENDER_COMPARTMENT_ID | approved sender 所在 compartment | 空 | 既有 Staging compartment；资源已建，容器仍不设置真实模式 | TBD | No | 容器运行环境，非数据库字段 |
+| OCI_EMAIL_FROM_ADDRESS | approved sender | 空 | `no-reply@mail.poolducktest.com` 已在 OCI `ACTIVE`，真实发送未批准 | TBD | No | 非登录凭据；不得提前启用 |
+| OCI_EMAIL_MESSAGE_ID_DOMAIN | Message-ID domain | 空 | 已批准 `mail.poolducktest.com`；真实模式仍关闭 | TBD | No | 与发件子域一致 |
 | LOG_LEVEL | 日志级别 | `debug` | `info` | `info` | No | 按环境调整 |
 | CORS_ORIGIN | CORS 白名单 | `http://localhost:3000` | `https://app.poolducktest.com` | `TBD` | No | 禁止通配 origin |
 | TENANT_CONTEXT_ENFORCED | 租户上下文强制开关 | `true` | `true` | `true` | No | 避免跨租户访问 |
@@ -50,13 +54,12 @@ This section refines the Staging column for the current OCI Always Free MVP desi
 | `DATABASE_URL` | `Secret` | Yes | Yes | Staging PostgreSQL only; do not reuse Production. |
 | `JWT_SECRET` | `Secret` | Yes | Yes | Staging-only generated value. |
 | `REFRESH_TOKEN_SECRET` | `Secret` | Yes | Yes | Staging-only generated value. |
-| `MAIL_PROVIDER` | `sandbox` or `mock` | No | Yes | Real provider is out of scope. |
-| `MAIL_SMTP_HOST` | `Placeholder` if sandbox SMTP is used | Yes/Placeholder | Conditional | Omit if the mock provider does not need SMTP. |
-| `MAIL_SMTP_PORT` | Sandbox SMTP port if used | No | Conditional | Omit if the mock provider does not need SMTP. |
-| `MAIL_SMTP_USER` | `Secret` if sandbox SMTP is used | Yes | Conditional | Do not commit. |
-| `MAIL_SMTP_PASS` | `Secret` if sandbox SMTP is used | Yes | Conditional | Do not commit. |
-| `MAIL_FROM_ADDRESS` | `Secret/Placeholder` | Yes | Yes | Must not be a production sender. |
+| `MAIL_PROVIDER` | `mock` | No | Yes | OCI HTTPS is code-gated pending #145 approval. |
+| `REAL_MAIL_SEND_ENABLED` | `false` | No | Yes | Separate approval gate; do not change during ordinary deploy. |
+| `OCI_EMAIL_*` | Empty until approved | No | No | Only future OCI HTTPS mode; no SMTP/API key. See `docs/oci-mail-staging-readiness.md`. |
 | `LOG_LEVEL` | `info` | No | Yes | Use `debug` only temporarily. |
 | `TENANT_CONTEXT_ENFORCED` | `true` | No | Yes | Mandatory for Staging. |
 
 Human operators must provide or confirm the required values before Staging deployment. If any required value is missing, agents must stop and report the missing item instead of inventing a default.
+
+The historical Issue #37 baseline used SMTP/sandbox placeholders. Current Compose and Backend do not consume `MAIL_SMTP_*` or `MAIL_FROM_ADDRESS`; these are not required for mock deployments or the future OCI HTTPS path.

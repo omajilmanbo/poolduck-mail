@@ -447,6 +447,16 @@ npm run test:e2e
 
 ## 7. 质量门禁建议
 
+ADR-019 #138 Local/CI 使用 fake OCI client 验证：2xx accepted、429/配额明确拒绝、认证/请求 4xx、suppression、timeout/断线/5xx、回执缺失和 SDK 未分类异常；检查仅 transient 有限重试，unknown 不自动重发，`retry_count` 与安全错误码一致。#139 还需 fake DB 预约测试：50 ms 边界、跨 tenant 全局序列化、延期不调用 provider/不消耗 retry、重启后沿用数据库 attempt 历史、窗口查询失败时 fail closed，以及积压日志不含 PII。手工复核应在 `MAIL_PROVIDER=mock` 下检查 tenant/location/订阅门禁、任务收件快照与审计脱敏；真实 OCI 发送须等待发件域/DNS/IAM/数据核查和另行人工批准，不作为 #138/#139 测试步骤。OCI 实际每分钟、每日、单封大小配额尚未核实，#139 保持开放。
+
+#140 fake OCI client 契约：`backend/test/oci-mail-contract.spec.ts` 将假客户端注入真实 OCI adapter 与发送服务，只用合成 `.invalid` 地址，不建立 OCI 凭据或网络连接。测试单一收件人取持久化 `mail_job.to_email`、固定 sender/compartment、RFC Message-ID 与禁用 SDK retry、同租户 attempt 标识持久化；逐项覆盖 suppression、429/配额、请求/认证 4xx、timeout/5xx/响应丢失/无效回执，并断言 API 形状的服务响应、数据库写入及审计不包含收件人、正文或原始异常。未知状态再次处理必须拒绝。取消/等待/跨租户、过期/暂停订阅、停用地点/人员不得调用 provider。既有 `mail-jobs.spec.ts` 覆盖 HTTP 层的认证、跨租户和客户端收件人覆盖请求，`oci-email-delivery-provider.spec.ts` 覆盖 SDK 请求映射；完整后端测试含 mock provider 回归。Issue 中“独立地址 allowlist”已被修订的 ADR-019 取代：当前只按不可变人员邮箱任务快照发送，不维护第二份 allowlist。
+
+Local/CI 复核命令（在 `backend/`）：`npm test -- --runTestsByPath test/oci-mail-contract.spec.ts`、`npm test`、`npm run lint`、`npm run typecheck`、`npm run build`；ADR-017 发布门禁为 `npm run validate:adr017`，须使用专用本地/CI PostgreSQL，不得对 Staging/Production 执行。以上均不含真实 OCI 发信；真实模式仍需 #144/#145 人工决定与批准。
+
+2026-10-11 本地结果：新增契约 18/18、全量后端 243/243、lint、typecheck、build 均通过。`validate:adr017` 的 build 阶段通过，但本地 PostgreSQL 连接在脚本建立测试数据库时意外终止，因此该数据库准入项尚未通过；需在 CI 或可用的专用本地 PostgreSQL 上复核，不可据此开启真实发送。
+
+#141–#143 的 OCI IAM、日志/指标/告警只能在批准的 Staging region、sender 和操作窗口内验证；Local/CI 只检验文档、fake client 与 mock 回归。只读 preflight、脱敏权限证据、合成单封/告警测试和回滚核验见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。
+
 Issue #116 的 OCI Staging 容量方法、合成数据、阶梯、停止条件、聚合数据库报告和宿主机采集见
 [`docs/testing/staging-capacity-runbook.md`](testing/staging-capacity-runbook.md)。正式压测必须使用
 VM 外负载机、mock/sandbox provider 与人工批准窗口；单负载机不得绕过登录限流来模拟超过 50 个独立 session。

@@ -100,6 +100,7 @@ describe('history CSV exports', () => {
       audit,
       locationAccess as never,
       { kind: 'mock' },
+      {} as never,
     );
 
     const csv = await service.exportMailJobs(user, range);

@@ -20,5 +20,24 @@ instance_ocpus      = 2
 instance_memory_gb  = 12
 boot_volume_size_gb = 100
 
+# ADR-019 Staging sender identifiers. Existing domain and DKIM must be imported
+# before apply; the sender is created only after reviewing the full plan.
+email_domain_name    = "mail.poolducktest.com"
+email_dkim_selector  = "stg202610"
+email_sender_address = "no-reply@mail.poolducktest.com"
+
+# Enable only after #141 policy approval and tenancy/compartment review.
+# tenancy_ocid                    = "ocid1.tenancy.oc1..example"
+# enable_email_instance_principal = true
+
+# User approved 90 days and possible storage charges. Only enable after
+# confirming the operator identity, raw-log access boundary, and full plan.
+# email_log_retention_days = 90
+
+# Enable only after approving the destination and possible notification fees.
+# Keep the real endpoint in ignored local terraform.tfvars, never in Git.
+# enable_email_delivery_alerts = true
+# email_alert_endpoint         = "operator@example.invalid"
+
 # Existing VM: pin its original image OCID before any resize; never adopt a newer image implicitly.
 # instance_image_ocid = "ocid1.image.oc1..example"

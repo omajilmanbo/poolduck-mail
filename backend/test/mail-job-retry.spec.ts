@@ -4,6 +4,11 @@ import { MailProviderConfig } from '../src/mail-jobs/mail-provider.config';
 
 describe('mail job retry policy', () => {
   const now = new Date('2026-07-23T00:00:00.000Z');
+  const ociConfig: MailProviderConfig = {
+    kind: 'oci_email_delivery_https', region: 'ap-tokyo-1',
+    senderCompartmentId: 'ocid1.compartment.oc1..synthetic',
+    fromAddress: 'sender@example.com', messageIdDomain: 'mail.example.com',
+  };
 
   beforeEach(() => jest.useFakeTimers().setSystemTime(now));
   afterEach(() => jest.useRealTimers());
@@ -58,43 +63,132 @@ describe('mail job retry policy', () => {
     expect(provider.send).toHaveBeenCalledTimes(1);
   });
 
-  it('blocks an address outside the staging allowlist before provider invocation', async () => {
-    const { service, prisma, provider } = setup(0, 1, 'queued', {
-      kind: 'oci_email_delivery_https',
-      region: 'ap-tokyo-1',
-      fromAddress: 'sender@example.com',
-      messageIdDomain: 'mail.example.com',
-      recipientAllowlist: new Set(['approved@example.local']),
-    });
-
-    const result = await service.processQueuedMailJob('tenant-1', 'job-1', null);
-
-    expect(result).toMatchObject({ status: 'failed' });
-    expect(provider.send).not.toHaveBeenCalled();
-    expect(prisma.mailDeliveryAttempt.update).toHaveBeenCalledWith({
-      where: { id: expect.any(String) },
-      data: expect.objectContaining({ status: 'blocked', errorCode: 'REAL_MAIL_RECIPIENT_NOT_ALLOWED' }),
-    });
-    expect(prisma.mailJob.update).toHaveBeenCalledWith({
-      where: { id: 'job-1' },
-      data: expect.objectContaining({ status: 'failed', errorMessage: 'REAL_MAIL_RECIPIENT_NOT_ALLOWED' }),
-    });
-  });
-
-  it('uses the persisted recipient snapshot when the staging address is allowlisted', async () => {
-    const { service, provider } = setup(0, 1, 'queued', {
-      kind: 'oci_email_delivery_https',
-      region: 'ap-tokyo-1',
-      fromAddress: 'sender@example.com',
-      messageIdDomain: 'mail.example.com',
-      recipientAllowlist: new Set(['recipient@example.local']),
-    });
+  it('uses the persisted recipient snapshot for a newly added person address', async () => {
+    const { service, provider } = setup(0, 1, 'queued', 'new-person@example.local');
 
     await service.processQueuedMailJob('tenant-1', 'job-1', null);
 
     expect(provider.send).toHaveBeenCalledWith(expect.objectContaining({
-      toEmail: 'recipient@example.local',
+      toEmail: 'new-person@example.local',
     }));
+  });
+
+  it('persists the OCI Message-ID before submission and attaches receipt IDs to the same tenant attempt', async () => {
+    const { service, prisma, provider, rateLimiter } = setup(0, 1, 'queued', 'recipient@example.com', ociConfig);
+    provider.send.mockImplementation(async ({ attemptId }: { attemptId: string }) => {
+      expect(rateLimiter.reserve).toHaveBeenCalledWith(
+        'tenant-1', 'job-1', attemptId, `<${attemptId}@mail.example.com>`,
+      );
+      return {
+        provider: 'oci_email_delivery_https', success: true, disposition: 'accepted',
+        providerMessageId: 'accepted@mail.example.com',
+        envelopeId: 'envelope-synthetic', opcRequestId: 'request-synthetic',
+      };
+    });
+
+    const result = await service.processQueuedMailJob('tenant-1', 'job-1', null);
+
+    expect(result.status).toBe('sent');
+    const attemptId = provider.send.mock.calls[0][0].attemptId;
+    expect(provider.send).toHaveBeenCalledWith(expect.objectContaining({
+      attemptId, toEmail: 'recipient@example.com',
+    }));
+    expect(prisma.mailDeliveryAttempt.update).toHaveBeenCalledWith({
+      where: { id: attemptId, tenantId: 'tenant-1' },
+      data: expect.objectContaining({
+        status: 'succeeded', providerMessageId: 'accepted@mail.example.com',
+        envelopeId: 'envelope-synthetic', opcRequestId: 'request-synthetic',
+      }),
+    });
+  });
+
+  it.each([
+    ['transient', 'PROVIDER_TRANSIENT', 'queued', 1, new Date(now.getTime() + 30_000)],
+    ['permanent', 'OCI_AUTH_REJECTED', 'failed', 0, null],
+    ['suppressed', 'RECIPIENT_SUPPRESSED', 'failed', 0, null],
+    ['unknown', 'PROVIDER_OUTCOME_UNKNOWN', 'delivery_unknown', 0, null],
+  ] as const)('handles OCI %s without unsafe retries', async (disposition, errorCode, status, retryCount, scheduledAt) => {
+    const { service, prisma, provider } = setup(0, 1, 'queued', 'recipient@example.com', ociConfig);
+    provider.send.mockResolvedValue({
+      provider: 'oci_email_delivery_https', success: false, disposition, errorCode,
+      opcRequestId: 'request-synthetic',
+    });
+
+    const result = await service.processQueuedMailJob('tenant-1', 'job-1', null);
+
+    expect(result).toMatchObject({ status, retry_count: retryCount,
+      scheduled_at: scheduledAt?.toISOString() ?? null,
+      provider_result: { provider: 'oci_email_delivery_https', success: false, error_message: errorCode },
+    });
+    expect(prisma.mailJob.update).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: 'job-1' }),
+      data: expect.objectContaining({ status, errorMessage: errorCode }),
+    });
+    expect(prisma.mailDeliveryAttempt.update).toHaveBeenCalledWith({
+      where: expect.objectContaining({ tenantId: 'tenant-1' }),
+      data: expect.objectContaining({ opcRequestId: 'request-synthetic', errorCode }),
+    });
+    expect(JSON.stringify(prisma.mailJob.update.mock.calls)).not.toContain('recipient@example.com');
+  });
+
+  it('marks a thrown OCI provider error unknown without retrying or persisting its raw text', async () => {
+    const { service, prisma, provider } = setup(0, 1, 'queued', 'recipient@example.com', ociConfig);
+    provider.send.mockRejectedValue(new Error('secret recipient@example.com'));
+
+    const result = await service.processQueuedMailJob('tenant-1', 'job-1', null);
+
+    expect(result.status).toBe('delivery_unknown');
+    expect(result.retry_count).toBe(0);
+    expect(JSON.stringify(result)).not.toContain('recipient@example.com');
+    expect(prisma.mailJob.update).toHaveBeenCalledWith({
+      where: { id: 'job-1', tenantId: 'tenant-1' },
+      data: expect.objectContaining({ status: 'delivery_unknown', errorMessage: 'PROVIDER_OUTCOME_UNKNOWN' }),
+    });
+  });
+
+  it('exhausts only explicitly transient OCI rejections after the bounded attempts', async () => {
+    const { service, prisma, provider } = setup(3, 1, 'queued', 'recipient@example.com', ociConfig);
+    provider.send.mockResolvedValue({
+      provider: 'oci_email_delivery_https', success: false,
+      disposition: 'transient', errorCode: 'PROVIDER_TRANSIENT',
+    });
+
+    const result = await service.processQueuedMailJob('tenant-1', 'job-1', null);
+
+    expect(result).toMatchObject({ status: 'failed', retry_count: 4, scheduled_at: null });
+    expect(prisma.mailJob.update).toHaveBeenCalledWith({
+      where: { id: 'job-1' },
+      data: expect.objectContaining({ status: 'failed', errorMessage: 'PROVIDER_TRANSIENT' }),
+    });
+  });
+
+  it('does not mark an incomplete OCI accepted result as sent', async () => {
+    const { service, provider } = setup(0, 1, 'queued', 'recipient@example.com', ociConfig);
+    provider.send.mockResolvedValue({
+      provider: 'oci_email_delivery_https', success: true, disposition: 'accepted',
+      providerMessageId: 'synthetic-id',
+    });
+
+    const result = await service.processQueuedMailJob('tenant-1', 'job-1', null);
+
+    expect(result.status).toBe('delivery_unknown');
+    expect(result.retry_count).toBe(0);
+  });
+
+  it('does not call OCI or consume retries when the global application pace defers a job', async () => {
+    const { service, provider, rateLimiter, prisma } = setup(1, 1, 'queued', 'recipient@example.com', ociConfig);
+    const scheduledAt = new Date(now.getTime() + 50);
+    rateLimiter.reserve.mockResolvedValue({ admitted: false, scheduledAt });
+
+    const result = await service.processQueuedMailJob('tenant-1', 'job-1', null);
+
+    expect(result).toMatchObject({
+      status: 'queued', retry_count: 1, scheduled_at: scheduledAt.toISOString(),
+      provider_result: { provider: 'oci_email_delivery_https', success: false, error_message: 'PROVIDER_RATE_LIMITED' },
+    });
+    expect(provider.send).not.toHaveBeenCalled();
+    expect(rateLimiter.reserve).toHaveBeenCalledWith('tenant-1', 'job-1', expect.any(String), expect.any(String));
+    expect(prisma.mailDeliveryAttempt.update).not.toHaveBeenCalled();
   });
 
   it('returns a stale pre-provider claim to waiting without invoking the provider', async () => {
@@ -176,7 +270,7 @@ describe('mail job retry policy', () => {
     expect(provider.send).not.toHaveBeenCalled();
   });
 
-  function setup(retryCount: number, claim: number, currentStatus = 'queued', config: MailProviderConfig = { kind: 'mock' }) {
+  function setup(retryCount: number, claim: number, currentStatus = 'queued', toEmail = 'recipient@example.local', config: MailProviderConfig = { kind: 'mock' }) {
     const prisma = {
       $executeRawUnsafe: jest.fn().mockResolvedValue(claim),
       mailJob: {
@@ -185,7 +279,7 @@ describe('mail job retry policy', () => {
         findFirst: jest.fn().mockResolvedValue({ id: 'job-1', status: currentStatus, scheduledAt: null, sendNotBefore: null }),
         findFirstOrThrow: jest.fn().mockResolvedValue({
           id: 'job-1',
-          toEmail: 'recipient@example.local',
+          toEmail,
           subject: 'subject',
           body: 'Tenant，Officeからのお知らせ：Person　さんは　20260723000000　に退室しました。',
           retryCount,
@@ -219,9 +313,11 @@ describe('mail job retry policy', () => {
       }),
     };
     const audit = { record: jest.fn().mockResolvedValue(undefined) };
+    const rateLimiter = { reserve: jest.fn().mockResolvedValue({ admitted: true }) };
     return {
       prisma,
       provider,
+      rateLimiter,
       service: new MailJobsService(
         prisma as never,
         license as never,
@@ -229,6 +325,7 @@ describe('mail job retry policy', () => {
         audit as never,
         {} as never,
         config,
+        rateLimiter as never,
       ),
     };
   }

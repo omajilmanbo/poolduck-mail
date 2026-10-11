@@ -242,6 +242,7 @@ ADR-017 当前契约：
   - `sent`：返回 `MAIL_JOB_ALREADY_SENT`，不重复发送
 - 出参：`mail_job_id`, `status`, `retry_count`, `scheduled_at`, `provider_result`
 - sandbox 配置：`MAIL_MOCK_SEND_RESULT=success` 默认成功；设置为 `failure` 或 `failed` 时模拟失败
+- OCI 模式在 Staging 获准并完成预检后，`sent` 只表示 OCI accepted，不代表收件箱投递；只有明确的 429/配额拒绝进入有限退避。认证/请求 4xx 与 suppression 终态为 `failed`；超时、断线、5xx 或回执不完整进入 `delivery_unknown`，不自动重发。`error_message` 与 `provider_result.error_message` 仅返回稳定安全原因码，不透出 OCI 原始错误。
 - 成功响应示例：
 
 ```json

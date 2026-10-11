@@ -2,7 +2,7 @@
 
 ## 1. 适用范围
 
-本策略覆盖 Local、Staging 与 Production 的 API、数据库、认证、订阅门禁、扫码和邮件任务。当前阶段只定义事件、指标、阈值和处理责任，不接入付费监控平台，也不创建真实告警规则。
+本策略覆盖 Local、Staging 与 Production 的 API、数据库、认证、订阅门禁、扫码和邮件任务。本文件主要定义事件、指标、阈值和处理责任；#142 已在 OCI Staging 创建三条 Email Delivery 原生异常告警，其他应用级告警仍待实施。
 
 ## 2. 环境与保留期
 
@@ -54,6 +54,7 @@ Production 超过 90 天的在线日志应删除或转入经批准的合规归�
 | 首次发送到期领取延迟 | `send_not_before` 后 > 5 秒仍未领取 | P1 候选 |
 | 截止前 provider 调用 | 任意一次 | P0/P1 误发不变量事件 |
 | `delivery_unknown` | 任意新增 | P1，禁止自动重发 |
+| 到期邮件积压 | `oldestDueMs` > 5 秒 | P1 候选；排查 OCI 应用节流/配额拒绝与 worker 吞吐 |
 | 登录失败率 | 同 tenant 10 分钟内 >= 20 次 | P2；疑似攻击时 P1 |
 | 订阅拒绝 | 10 分钟内 >= 20 次 | P2 |
 | 跨租户拒绝 | 任意一次 | P1 安全事件 |
@@ -62,6 +63,7 @@ worker 当前以安全聚合日志实现本地/CI 可验证出口：`mail_job.cl
 `p95Ms`、`p99Ms`、`maxMs`、`overAlertThreshold`；任一延迟超过 5 秒时使用
 `mail_job.claim_latency_slo_breach` 和 warn 级别。该出口不包含任务、tenant、人员或地址标签；真实
 通知通道仍需部署环境单独批准，不能把本地 warn 宣称为 Production 告警已接通。
+`mail_job.backlog_snapshot` 记录当前到期任务数 `dueCount`、最旧到期延迟 `oldestDueMs` 和本批次应用节流延期数 `rateDeferredCount`；仅含聚合数值，不含 tenant、任务 ID 或邮箱。超过 5 秒时 warn 每分钟最多一次。
 
 告警先发送到经批准的运维邮箱。相同 `event + tenant_id + error_code` 在 10 分钟内合并，避免告警风暴；告警内容同样遵守脱敏规则。
 
@@ -87,3 +89,7 @@ worker 当前以安全聚合日志实现本地/CI 可验证出口：`mail_job.cl
 主机 CPU/内存不能替代 API 延迟、mail claim 延迟、积压、数据库连接/锁等待和容器 restart/OOM；
 这些信号必须在同一 UTC 时间窗关联。采集命令、停止条件和脱敏边界见
 [`staging-capacity-runbook.md`](testing/staging-capacity-runbook.md)。
+
+## 9. ADR-019 OCI 邮件观测准入
+
+#142 的 OCI `OutboundAccepted`/`OutboundRelayed` 日志、`oci_emaildelivery` 指标、告警接收人、PII 权限与保留期、人工对账及测试步骤见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。用户已批准邮件原始日志保留 90 天及可能费用；用户已指定当前唯一 OCI 用户作为读取人和告警接收人；OCI API 已核验该用户为唯一 ACTIVE 管理员，保守停止规则已批准；两类 90 天日志、通知主题及三条原生告警已应用，订阅为 ACTIVE，指定运维收件人已确认收到合成通知。应用级 unknown/认证/配额自动告警尚未接通。本文件前述 Staging 30 天仅为应用日志建议。`sent` 只表示 provider accepted，`delivery_unknown` 不自动重发。

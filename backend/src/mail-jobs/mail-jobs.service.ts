@@ -12,13 +12,10 @@ import { AuthenticatedUserResponse } from '../auth/auth.types';
 import { LicenseService } from '../license/license.service';
 import { LocationAccessService } from '../location-access/location-access.service';
 import { PrismaService } from '../prisma.service';
-import { MailProvider } from './mail-provider.types';
-import {
-  MAIL_PROVIDER_CONFIG_TOKEN,
-  MAIL_PROVIDER_TOKEN,
-  MailProviderConfig,
-  isRecipientAllowed,
-} from './mail-provider.config';
+import { MailProvider, MailProviderSendResult } from './mail-provider.types';
+import { MAIL_PROVIDER_CONFIG_TOKEN, MAIL_PROVIDER_TOKEN, MailProviderConfig } from './mail-provider.config';
+import { createAttemptMessageId } from './mail-message-id';
+import { OciMailRateLimiter } from './oci-mail-rate-limiter';
 import { ExportMailJobsDto, ListMailJobsDto } from './dto';
 import {
   MailJobHistoryItem,
@@ -36,6 +33,7 @@ export class MailJobsService {
     private readonly audit: AuditService,
     private readonly locationAccess: LocationAccessService,
     @Inject(MAIL_PROVIDER_CONFIG_TOKEN) private readonly mailProviderConfig: MailProviderConfig,
+    private readonly ociRateLimiter: OciMailRateLimiter,
   ) {}
 
   async listMailJobs(
@@ -270,16 +268,31 @@ export class MailJobsService {
     if (mailJob.location.status !== 'active' || mailJob.personMapping.status !== 'active') {
       return this.blockClaimedJob(tenantId, mailJob.id, attemptId, actorUserId, mailJob.retryCount, 'RESOURCE_NOT_SENDABLE');
     }
-    if (!isRecipientAllowed(this.mailProviderConfig, mailJob.toEmail)) {
-      return this.blockClaimedJob(tenantId, mailJob.id, attemptId, actorUserId, mailJob.retryCount, 'REAL_MAIL_RECIPIENT_NOT_ALLOWED');
+    const rfcMessageId = this.mailProviderConfig.kind === 'oci_email_delivery_https'
+      ? createAttemptMessageId(attemptId, this.mailProviderConfig.messageIdDomain)
+      : null;
+    if (this.mailProviderConfig.kind === 'oci_email_delivery_https' && rfcMessageId) {
+      const rateDecision = await this.ociRateLimiter.reserve(
+        tenantId, mailJob.id, attemptId, rfcMessageId,
+      );
+      if (!rateDecision.admitted) {
+        await this.audit.record({
+          tenantId, actorUserId, action: 'mail.rate.deferred',
+          resourceType: 'mail_job', resourceId: mailJob.id, result: 'denied',
+          metadata: { provider: 'oci_email_delivery_https', reason: 'PROVIDER_RATE_LIMITED', attempt_id: attemptId },
+        });
+        return this.failureResponse(mailJob.id, mailJob.retryCount, rateDecision.scheduledAt,
+          'PROVIDER_RATE_LIMITED', undefined, 'queued', 'oci_email_delivery_https');
+      }
+    } else {
+      await this.prisma.mailDeliveryAttempt.update({
+        where: { id: attemptId, tenantId },
+        data: { status: 'invoked', providerInvokedAt: new Date(), rfcMessageId },
+      });
     }
 
-    await this.prisma.mailDeliveryAttempt.update({
-      where: { id: attemptId },
-      data: { status: 'invoked', providerInvokedAt: new Date() },
-    });
-
-    let providerResult;
+    const isOci = this.mailProviderConfig.kind === 'oci_email_delivery_https';
+    let providerResult: MailProviderSendResult;
     try {
       providerResult = await this.mailProvider.send({
         mailJobId: mailJob.id,
@@ -289,7 +302,17 @@ export class MailJobsService {
         body: mailJob.body,
       });
     } catch {
-      providerResult = { provider: 'sandbox', success: false, errorMessage: 'Sandbox provider request failed' };
+      providerResult = isOci
+        ? { provider: 'oci_email_delivery_https', success: false, disposition: 'unknown', errorCode: 'PROVIDER_OUTCOME_UNKNOWN' }
+        : { provider: 'sandbox', success: false, errorMessage: 'Sandbox provider request failed' };
+    }
+
+    if (isOci && (providerResult.provider !== 'oci_email_delivery_https'
+      || !providerResult.disposition
+      || (providerResult.disposition === 'accepted') !== providerResult.success
+      || (providerResult.disposition === 'accepted'
+        && (!providerResult.providerMessageId || !providerResult.envelopeId || !providerResult.opcRequestId)))) {
+      providerResult = { provider: 'oci_email_delivery_https', success: false, disposition: 'unknown', errorCode: 'PROVIDER_OUTCOME_UNKNOWN' };
     }
 
     if (providerResult.success) {
@@ -306,11 +329,13 @@ export class MailJobsService {
           },
         }),
         this.prisma.mailDeliveryAttempt.update({
-          where: { id: attemptId },
+          where: { id: attemptId, tenantId },
           data: {
             status: 'succeeded',
             completedAt,
             providerMessageId: providerResult.providerMessageId,
+            envelopeId: providerResult.envelopeId,
+            opcRequestId: providerResult.opcRequestId,
           },
         }),
       ]);
@@ -336,6 +361,40 @@ export class MailJobsService {
       };
     }
 
+    if (isOci && providerResult.disposition !== 'transient') {
+      const errorCode = providerResult.disposition === 'suppressed' ? 'RECIPIENT_SUPPRESSED'
+        : providerResult.disposition === 'permanent' ? providerResult.errorCode === 'OCI_AUTH_REJECTED' ? 'OCI_AUTH_REJECTED' : 'OCI_REQUEST_REJECTED'
+          : 'PROVIDER_OUTCOME_UNKNOWN';
+      const unknown = errorCode === 'PROVIDER_OUTCOME_UNKNOWN';
+      const status = unknown ? 'delivery_unknown' : 'failed';
+      const completedAt = new Date();
+      await this.prisma.$transaction([
+        this.prisma.mailJob.update({
+          where: { id: mailJob.id, tenantId },
+          data: {
+            status, scheduledAt: null, errorMessage: errorCode,
+            providerMessageId: providerResult.providerMessageId,
+          },
+        }),
+        this.prisma.mailDeliveryAttempt.update({
+          where: { id: attemptId, tenantId },
+          data: {
+            status, completedAt, errorCode,
+            providerMessageId: providerResult.providerMessageId,
+            envelopeId: providerResult.envelopeId,
+            opcRequestId: providerResult.opcRequestId,
+          },
+        }),
+      ]);
+      await this.audit.record({
+        tenantId, actorUserId, action: unknown ? 'mail.delivery.unknown' : 'mail.send.failed',
+        resourceType: 'mail_job', resourceId: mailJob.id, result: 'failure',
+        metadata: { provider: 'oci_email_delivery_https', reason: errorCode, attempt_id: attemptId },
+      });
+      return this.failureResponse(mailJob.id, mailJob.retryCount, null, errorCode,
+        providerResult.providerMessageId, status, 'oci_email_delivery_https');
+    }
+
     const retryDelaysMs = [30_000, 120_000, 600_000];
     const retryDelayMs = retryDelaysMs[mailJob.retryCount];
     const nextRetryCount = mailJob.retryCount + 1;
@@ -349,17 +408,19 @@ export class MailJobsService {
           status: terminal ? 'failed' : 'queued',
           retryCount: nextRetryCount,
           scheduledAt,
-          errorMessage: providerResult.errorMessage,
+          errorMessage: isOci ? 'PROVIDER_TRANSIENT' : providerResult.errorMessage,
           providerMessageId: providerResult.providerMessageId,
         },
       }),
       this.prisma.mailDeliveryAttempt.update({
-        where: { id: attemptId },
+        where: { id: attemptId, tenantId },
         data: {
           status: terminal ? 'failed' : 'retry_scheduled',
           completedAt,
           providerMessageId: providerResult.providerMessageId,
-          errorCode: 'PROVIDER_FAILURE',
+          envelopeId: providerResult.envelopeId,
+          opcRequestId: providerResult.opcRequestId,
+          errorCode: isOci ? 'PROVIDER_TRANSIENT' : 'PROVIDER_FAILURE',
         },
       }),
     ]);
@@ -372,7 +433,7 @@ export class MailJobsService {
       result: 'failure',
       metadata: {
         provider: providerResult.provider,
-        reason: 'PROVIDER_FAILURE',
+        reason: isOci ? 'PROVIDER_TRANSIENT' : 'PROVIDER_FAILURE',
         retry_count: nextRetryCount,
         scheduled_at: scheduledAt?.toISOString() ?? null,
         attempt_id: attemptId,
@@ -382,9 +443,10 @@ export class MailJobsService {
       mailJob.id,
       nextRetryCount,
       scheduledAt,
-      providerResult.errorMessage ?? 'Sandbox provider request failed',
+      isOci ? 'PROVIDER_TRANSIENT' : providerResult.errorMessage ?? 'Sandbox provider request failed',
       providerResult.providerMessageId,
       terminal ? 'failed' : 'queued',
+      isOci ? 'oci_email_delivery_https' : 'sandbox',
     );
   }
 
@@ -394,7 +456,7 @@ export class MailJobsService {
     attemptId: string,
     actorUserId: string | null,
     retryCount: number,
-    errorCode: 'SUBSCRIPTION_NOT_SENDABLE' | 'RESOURCE_NOT_SENDABLE' | 'REAL_MAIL_RECIPIENT_NOT_ALLOWED',
+    errorCode: 'SUBSCRIPTION_NOT_SENDABLE' | 'RESOURCE_NOT_SENDABLE',
   ): Promise<SendMailJobResponse> {
     const completedAt = new Date();
     await this.prisma.$transaction([
@@ -410,11 +472,7 @@ export class MailJobsService {
     await this.audit.record({
       tenantId,
       actorUserId,
-      action: errorCode === 'SUBSCRIPTION_NOT_SENDABLE'
-        ? 'subscription.mail_send.denied'
-        : errorCode === 'RESOURCE_NOT_SENDABLE'
-          ? 'resource.mail_send.denied'
-          : 'mail.recipient.denied',
+      action: errorCode === 'SUBSCRIPTION_NOT_SENDABLE' ? 'subscription.mail_send.denied' : 'resource.mail_send.denied',
       resourceType: 'mail_job',
       resourceId: mailJobId,
       result: 'denied',
@@ -566,7 +624,8 @@ export class MailJobsService {
     scheduledAt: Date | null,
     errorMessage: string,
     providerMessageId?: string,
-    status: 'queued' | 'failed' = 'failed',
+    status: 'queued' | 'failed' | 'delivery_unknown' = 'failed',
+    provider = 'sandbox',
   ): SendMailJobResponse {
     return {
       mail_job_id: mailJobId,
@@ -574,7 +633,7 @@ export class MailJobsService {
       retry_count: retryCount,
       scheduled_at: scheduledAt?.toISOString() ?? null,
       provider_result: {
-        provider: 'sandbox',
+        provider,
         success: false,
         provider_message_id: providerMessageId,
         error_message: errorMessage,

@@ -8,10 +8,12 @@
 - 当前默认部署触发：人工批准后，由操作者或 Agent 通过 SSH 执行 Compose 命令链。
 - 目标部署入口：独立、幂等的 Staging 部署脚本；脚本实现前继续使用本文 Runbook。
 - 当前默认数据库：Staging VM 内 PostgreSQL 16。
-- 当前默认邮件 provider：`mock` 或 `sandbox`。
+- 当前唯一可启动邮件 provider：`mock`（实现类名为 SandboxMailProvider；`sandbox` 不是配置值）。
 - 当前禁止事项：真实客户数据、生产数据库快照、生产密钥、真实 Gmail/Workspace/SMTP 凭据、OAuth refresh token。
 
 如果本手册中的任何确认项无法完成，停止部署或 CI/CD 实施，并按“阻塞项报告模板”记录。
+
+ADR-019 的 OCI HTTPS 真实发送准入与回滚见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。用户已批准 #145 的有人值守单发窗口；本地代码已接通 OCI selector，但目标 Staging 仍为 mock，必须先完成全部预检。本文一般部署与 smoke 继续使用 `MAIL_PROVIDER=mock`。
 
 ## 2. 人工确认步骤
 
@@ -169,7 +171,7 @@ ssh -i .secrets\staging\id_ed25519 ubuntu@<staging-public-ip> "chmod 600 <stagin
 通过标准：
 
 - Staging secrets 与 Production secrets 完全独立。
-- `DATABASE_URL`、`JWT_SECRET`、`REFRESH_TOKEN_SECRET`、`POSTGRES_PASSWORD`、`MAIL_SMTP_PASS` 不进仓库。
+- `DATABASE_URL`、`JWT_SECRET`、`REFRESH_TOKEN_SECRET`、`POSTGRES_PASSWORD` 不进仓库；OCI HTTPS 不使用 SMTP 密码或 OCI API 私钥。
 - Agent 未被要求读取、打印或保存真实 secret 值。
 
 ### 2.6 Staging 数据库
@@ -199,7 +201,7 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml exec postgres
 
 确认方法：
 
-1. 确认 `MAIL_PROVIDER=mock` 或 `MAIL_PROVIDER=sandbox`。
+1. 确认 `MAIL_PROVIDER=mock`；`sandbox` 不是有效的 selector。
 2. 如果使用 Mailpit/Mailhog，确认服务只用于 Staging 内部验证。
 3. 执行 smoke test 时只检查 sandbox 记录或 mock provider result。
 
@@ -293,7 +295,7 @@ ssh -i .secrets\staging\id_ed25519 ubuntu@<staging-public-ip> "chmod 600 <stagin
 - `DATABASE_URL=postgresql://<staging-user>:<staging-password>@postgres:5432/<staging-db>`
 - `JWT_SECRET=<staging-only-random-secret>`
 - `REFRESH_TOKEN_SECRET=<staging-only-random-secret>`
-- `MAIL_PROVIDER=mock` 或 `MAIL_PROVIDER=sandbox`
+- `MAIL_PROVIDER=mock`
 - `MAIL_MOCK_SEND_RESULT=success`
 - `LOG_LEVEL=info`
 - `API_BASE_URL=https://app.poolducktest.com`
@@ -376,7 +378,7 @@ echo | openssl s_client -connect app.poolducktest.com:443 -servername app.pooldu
 | commit SHA | `<sha>` |
 | Staging URL | `<url-or-ip>` |
 | DB | `Staging PostgreSQL only` |
-| Mail provider | `mock` / `sandbox` |
+| Mail provider | `mock` |
 | 测试命令 | `<commands>` |
 | 测试结果 | `pass` / `blocked` / `failed` |
 | 阻塞项 | `<none-or-details>` |
@@ -448,7 +450,7 @@ echo | openssl s_client -connect app.poolducktest.com:443 -servername app.pooldu
 - [ ] `app.poolducktest.com` 的 DNS、有效证书和 HTTP→HTTPS 跳转已确认。
 - [ ] Secrets 存放位置已确认，且未写入仓库。
 - [ ] Staging DB 独立，不含真实客户数据。
-- [ ] `MAIL_PROVIDER` 为 `mock` 或 `sandbox`。
+- [ ] `MAIL_PROVIDER=mock`；真实 OCI 模式仅按 #145 的另行批准流程。
 - [ ] 发布触发方式已人工确认。
 - [ ] Smoke test 已执行或明确记录为实现未完成。
 - [ ] 公网仅可达 Caddy 的 TCP `80`/`443`；`3000`、`3001`、`5432` 不可达，SSH 仍限制为管理员 CIDR。

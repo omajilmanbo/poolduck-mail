@@ -8,13 +8,14 @@ export type MailProviderConfig =
   | {
       kind: 'oci_email_delivery_https';
       region: string;
+      senderCompartmentId: string;
       fromAddress: string;
       messageIdDomain: string;
-      recipientAllowlist: ReadonlySet<string>;
     };
 
 const domainPattern = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
 const regionPattern = /^[a-z][a-z0-9-]*-[1-9][0-9]*$/;
+const compartmentPattern = /^ocid1\.(?:compartment|tenancy)\.oc[0-9]+\.[a-z0-9.]+$/i;
 
 function isValidEmail(value: string): boolean {
   const parts = value.split('@');
@@ -38,32 +39,28 @@ export function parseMailProviderConfig(env: NodeJS.ProcessEnv): MailProviderCon
   if (env.REAL_MAIL_SEND_ENABLED !== 'true') invalid('REAL_MAIL_SEND_DISABLED');
 
   const region = env.OCI_EMAIL_REGION ?? '';
+  const senderCompartmentId = env.OCI_EMAIL_SENDER_COMPARTMENT_ID ?? '';
   const fromAddress = env.OCI_EMAIL_FROM_ADDRESS ?? '';
   const messageIdDomain = env.OCI_EMAIL_MESSAGE_ID_DOMAIN ?? '';
   if (!regionPattern.test(region)) invalid('OCI_EMAIL_REGION_INVALID');
+  if (!compartmentPattern.test(senderCompartmentId)) invalid('OCI_EMAIL_SENDER_COMPARTMENT_ID_INVALID');
   if (!isValidEmail(fromAddress)) invalid('OCI_EMAIL_FROM_ADDRESS_INVALID');
   if (!domainPattern.test(messageIdDomain)) invalid('OCI_EMAIL_MESSAGE_ID_DOMAIN_INVALID');
-
-  const rawAllowlist = env.STAGING_REAL_MAIL_RECIPIENT_ALLOWLIST ?? '';
-  const addresses = rawAllowlist.split(',').map((address) => address.trim());
-  if (addresses.length === 0 || addresses.some((address) => !isValidEmail(address))) {
-    invalid('STAGING_REAL_MAIL_RECIPIENT_ALLOWLIST_INVALID');
-  }
 
   return {
     kind: 'oci_email_delivery_https',
     region,
+    senderCompartmentId,
     fromAddress,
     messageIdDomain,
-    recipientAllowlist: new Set(addresses),
   };
 }
 
-export function isRecipientAllowed(config: MailProviderConfig, toEmail: string): boolean {
-  return config.kind === 'mock' || config.recipientAllowlist.has(toEmail);
-}
-export function selectMailProvider(config: MailProviderConfig, mock: MailProvider): MailProvider {
-  if (config.kind === 'mock') return mock;
-  // #137 must bind the OCI adapter. A complete config is not permission to send yet.
-  throw new Error('OCI_EMAIL_PROVIDER_NOT_IMPLEMENTED');
+export function selectMailProvider(
+  config: MailProviderConfig,
+  mock: MailProvider,
+  createOci: (config: Extract<MailProviderConfig, { kind: 'oci_email_delivery_https' }>) => Promise<MailProvider>,
+): Promise<MailProvider> {
+  if (config.kind === 'mock') return Promise.resolve(mock);
+  return createOci(config);
 }

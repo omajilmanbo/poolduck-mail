@@ -30,8 +30,12 @@ SMTP 密码。`SubmitEmail` 成功响应返回 `messageId`、`envelopeId` 和 `s
 - [SubmitEmail 返回模型](https://docs.oracle.com/en-us/iaas/tools/typescript/latest/modules/_emaildataplane_lib_model_email_submitted_response_.emailsubmittedresponse.html)
 
 本 ADR 只决定 Issue #85 的实现与启用边界，不决定实际 Staging 发件域、发件地址、DNS 记录值、OCI
-region、收件人 allowlist 或启用时间。这些值与真实发信授权继续由人工决定。Production 接入不在本
+region 或启用时间。这些值与真实发信授权继续由人工决定。Production 接入不在本
 ADR 范围内。
+
+2026-09-29 修订：原方案要求独立的 Staging 收件地址 allowlist。用户确认人员邮箱已经由租户数据库
+维护，新增人员地址若需再同步到独立清单，会形成持续的双份维护成本。因此取消独立地址清单；
+此修订仅改变收件范围规则，不授权启用真实发信。
 
 ## Decision
 
@@ -61,12 +65,14 @@ ADR 范围内。
 4. 运行时只保存非秘密配置：
    - `MAIL_PROVIDER=oci_email_delivery_https`
    - `OCI_EMAIL_REGION=<人工批准的 region>`
+   - `OCI_EMAIL_SENDER_COMPARTMENT_ID=<approved sender 所在 compartment OCID>`
    - `OCI_EMAIL_FROM_ADDRESS=<人工批准的 approved sender>`
    - `OCI_EMAIL_MESSAGE_ID_DOMAIN=<人工批准的发件域或专用子域>`
    - `REAL_MAIL_SEND_ENABLED=true`
-5. Staging 还必须配置精确地址级 `STAGING_REAL_MAIL_RECIPIENT_ALLOWLIST`。allowlist 含个人邮箱时按
-   runtime secret/PII 管理，文件权限为 `0600`，不得进入 Git、Terraform state、cloud-init、Issue、PR、
-   日志或测试证据。
+5. 不维护独立收件地址 allowlist。收件地址只取自扫码时按 tenant/location/person 映射创建并持久化的
+   `mail_job.to_email` 快照；新增人员邮箱只影响其后新建的任务，不追改已有任务。客户端、provider 配置
+   和发送 API 都不能覆盖此地址。Staging 在启用真实模式前须人工核查人员数据仅含经同意的受控测试地址，
+   不得包含真实客户地址；此核查是运维前提，不是运行时的第二份地址清单。
 6. `REAL_MAIL_SEND_ENABLED=true` 是独立的人工启用门禁；只设置 provider 名称不得触发真实投递。
 
 ### 3. 发件域、DNS 与人工决策门禁
@@ -81,8 +87,8 @@ ADR 范围内。
 | DKIM | 用户配置 DNS | 使用 OCI 为该 Email Domain 生成的 CNAME；OCI 状态为 Active |
 | SPF / custom return path | 用户决定并配置 DNS | 按所选 region 和现有 SPF 合并，禁止创建第二条冲突 SPF；是否启用 custom return path 单独确认 |
 | DMARC | 用户决定策略 | 初始建议 `p=none` 观察并确认所有合法发送源，再决定 `quarantine/reject`；报告邮箱必须真实可管理 |
-| Staging 收件 allowlist | 用户 | 只允许明确同意的受控地址；不得使用真实客户地址 |
-| OCI 实际发送配额 | 用户/运维 | 记录 tenancy 当前每分钟、每日和消息大小限制，配置应用节流，不以 #116 的 mock 吞吐代替 |
+| Staging 人员邮箱数据 | 用户 | 启用前核查仅含经同意的受控测试地址；不得使用真实客户地址，后续新增人员同样受此规则约束 |
+| OCI 实际发送配额 | 用户/运维 | 尽快记录 tenancy 当前每分钟、每日和消息大小限制，用于后续调整；阶段性应用节流为全局最多 20 封/秒且无应用侧日上限，不能把它解释为 OCI 已批准配额 |
 | 合规与投诉处理 | 用户 | 确认该邮件为业务通知、收件来源合法、投诉/退订和数据保留责任人明确 |
 | 启用窗口与回滚人 | 用户 | 明确日期、观察窗口、停止条件与有权回滚的操作者 |
 
@@ -146,13 +152,16 @@ bounce 和 complaint 自动生效，不能 opt out：
 
 ### 6. 配额、节流与环境边界
 
-1. OCI tenancy 的实际 service limit 是真实发送容量上限。实现 provider 前必须读取并记录当前限制；
-   Oracle 文档中的 Free Trial 或 Enterprise 示例值不能当作本 tenancy 已批准值。
-2. 增加 provider 级 token-bucket/串行节流，配置值不得高于 OCI 当前每分钟/每日限制；429 进入明确的
-   transient 路径，不能由 worker 并发无限重试。
+1. 2026-09-29 用户批准阶段性应用上限：OCI provider 在所有 backend 实例之间串行预约，至少间隔
+   50 ms，即最多 20 次提交/秒；不设置应用侧每日发送上限。该数字来自 #116 的 mock 应用能力，
+   **不是** OCI tenancy 的每分钟或每日 service limit，也不保证不会收到 429/配额拒绝。
+2. OCI 实际每分钟、每日及单封大小限额尚未核实；#139 保持开放，待取得 Console 限额并结合观察结果
+   调整应用上限。OCI 429/明确配额拒绝走有限 transient 退避，不由 SDK 或 worker 无限重试；日额度
+   耗尽可能导致多个任务重试后失败并产生积压，运维必须监控、暂停或回滚。用户明确接受不设应用日上限
+   的阶段性风险。真实发送启用仍需要本 ADR 第 3、7 节的独立人工决策和批准。
 3. Local、CI 和默认 Staging 永远使用 mock/fake，不访问 OCI、不解析真实域名、不发送邮件。
 4. Staging 真实模式只用于人工批准的受控验证，必须同时满足 provider、enable flag、region、sender、
-   Message-ID domain、allowlist 和 Instance Principal 权限；任一缺失即启动失败或 provider fail closed。
+   Message-ID domain 和 Instance Principal 权限；任一缺失即启动失败或 provider fail closed。
 5. Production 的域、IAM、secret、限额、数据、发布和回滚必须另行批准，不能复制 Staging 开关直接启用。
 
 ### 7. 部署、验证与回滚顺序
@@ -161,13 +170,13 @@ bounce 和 complaint 自动生效，不能 opt out：
 2. 实现 provider selector、OCI adapter、错误分类、无自动 SDK retry、rate limiter 和 fake contract tests；
    Local/CI 全程 mock/fake。
 3. 更新配置、运行手册、监控和回滚文档；代码合并后 Staging 仍保持 `MAIL_PROVIDER=mock`。
-4. 用户决定 region、domain、From、SPF/DKIM/DMARC、allowlist、实际配额和启用窗口；运维创建 Email
+4. 用户决定 region、domain、From、SPF/DKIM/DMARC、实际配额和启用窗口，并核查 Staging 人员邮箱数据；运维创建 Email
    Domain、approved sender、Dynamic Group、最小 IAM policy 与日志/告警。
 5. 在 Backend 容器内只做 Instance Principal 身份与 `GetEmailConfiguration`/受限权限预检；不得用真实
    客户地址做探测。
-6. 经再次人工批准后，在受控窗口切换真实模式，只发送一封到 allowlist 地址；确认应用 attempt、OCI
+6. 经再次人工批准后，在受控窗口切换真实模式，只发送一封到已核查的受控测试人员邮箱；确认应用 attempt、OCI
    accepted、relayed、DKIM/SPF/DMARC 和收件结果，再执行小批量验证。
-7. 出现误收件、跨 allowlist、认证异常、`delivery_unknown`、complaint、连续 bounce、配额异常或日志
+7. 出现误收件、收件地址与任务快照不符、认证异常、`delivery_unknown`、complaint、连续 bounce、配额异常或日志
    缺失时立即回滚为 mock，停止领取新的真实发送 attempt，并按 Message-ID 对账在途任务。
 8. 回滚不能把 `delivery_unknown`、suppressed 或 failed 任务改回 queued，也不能删除 provider 回执。
 
@@ -190,6 +199,10 @@ bounce 和 complaint 自动生效，不能 opt out：
 6. **依赖 SDK 默认 retry**
    - 实现简单，但 `SubmitEmail` 没有由本 ADR 可依赖的幂等键保证；响应丢失时自动 retry 可能重复发信，
      与 ADR-017 的 `delivery_unknown` 决策冲突，因此不选。
+7. **独立的 Staging 精确地址 allowlist**
+   - 能提供第二道地址限制，但会与租户人员邮箱形成双份维护；新增人员若未同步就无法验证真实发信。
+     2026-09-29 人工决定不采用。相应误发风险改由 Staging 测试数据准入、显式真实发送开关、
+     单封/小批量人工验证及监控回滚承担；这些措施不等同于独立地址技术门禁。
 
 ## Consequences
 
@@ -200,6 +213,7 @@ bounce 和 complaint 自动生效，不能 opt out：
 - stable Message-ID、OCI response 和 Email Domain 日志形成 accepted、relay、bounce、complaint 对账链；
 - 明确区分临时、永久、suppressed 与 unknown，避免无差别 retry 造成重复或信誉损伤；
 - 发件域、DNS 和真实启用继续由人控制，接受设计不等于授权发信。
+- 新增受控测试人员邮箱后无需同步第二份地址清单。
 
 负面影响：
 
@@ -207,13 +221,18 @@ bounce 和 complaint 自动生效，不能 opt out：
 - Staging 单 VM 的 Instance Principal 权限继承主机安全边界，必须持续限制 SSH 和最小 IAM；
 - `sent` 只代表 OCI accepted，应用 UI 暂时不展示最终 delivered/bounced/complained；
 - 保守的 `delivery_unknown` 策略可能产生少量需要人工对账的漏发，但避免不可证明安全的自动重复投递；
-- OCI 配额可能显著低于 #116 的 mock worker 容量，需要节流并可能产生队列积压。
+- OCI 配额可能显著低于 #116 的 mock worker 容量；阶段性 20 封/秒且无应用日上限可能导致 429、
+  每日额度耗尽、任务失败及积压，须按 #139 后续实测限额调整。
+- 取消独立收件地址技术门禁后，Staging 误录或误改人员邮箱会直接扩大真实发信范围，必须在启用前和
+  后续维护中严格管控测试数据，并保留停止发送与对账能力。
 
 ## Migration impact
 
 - 本 ADR 本身不修改 schema、代码、OCI、DNS、Local、Staging 或 Production。
-- 预计现有 `provider_message_id` 可保存 OCI `messageId`；`envelopeId`、`opcRequestId`、错误分类和 attempt
-  字段是否需要 schema 变更，必须在实现前通过独立 schema 评审确认，不能塞入自由文本错误字段。
+- 2026-09-29 用户批准 #137 仅为 `mail_delivery_attempts` 增加三个可空专用字段：`rfc_message_id`、
+  `envelope_id`、`opc_request_id`。历史及 mock attempt 不回填；现有 `provider_message_id` 保存 OCI `messageId`。
+  标识与 attempt 同保留期，不保存 OCI 原始请求/响应。OCI 配置仍仅位于容器环境变量，不入数据库。
+- schema rollback 若已有任一标识则拒绝删除；应用回滚保留这些列以供人工对账。
 - Provider result contract、依赖注入、环境校验、worker retry 分类和测试需要兼容性修改。
 - Staging 部署先发布“仍为 mock”的兼容代码，再由独立人工步骤创建 OCI 资源和切换配置。
 - 回滚为 `MAIL_PROVIDER=mock` 不回写历史 OCI attempt，不删除 Message-ID、回执或审计。
@@ -224,7 +243,9 @@ bounce 和 complaint 自动生效，不能 opt out：
   tenant、sender 或目标地址覆盖。
 - Instance Principal 只授予发送所需最小权限并限制 sender/domain/compartment；不授予 suppression 删除、
   DNS、IAM 或 tenancy 管理权限。
-- Staging allowlist 是真实发送的第二道门禁；任何不在 allowlist 的地址在调用 OCI 前 fail closed。
+- Staging 收件地址必须来自 tenant-scoped 人员映射生成的不可变 mail job 快照；不得用客户端参数或
+  provider 配置替换。没有独立地址 allowlist，因此数据库人员邮箱的写入权限和测试数据核查直接影响
+  真实发信范围；tenant、订阅和资源门禁仍须在每次发送前重新检查。
 - 日志、指标、审计和错误响应不得记录完整邮箱、正文、token、Cookie、OCI credential 或 DNS credential。
 - OCI 服务日志会包含 sender/recipient，必须按含 PII 的运维数据控制读取权限和保留期。
 - SPF/DKIM/DMARC 降低冒用与信誉风险，但不替代收件人合法来源、最小发送、投诉处理和误发响应。
@@ -234,8 +255,8 @@ bounce 和 complaint 自动生效，不能 opt out：
 - 运维新增 Email Domain、approved sender、DKIM、可选 custom return path、Dynamic Group、IAM policy、
   Email Domain logs、metrics、alarms 和 service-limit 管理。
 - 发布前必须保存不含秘密/PII 的证据：代码 commit、region、sender/domain 的状态摘要、DNS 验证结果、
-  当前配额、allowlist 已配置但不展示其值、告警就绪和回滚人。
-- smoke 只使用人工批准的合成内容与 allowlist 收件人；先单封，再小批量，不使用客户数据。
+  当前配额、Staging 人员邮箱数据已核查但不展示地址、告警就绪和回滚人。
+- smoke 只使用人工批准的合成内容与已核查的受控测试人员邮箱；先单封，再小批量，不使用客户数据。
 - 故障排查以 attempt ID、Message-ID、envelope ID、OCI request ID 和时间窗口关联应用与 OCI 日志；
   不把完整邮箱复制到 Issue/PR/聊天。
 - OCI 限额、accepted/relayed 差值、bounce、complaint、suppressed 和 `delivery_unknown` 是上线后的核心信号。
@@ -247,12 +268,12 @@ bounce 和 complaint 自动生效，不能 opt out：
 1. Backend：provider selector、OCI HTTPS adapter、Instance Principal auth、无自动 SDK retry、稳定
    Message-ID、结果分类、suppression 与 rate limiter；
 2. Test：fake OCI client contract、配置缺失、IAM/auth、2xx、suppressed、429、4xx、5xx/timeout unknown、
-   tenant/订阅/资源门禁、allowlist、敏感日志和 mock 回归；
+   tenant/订阅/资源门禁、任务收件快照来源、敏感日志和 mock 回归；
 3. Infrastructure/operations：最小 Dynamic Group/IAM、Email Domain logs/metrics/alarms、配额记录和回滚；
 4. Docs：按实际影响更新 `docs/architecture.md`、`docs/deployment.md`、`docs/environments.md`、
    `docs/inventory/`、`docs/operation.md`、`docs/observability.md`、`docs/testing.md` 和 Staging Runbook；
-5. 人工决策：用户填写本 ADR 第 3 节表格中的 region、发件域、From、SPF/DKIM/DMARC、allowlist、
-   配额、合规责任人和启用窗口；
+5. 人工决策：用户填写本 ADR 第 3 节表格中的 region、发件域、From、SPF/DKIM/DMARC、
+   配额、合规责任人和启用窗口，并核查 Staging 人员邮箱数据；
 6. Staging 启用：另一次明确批准后执行单封和小批量验证；本 ADR Accepted 或代码合并都不自动授权；
 7. 后续可选 Issue：把 OCI relayed/bounce/complaint 日志同步为 tenant-scoped、append-only 的产品状态。
 
@@ -262,9 +283,22 @@ bounce 和 complaint 自动生效，不能 opt out：
 - 错误：配置缺失、非法 region/sender、401/403、429、请求 4xx、suppressed、timeout、5xx、响应丢失；
 - 重试：只有明确 transient 才按现有有限退避；SDK 不暗中 retry；unknown 不自动重发；
 - 隔离：跨 tenant/job/attempt 不可读取或改变，客户端不能指定 From、recipient、region 或 provider；
-- 安全：allowlist fail closed，日志/API/审计不含邮箱、正文、credential，容器外无多余 IAM 权限；
+- 安全：人员邮箱新增后新任务可使用该地址，已有任务快照不变；日志/API/审计不含邮箱、正文、credential，
+  容器外无多余 IAM 权限；
 - 运维：配额节流、queue backlog、accepted/relayed、bounce/complaint/suppressed、unknown 告警与 mock 回滚。
 
 2026-09-29 人工接受记录：用户确认接受 ADR-019，并要求将上述 Follow-up 拆分为 Issue。
 实施与验证跟踪为 #136–#145；可选产品级异步投递状态设计为 #146。真实 Staging
 发件域、DNS 与启用窗口仍由用户另行决定和批准。
+
+2026-09-29 人工修订记录：用户取消独立 Staging 收件地址 allowlist，改为由租户数据库人员邮箱生成
+不可变任务收件快照；理由是避免新增人员地址时持续维护第二份清单。用户知悉失去第二道地址技术门禁，
+真实发信仍需按本 ADR 另行批准；#136 及后续 Issue 的验收要求同步更新。
+
+2026-09-29 #137 schema 批准记录：用户批准上述三个可空标识字段，并明确 OCI 发送配置只放在
+容器 OS 环境中。#137 仅实现 SDK adapter、标识持久化和 fake 验证；在 #138 结果分类与 #139
+配额节流完成前，真实 provider 选择仍 fail closed，不授权实际发信。
+
+2026-09-29 #139 人工修订记录：用户明确批准将阶段性 OCI 应用上限设为全局 20 封/秒，
+暂不设应用侧每日上限，并要求 #139 保持开放以便依据实际 OCI 配额随时调整。用户知悉该值可能
+高于未核实的 OCI 限额及日额度耗尽风险；此决定不选择发件域/DNS，也不授权切换真实 provider。

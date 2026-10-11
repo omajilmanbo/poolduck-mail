@@ -112,7 +112,8 @@ try {
     provider,
     audit,
     locationAccess,
-    { kind: "mock" },
+    { kind: 'mock' },
+    null,
   );
   const scans = new ScanEventsService(prisma, license, audit, locationAccess);
 

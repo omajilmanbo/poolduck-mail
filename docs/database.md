@@ -234,8 +234,12 @@ UI 在成功响应后仅临时显示并可立即清除。
 ## 8a. mail_delivery_attempts
 
 - 保存 `tenant_id`、`mail_job_id`、attempt ID、`claimed_at`、`provider_invoked_at`、`completed_at`、结果与安全错误码。
+- #137 增量迁移 `20260929000000_add_oci_submission_identifiers` 添加三个可空列：`rfc_message_id`、`envelope_id`、`opc_request_id`（均 varchar(512)）；历史及 mock attempt 不回填。OCI 调用前持久化 RFC 5322 Message-ID，收到响应后保存 envelope/request ID；原始请求、响应与收件地址不放入这些列。
 - provider 调用前先持久化 `provider_invoked_at`；崩溃恢复只有在能够证明未越过该边界时才重新入队。
 - attempt 和取消证据属于审计数据，rollback 不删除，也不把不确定投递重新变为可发送。
+- 应用回滚须保留以上三个标识列；仅在全部为空、停写且已备份时，才可使用该迁移的 guarded schema rollback。
+- #139 为全局 50 ms OCI 预约查询增加 `provider_invoked_at` 索引（迁移 `20260929001000_index_mail_attempt_provider_invoked_at`）；索引 rollback 不删除 attempt 或标识数据。
+- OCI 预约未获时该 attempt 标记 `deferred/PROVIDER_RATE_LIMITED`，`provider_invoked_at` 仍为空；关联 job 回到 `queued` 并设置新的 `scheduled_at`，`retry_count` 不变。预约获准时才写入 `provider_invoked_at` 与 Message-ID，再调用 provider。
 
 ## 9. scan_request_idempotency
 
