@@ -13,7 +13,7 @@
 
 如果本手册中的任何确认项无法完成，停止部署或 CI/CD 实施，并按“阻塞项报告模板”记录。
 
-ADR-019 的 OCI HTTPS 真实发送准入与回滚见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。用户已批准 #145 的有人值守单发窗口；本地代码已接通 OCI selector，但目标 Staging 仍为 mock，必须先完成全部预检。本文一般部署与 smoke 继续使用 `MAIL_PROVIDER=mock`。
+ADR-019 的 OCI HTTPS 真实发送准入与回滚见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。本地代码已接通 OCI selector，目标 Staging 已以 mock 部署；用户暂缓了单发测试，真实切换须完成全部预检并另获新窗口批准。本文一般部署与 smoke 继续使用 `MAIL_PROVIDER=mock`。
 
 ## 2. 人工确认步骤
 

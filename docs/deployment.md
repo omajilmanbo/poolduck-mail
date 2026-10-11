@@ -46,12 +46,12 @@
 当前 `MAIL_PROVIDER` 只接受 `mock` 与 `oci_email_delivery_https`。默认 `mock`；未知值启动失败。
 OCI 模式要求 `APP_ENV=staging`、`REAL_MAIL_SEND_ENABLED=true` 及有效的 region/approved sender compartment/From/Message-ID domain；
 这些非秘密配置只放在容器运行环境，不落数据库。Local、CI、Production 不可启用。#137 已实现 OCI adapter 与提交标识持久化，
-现已实现 #139 阶段性全局 20 次/秒应用节流。OCI Limits API 返回 `18000/分钟`、`50000/24 小时`、单封 `2008192` 字节，但 compartment 有效 quota 未返回数值，#139 保持开放。#145 的有人值守单发已获用户批准；本地代码已接通真实 selector，Staging 仍保持 mock，必须完成权限、告警、备份与回滚预检后才可切换。该应用上限不代表 OCI tenancy 可持续配额，且没有应用侧日上限。#138 结果分类已在本地实现。ADR-019 已取消独立收件地址清单；
+现已实现 #139 阶段性全局 20 次/秒应用节流。OCI Limits API 返回 `18000/分钟`、`50000/24 小时`、单封 `2008192` 字节，但 compartment 有效 quota 未返回数值，#139 保持开放。本地代码已接通真实 selector，Staging 已以 mock 部署；用户暂缓了单发测试，必须完成权限、告警、备份与回滚预检并另获新窗口批准后才可切换。该应用上限不代表 OCI tenancy 可持续配额，且没有应用侧日上限。#138 结果分类已在本地实现。ADR-019 已取消独立收件地址清单；
 收件人取自按 tenant/location/person 映射生成的不可变任务快照。新增人员邮箱仅影响后续新任务，
 已有任务不会追改。真实启用前须人工核查 Staging 人员邮箱仅含经同意的受控测试地址；
 后续人员数据维护同样须遵守此边界，不得导入真实客户地址。
 
-#141–#143 的 OCI IAM、Email Domain 日志/告警及受控单封准备见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。发件域、DKIM 与 approved sender 已由 Terraform 纳管；IAM Dynamic Group 与精确 sender policy 已应用，但 HTTPS SubmitEmail 权限效果仍待验证。#142 两类日志和 OCI 原生告警已应用，通知订阅 ACTIVE 且合成通知已确认送达；应用级异常告警和真实邮件事件仍待验收。#145 的有人值守单发窗口已获用户批准，但目标容器尚未完成预检、部署和切换。不得将清单视为可直接执行的真实发信部署命令。旧 SMTP 占位不参与现行 Compose 或 OCI HTTPS 路径。
+#141–#143 的 OCI IAM、Email Domain 日志/告警及受控单封准备见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。发件域、DKIM 与 approved sender 已由 Terraform 纳管；IAM Dynamic Group 与精确 sender policy 已应用，目标 Backend 容器的 Instance Principal 身份获取通过，但 HTTPS SubmitEmail 权限效果仍待验证。#142 两类日志和 OCI 原生告警已应用，通知订阅 ACTIVE 且合成通知已确认送达；应用级异常告警和真实邮件事件仍待验收。#145 的测试窗口已暂缓，Staging 当前为 mock。不得将清单视为可直接执行的真实发信部署命令。旧 SMTP 占位不参与现行 Compose 或 OCI HTTPS 路径。
 
 平台三个 Secret 必须彼此独立且不同于 tenant JWT/refresh Secret。缺失时平台认证与开通 API
 fail closed，但 tenant 工作台继续运行。`PLATFORM_SYNTHETIC_*` 仅用于显式 opt-in 的

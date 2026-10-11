@@ -62,7 +62,7 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #138 | 区分 OCI accepted、transient、permanent、suppressed 与 unknown 结果 | 本地已实现分类与安全重试测试；真实模式尚未部署或启用 | 是，涉及重试和误发风险 |
 | #139 | 按 OCI 实际配额进行 provider 节流与积压观测 | 阶段性全局 20 次/秒节流和聚合积压观测已在本地实现；OCI Limits API 返回 18000/分钟、50000/24 小时、2008192 字节，但 compartment 有效 quota 未返回数值；用户要求 Issue 保持开放以便随时调整，真实发送未启用 | 是，需核实有效 quota、成本与发送观察 |
 | #140 | 建立 fake OCI client 契约测试与安全异常回归 | 本地已加入合成数据 fake OCI 贯穿契约与安全回归；原 Issue 独立 allowlist 条款已由修订 ADR-019 的不可变 `mail_job.to_email` 快照规则取代；真实发送未启用 | 是，涉及 tenant/邮件目标地址异常 |
-| #144 | 确认 Staging 发件域、DNS、人员邮箱测试数据、配额与启用前提 | Email Domain、DKIM、approved sender 实时复核均 Active；权威 DNS 已确认 DKIM、DMARC `p=none` 和唯一 SPF；用户决定不启用 custom return path；Staging 的 `test1` 地点有 1 条 active 人员记录，租户订阅有效，其邮箱与用户更正后的测试地址精确匹配（不记录地址）；用户已确认邮箱控制权、接收同意及有人值守单发窗口；compartment 有效 quota 仍待核实，真实发送未启用 | 是，仍需有效 quota 与启用前预检 |
+| #144 | 确认 Staging 发件域、DNS、人员邮箱测试数据、配额与启用前提 | Email Domain、DKIM、approved sender 实时复核均 Active；权威 DNS 已确认 DKIM、DMARC `p=none` 和唯一 SPF；用户决定不启用 custom return path；Staging 的 `test1` 地点有 1 条 active 人员记录，租户订阅有效，其邮箱与用户更正后的测试地址精确匹配（不记录地址）；用户已确认邮箱控制权与接收同意，但暂缓单发窗口；compartment 有效 quota 仍待核实，真实发送未启用 | 是，仍需有效 quota 与新窗口批准 |
 | #146 | 设计 OCI 异步回执同步为产品级投递状态的方案 | P3 可选后续；不阻塞 #85 首次真实 provider | 是，涉及 tenant scope、PII 与 schema |
 | #149 | 在租户管理员和平台管理员界面只读显示当前生效的 mock/OCI 发信模式 | 后续产品改进；实时状态见 GitHub | 否，仅展示模式，不启用真实发信 |
 
@@ -75,10 +75,10 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #38 | 运维 | PostgreSQL 备份与恢复策略 | 当前跟进项，实时状态见 GitHub | 是 |
 | #39 | 运维 | 日志、监控与告警策略 | 策略文档已完成并关闭；集中采集与真实告警仍待独立实施 | 是 |
 | #116 | 运维 | 测量 OCI Always Free 单机的最大可持续并发扫码发信容量，并检讨低成本性能监控方案 | 2026-09-24 steady/burst/mixed-success 已完成：端到端上限 20 并发、约 19 次有效扫码/秒；provider-failure 与常驻告警落地待后续 Issue | 是，告警接收方、worker 扩容方案与 provider-failure 窗口仍需人工批准 |
-| #141 | 基础设施 | 为 Staging Compute 配置最小范围的 Instance Principal 发信权限 | Terraform 已创建单实例 Dynamic Group 与精确 sender policy，均为 ACTIVE；完整 plan 无漂移；HTTPS 权限映射、容器身份 preflight 和负面权限测试未验证 | 是，运行时验证仍待完成 |
-| #142 | 运维 | 建立 OCI Email Domain 投递日志、指标、告警和人工对账路径 | 90 天保留及可能费用获批准；用户已指定当前唯一 OCI 管理员担任读取人、告警接收人和回滚负责人，保守停止规则获批准；两类 90 天日志与三条原生告警 ACTIVE、邮箱订阅 ACTIVE，合成通知已确认送达；应用级异常告警与实际邮件事件仍待验证 | 是，需完成权限边界、应用级告警及真实事件验收 |
-| #143 | 工程改进 | 对齐 OCI provider 的环境、部署、运维和测试文档 | 文档与 inventory 已更新 Terraform 实况、停止阈值和回滚责任人；真实发信 Runbook 尚待人工审核，#145 前不宣称上线 | 是，需审查真实发信 Runbook |
-| #145 | 运维 | 在受控窗口启用 Staging OCI 发信并验证单封、小批量与回滚 | 用户已批准有人值守单发并确认受控邮箱；commit `5ca587d` 已在 Staging 以 mock 部署并完成增量迁移、健康检查和容器内 Instance Principal 认证预检；负面 IAM、应用级自动告警及真实事件仍未验收，尚未切换或发信 | 是，预检失败不得启用 |
+| #141 | 基础设施 | 为 Staging Compute 配置最小范围的 Instance Principal 发信权限 | Terraform 已创建单实例 Dynamic Group 与精确 sender policy，均为 ACTIVE；完整 plan 无漂移；新 Backend 容器内 Instance Principal 身份获取成功，但未调用 SubmitEmail，HTTPS 权限效果及负面权限测试仍未验证 | 是，运行时发信授权仍待完成 |
+| #142 | 运维 | 建立 OCI Email Domain 投递日志、指标、告警和人工对账路径 | 90 天保留及可能费用获批准；用户已指定当前唯一 OCI 管理员担任读取人、告警接收人和回滚负责人，保守停止规则获批准；两类 90 天日志与三条原生告警 ACTIVE、邮箱订阅 ACTIVE，合成通知已确认送达；应用级异常告警方案见 Proposed ADR-020，实际邮件事件须等新窗口 | 是，需批准并实施应用级告警及真实事件验收 |
+| #143 | 工程改进 | 对齐 OCI provider 的环境、部署、运维和测试文档 | 文档与 inventory 已更新 Terraform 实况、停止阈值和回滚责任人；commit `5ca587d` 已以 mock 部署，真实发信 Runbook 尚待人工审核，#145 前不宣称上线 | 是，需审查真实发信 Runbook |
+| #145 | 运维 | 在受控窗口启用 Staging OCI 发信并验证单封、小批量与回滚 | 用户已暂缓单发测试；commit `5ca587d` 已在 Staging 以 mock 部署并完成增量迁移、健康检查和容器内 Instance Principal 认证预检；负面 IAM、应用级自动告警及真实事件仍未验收，尚未切换或发信 | 是，须另获新窗口批准 |
 | 待建 Issue | 工程改进 | 按 ADR-005 实现幂等 Staging 部署脚本；人工审批触发，并保留恢复 Runbook | 已批准设计，尚未实现 | 是 |
 | #86 | 基础设施 | Staging 域名、TLS 与访问控制 | ADR-012 Accepted；总体跟踪，Caddy/Let's Encrypt 实施见 #107 | 是 |
 | #107 | 基础设施 | 按 ADR-012 为 Staging 接入 Caddy、Let's Encrypt、HTTPS 路由与证书续期 | 已完成并部署；80/443 公网入口于 2026-07-29 人工批准 | 是，ADR-012 与公网入口已确认 |

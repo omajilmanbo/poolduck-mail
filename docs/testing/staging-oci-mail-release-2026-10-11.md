@@ -8,3 +8,4 @@
 - Backend 容器内 `InstancePrincipalsAuthenticationDetailsProviderBuilder.build()` 成功；未输出 token、未调用 SubmitEmail。此结果仅证明身份获取，不证明 sender policy 的正向或负向提交权限。
 - 未完成门禁：#141 的 HTTPS 提交权限效果及无关身份/其他 sender 拒绝验证；#142 的应用级异常自动告警和真实 accepted/relayed 事件验收；#143 真实发信 Runbook 人工复核；compartment 有效 quota 未取得。当前不得把 mock 部署视为真实发信已上线。
 - 回滚：先保持或恢复 `MAIL_PROVIDER=mock`、`REAL_MAIL_SEND_ENABLED=false`，再按 Staging Runbook 重建 Backend；保留已应用增量列与索引、邮件历史、attempt 和 OCI 日志。旧 commit 为 `734a422`，但只有完成兼容性检查后才可回退代码。未向客户发送通知，因为本次仅为 Staging mock 更新。
+- 后续人工决定：用户暂缓单发测试；先前有人值守窗口已撤回，真实模式须另获新窗口批准。本次没有真实邮件提交。
