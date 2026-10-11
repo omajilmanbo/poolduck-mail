@@ -105,8 +105,8 @@ describe('OCI fake-client send contract (no network)', () => {
 
   it.each([
     { name: 'suppressed', value: () => ({ ...accepted(), emailSubmittedResponse: { ...accepted().emailSubmittedResponse, suppressedRecipients: [{ email: recipient }] } }), status: 'failed', errorCode: 'RECIPIENT_SUPPRESSED' },
-    { name: '429', value: () => new common.OciError(429, 'TooManyRequests', `raw ${recipient} ${body}`, 'request-synthetic', 'email', 'SubmitEmail', '', '', ''), status: 'queued', errorCode: 'PROVIDER_TRANSIENT' },
-    { name: 'quota', value: () => new common.OciError(400, 'QuotaExceeded', `raw ${recipient}`, 'request-synthetic', 'email', 'SubmitEmail', '', '', ''), status: 'queued', errorCode: 'PROVIDER_TRANSIENT' },
+    { name: '429', value: () => new common.OciError(429, 'TooManyRequests', `raw ${recipient} ${body}`, 'request-synthetic', 'email', 'SubmitEmail', '', '', ''), status: 'queued', errorCode: 'OCI_QUOTA_REJECTED' },
+    { name: 'quota', value: () => new common.OciError(400, 'QuotaExceeded', `raw ${recipient}`, 'request-synthetic', 'email', 'SubmitEmail', '', '', ''), status: 'queued', errorCode: 'OCI_QUOTA_REJECTED' },
     { name: 'bad request', value: () => new common.OciError(400, 'InvalidParameter', `raw ${recipient}`, 'request-synthetic', 'email', 'SubmitEmail', '', '', ''), status: 'failed', errorCode: 'OCI_REQUEST_REJECTED' },
     { name: 'auth', value: () => new common.OciError(401, 'NotAuthenticated', `raw ${recipient}`, 'request-synthetic', 'email', 'SubmitEmail', '', '', ''), status: 'failed', errorCode: 'OCI_AUTH_REJECTED' },
     { name: 'forbidden', value: () => new common.OciError(403, 'NotAuthorized', `raw ${recipient}`, 'request-synthetic', 'email', 'SubmitEmail', '', '', ''), status: 'failed', errorCode: 'OCI_AUTH_REJECTED' },

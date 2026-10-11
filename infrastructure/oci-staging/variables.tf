@@ -181,3 +181,9 @@ variable "email_alert_endpoint" {
   default     = null
   sensitive   = true
 }
+
+variable "enable_email_application_alerts" {
+  description = "Enable ADR-020 custom mail metrics IAM and alarms in Staging; source default is disabled."
+  type        = bool
+  default     = false
+}

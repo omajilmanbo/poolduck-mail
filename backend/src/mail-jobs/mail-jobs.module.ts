@@ -9,6 +9,7 @@ import { MailJobProcessorService } from './mail-job-processor.service';
 import { MailProvider } from './mail-provider.types';
 import { OciMailRateLimiter } from './oci-mail-rate-limiter';
 import { OciEmailDeliveryProvider } from './oci-email-delivery.provider';
+import { OciMailAppMetricsService } from './oci-mail-app-metrics.service';
 import {
   MAIL_PROVIDER_CONFIG_TOKEN,
   MAIL_PROVIDER_TOKEN,
@@ -23,6 +24,7 @@ import {
   providers: [
     MailJobsService,
     MailJobProcessorService,
+    OciMailAppMetricsService,
     SandboxMailProvider,
     OciMailRateLimiter,
     {

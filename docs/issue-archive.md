@@ -76,7 +76,7 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #39 | 运维 | 日志、监控与告警策略 | 策略文档已完成并关闭；集中采集与真实告警仍待独立实施 | 是 |
 | #116 | 运维 | 测量 OCI Always Free 单机的最大可持续并发扫码发信容量，并检讨低成本性能监控方案 | 2026-09-24 steady/burst/mixed-success 已完成：端到端上限 20 并发、约 19 次有效扫码/秒；provider-failure 与常驻告警落地待后续 Issue | 是，告警接收方、worker 扩容方案与 provider-failure 窗口仍需人工批准 |
 | #141 | 基础设施 | 为 Staging Compute 配置最小范围的 Instance Principal 发信权限 | Terraform 已创建单实例 Dynamic Group 与精确 sender policy，均为 ACTIVE；完整 plan 无漂移；新 Backend 容器内 Instance Principal 身份获取成功，但未调用 SubmitEmail，HTTPS 权限效果及负面权限测试仍未验证 | 是，运行时发信授权仍待完成 |
-| #142 | 运维 | 建立 OCI Email Domain 投递日志、指标、告警和人工对账路径 | 90 天保留及可能费用获批准；用户已指定当前唯一 OCI 管理员担任读取人、告警接收人和回滚负责人，保守停止规则获批准；两类 90 天日志与三条原生告警 ACTIVE、邮箱订阅 ACTIVE，合成通知已确认送达；应用级异常告警方案见 Proposed ADR-020，实际邮件事件须等新窗口 | 是，需批准并实施应用级告警及真实事件验收 |
+| #142 | 运维 | 建立 OCI Email Domain 投递日志、指标、告警和人工对账路径 | 两类 90 天日志与三条原生告警 ACTIVE、邮箱订阅 ACTIVE，合成通知已确认送达；ADR-020 已接受，应用级指标代码及 Terraform 告警待部署/合成验收，实际邮件事件须等新窗口 | 是，需应用级告警及真实事件验收 |
 | #143 | 工程改进 | 对齐 OCI provider 的环境、部署、运维和测试文档 | 文档与 inventory 已更新 Terraform 实况、停止阈值和回滚责任人；commit `5ca587d` 已以 mock 部署，真实发信 Runbook 尚待人工审核，#145 前不宣称上线 | 是，需审查真实发信 Runbook |
 | #145 | 运维 | 在受控窗口启用 Staging OCI 发信并验证单封、小批量与回滚 | 用户已暂缓单发测试；commit `5ca587d` 已在 Staging 以 mock 部署并完成增量迁移、健康检查和容器内 Instance Principal 认证预检；负面 IAM、应用级自动告警及真实事件仍未验收，尚未切换或发信 | 是，须另获新窗口批准 |
 | 待建 Issue | 工程改进 | 按 ADR-005 实现幂等 Staging 部署脚本；人工审批触发，并保留恢复 Runbook | 已批准设计，尚未实现 | 是 |

@@ -1,6 +1,6 @@
 # ADR-020：Staging 真实邮件的应用级异常告警
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-10-11
 - 相关 Issue：#142, #145
 
@@ -12,7 +12,7 @@ ADR-019 要求对 `delivery_unknown`、认证失败、配额拒绝、连续 prov
 
 ## Decision
 
-**提议，待人工接受后实施：**
+2026-10-11 用户接受本 ADR，并批准 Staging 指标写入权限及可能的 Monitoring 超额费用；这不批准真实邮件发送。决定如下：
 
 1. Backend 在 `APP_ENV=staging` 且单独启用应用告警配置时，按固定周期从本地 PostgreSQL 读取安全聚合值，使用现有 Instance Principal 向 OCI Monitoring 的专用 namespace 发布自定义指标；mock 模式也可发布零值/心跳，验证通道时不发送邮件。Local/CI 使用 fake client，不访问 OCI。
 2. 最小指标覆盖：新增 `delivery_unknown`、新增 `OCI_AUTH_REJECTED`、配额/429 拒绝及连续次数、连续 provider 失败、到期积压、采集心跳。只使用部署级固定维度；不得带 tenant、邮箱、正文、人员码、任务或 attempt ID。采集使用有界时间窗、可重复读取的数据库聚合，不改变 job 状态或重试语义。
@@ -44,10 +44,9 @@ ADR-019 要求对 `delivery_unknown`、认证失败、配额拒绝、连续 prov
 
 ## Operational impact
 
-需要人工批准新 IAM、namespace、告警阈值和可能的 Monitoring 超额费用；Terraform plan 与实际订阅送达须留脱敏记录。告警出现时沿用 ADR-019 的立即停止/回滚 mock、按 Message-ID 人工对账流程；心跳缺失同样阻止真实发信。真实 accepted/relayed 对账仍留待 #145 的新批准窗口。
+用户已批准 Staging 专用 IAM、namespace、上述告警阈值和可能的 Monitoring 超额费用；Terraform plan 与实际订阅送达仍须留脱敏记录。告警出现时沿用 ADR-019 的立即停止/回滚 mock、按 Message-ID 人工对账流程；心跳缺失同样阻止真实发信。真实 accepted/relayed 对账仍留待 #145 的新批准窗口。
 
 ## Follow-up
 
-1. 用户审阅本提议，确认是否接受新增 Staging metrics 写权限、可能费用与上述阈值；接受前不得实施架构变更或应用新 IAM。
-2. 若接受，在 #142 内实现 fake/集成测试、Terraform、mock 模式合成告警验证与回滚，更新 `docs/architecture.md`、`docs/observability.md`、`docs/deployment.md` 和 Staging Runbook。
-3. #141 的真实提交/负面权限效果、#142 的真实邮件事件及 #145 单发仍须另行安排，不因本 ADR 被接受而自动获得授权。
+1. 在 #142 内实现 fake/集成测试、Terraform、mock 模式合成告警验证与回滚，更新 `docs/architecture.md`、`docs/observability.md`、`docs/deployment.md` 和 Staging Runbook。
+2. #141 的真实提交/负面权限效果、#142 的真实邮件事件及 #145 单发仍须另行安排，不因本 ADR 被接受而自动获得授权。

@@ -39,5 +39,8 @@ email_sender_address = "no-reply@mail.poolducktest.com"
 # enable_email_delivery_alerts = true
 # email_alert_endpoint         = "operator@example.invalid"
 
+# ADR-020: after plan review, enable aggregate app metrics IAM and six alarms.
+# enable_email_application_alerts = true
+
 # Existing VM: pin its original image OCID before any resize; never adopt a newer image implicitly.
 # instance_image_ocid = "ocid1.image.oc1..example"

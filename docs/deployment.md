@@ -51,7 +51,7 @@ OCI 模式要求 `APP_ENV=staging`、`REAL_MAIL_SEND_ENABLED=true` 及有效的 
 已有任务不会追改。真实启用前须人工核查 Staging 人员邮箱仅含经同意的受控测试地址；
 后续人员数据维护同样须遵守此边界，不得导入真实客户地址。
 
-#141–#143 的 OCI IAM、Email Domain 日志/告警及受控单封准备见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。发件域、DKIM 与 approved sender 已由 Terraform 纳管；IAM Dynamic Group 与精确 sender policy 已应用，目标 Backend 容器的 Instance Principal 身份获取通过，但 HTTPS SubmitEmail 权限效果仍待验证。#142 两类日志和 OCI 原生告警已应用，通知订阅 ACTIVE 且合成通知已确认送达；应用级异常告警和真实邮件事件仍待验收。#145 的测试窗口已暂缓，Staging 当前为 mock。不得将清单视为可直接执行的真实发信部署命令。旧 SMTP 占位不参与现行 Compose 或 OCI HTTPS 路径。
+#141–#143 的 OCI IAM、Email Domain 日志/告警及受控单封准备见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。发件域、DKIM 与 approved sender 已由 Terraform 纳管；IAM Dynamic Group 与精确 sender policy 已应用，目标 Backend 容器的 Instance Principal 身份获取通过，但 HTTPS SubmitEmail 权限效果仍待验证。#142 两类日志和 OCI 原生告警已应用，通知订阅 ACTIVE 且合成通知已确认送达；ADR-020 的应用级指标代码和 Terraform 配置需另行部署与合成验收。仅在 `APP_ENV=staging` 且 `OCI_MAIL_APP_ALERTS_ENABLED=true` 时启用指标采集，容器还需 `OCI_MONITORING_REGION` 和 `OCI_MONITORING_COMPARTMENT_ID`；该开关不启用真实发送。#145 测试窗口已暂缓，Staging 当前为 mock。不得将清单视为可直接执行的真实发信部署命令。旧 SMTP 占位不参与现行 Compose 或 OCI HTTPS 路径。
 
 平台三个 Secret 必须彼此独立且不同于 tenant JWT/refresh Secret。缺失时平台认证与开通 API
 fail closed，但 tenant 工作台继续运行。`PLATFORM_SYNTHETIC_*` 仅用于显式 opt-in 的

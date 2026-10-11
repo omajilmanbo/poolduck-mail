@@ -108,9 +108,9 @@ describe('OCI Email Delivery submission adapter', () => {
   });
 
   it.each([
-    [429, 'TooManyRequests', 'transient', 'PROVIDER_TRANSIENT'],
-    [400, 'QuotaExceeded', 'transient', 'PROVIDER_TRANSIENT'],
-    [400, 'LimitExceeded', 'transient', 'PROVIDER_TRANSIENT'],
+    [429, 'TooManyRequests', 'transient', 'OCI_QUOTA_REJECTED'],
+    [400, 'QuotaExceeded', 'transient', 'OCI_QUOTA_REJECTED'],
+    [400, 'LimitExceeded', 'transient', 'OCI_QUOTA_REJECTED'],
     [400, 'InvalidParameter', 'permanent', 'OCI_REQUEST_REJECTED'],
     [401, 'NotAuthenticated', 'permanent', 'OCI_AUTH_REJECTED'],
     [403, 'NotAuthorized', 'permanent', 'OCI_AUTH_REJECTED'],
@@ -132,7 +132,7 @@ describe('OCI Email Delivery submission adapter', () => {
   it('drops unsafe request IDs and treats untyped errors as unknown', () => {
     const failure = new common.OciError(429, 'TooManyRequests', 'sensitive', 'id\r\nunsafe', 'email', 'SubmitEmail', '', '', '');
     expect(classifyOciSubmitError(failure)).toEqual({
-      disposition: 'transient', errorCode: 'PROVIDER_TRANSIENT', opcRequestId: undefined,
+      disposition: 'transient', errorCode: 'OCI_QUOTA_REJECTED', opcRequestId: undefined,
     });
     expect(classifyOciSubmitError({ statusCode: 429, message: 'untrusted' })).toEqual({
       disposition: 'unknown', errorCode: 'PROVIDER_OUTCOME_UNKNOWN',

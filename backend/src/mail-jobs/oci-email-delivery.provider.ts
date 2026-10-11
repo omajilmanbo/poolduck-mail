@@ -23,7 +23,7 @@ export function classifyOciSubmitError(error: unknown): Pick<MailProviderSendRes
   const opcRequestId = safeRequestId(error.opcRequestId);
   const status = error.statusCode;
   if (status === 429 || (status === 400 && ['QuotaExceeded', 'LimitExceeded'].includes(error.serviceCode))) {
-    return { disposition: 'transient', errorCode: 'PROVIDER_TRANSIENT', opcRequestId };
+    return { disposition: 'transient', errorCode: 'OCI_QUOTA_REJECTED', opcRequestId };
   }
   if (status === 401 || status === 403) {
     return { disposition: 'permanent', errorCode: 'OCI_AUTH_REJECTED', opcRequestId };

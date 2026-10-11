@@ -140,3 +140,48 @@ resource "oci_monitoring_alarm" "staging_mail_stop" {
   resolution            = "1m"
   body                  = "Staging mail stop signal. Operator must stop real sending and return the application to mock; inspect restricted OCI logs. Do not auto-retry delivery_unknown."
 }
+
+# ADR-020: only the existing single-instance Dynamic Group can write this namespace.
+resource "oci_identity_policy" "staging_mail_metrics" {
+  count          = var.enable_email_application_alerts ? 1 : 0
+  compartment_id = var.tenancy_ocid
+  name           = "${var.resource_prefix}-email-app-metrics"
+  description    = "Write-only staging mail aggregate metrics in one namespace."
+  statements = [
+    "Allow dynamic-group ${oci_identity_dynamic_group.staging_mail[0].name} to use metrics in compartment id ${var.compartment_ocid} where target.metrics.namespace = 'poolduck_staging_mail'"
+  ]
+
+  lifecycle {
+    precondition {
+      condition     = var.enable_email_instance_principal && var.enable_email_delivery_alerts
+      error_message = "Application mail alerts require the existing instance principal and Notifications topic."
+    }
+  }
+}
+
+locals {
+  email_application_alarm_queries = {
+    delivery_unknown = "DeliveryUnknownNew[1m].max() > 0"
+    auth_rejected    = "AuthRejectedNew[1m].max() > 0"
+    quota_rejected   = "QuotaRejectedConsecutive[1m].max() >= 3"
+    provider_failure = "ProviderFailureConsecutive[1m].max() >= 3"
+    due_backlog      = "DueBacklogOldestMs[1m].max() > 5000"
+    heartbeat_absent = "CollectorHeartbeat[1m].absent(5m)"
+  }
+}
+
+resource "oci_monitoring_alarm" "staging_mail_application" {
+  for_each              = var.enable_email_application_alerts ? local.email_application_alarm_queries : {}
+  compartment_id        = var.compartment_ocid
+  metric_compartment_id = var.compartment_ocid
+  destinations          = [oci_ons_notification_topic.staging_mail[0].topic_id]
+  display_name          = "${var.resource_prefix}-mail-app-${each.key}"
+  namespace             = "poolduck_staging_mail"
+  query                 = each.value
+  severity              = "CRITICAL"
+  is_enabled            = true
+  resolution            = "1m"
+  body                  = "Staging mail application stop signal. Keep real sending disabled or return to mock; inspect aggregate metrics and restricted logs. Never auto-retry delivery_unknown."
+
+  depends_on = [oci_identity_policy.staging_mail_metrics]
+}
