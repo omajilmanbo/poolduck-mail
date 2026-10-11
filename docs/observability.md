@@ -94,4 +94,4 @@ worker 当前以安全聚合日志实现本地/CI 可验证出口：`mail_job.cl
 
 #142 的 OCI `OutboundAccepted`/`OutboundRelayed` 日志、`oci_emaildelivery` 指标、告警接收人、PII 权限与保留期、人工对账及测试步骤见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。用户已批准邮件原始日志保留 90 天及可能费用；用户已指定当前唯一 OCI 用户作为读取人和告警接收人；OCI API 已核验该用户为唯一 ACTIVE 管理员，保守停止规则已批准；两类 90 天日志、通知主题及三条原生告警已应用，订阅为 ACTIVE，指定运维收件人已确认收到合成通知。应用级 unknown/认证/配额自动告警尚未接通。本文件前述 Staging 30 天仅为应用日志建议。`sent` 只表示 provider accepted，`delivery_unknown` 不自动重发。
 
-应用级异常进入 OCI Monitoring 的方案见 Accepted [ADR-020](decisions/ADR-020-staging-mail-application-alerts.md)。Backend 每分钟在 Staging 显式启用后向 `poolduck_staging_mail` 发布 7 个聚合指标（unknown、认证、配额新增/连续、provider 连续失败、积压、心跳），固定部署级维度且不含 PII；Terraform 以专用 namespace 限制写入权限并定义 CRITICAL 告警。部署及合成告警送达验证前，不得宣称该通道已启用。真实邮件事件还须 #145 新窗口。
+应用级异常进入 OCI Monitoring 的方案见 Accepted [ADR-020](decisions/ADR-020-staging-mail-application-alerts.md)。Backend 每分钟在 Staging 显式启用后向 `poolduck_staging_mail` 发布 7 个聚合指标（unknown、认证、配额新增/连续、provider 连续失败、积压、心跳），固定部署级维度且不含 PII；Terraform 以专用 namespace 限制写入权限并定义 CRITICAL 告警。2026-10-11 已将 1 条 IAM、6 条告警应用到 OCI，并以 mock 模式部署 Backend，云端可查询到 7 类指标；合成异常通知送达尚须验收，不得宣称完整告警链路已通过。事件型告警采用 5 分钟查询窗覆盖指标摄取延迟；真实邮件事件还须 #145 新窗口。

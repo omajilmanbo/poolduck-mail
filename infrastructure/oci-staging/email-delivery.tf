@@ -161,10 +161,10 @@ resource "oci_identity_policy" "staging_mail_metrics" {
 
 locals {
   email_application_alarm_queries = {
-    delivery_unknown = "DeliveryUnknownNew[1m].max() > 0"
-    auth_rejected    = "AuthRejectedNew[1m].max() > 0"
-    quota_rejected   = "QuotaRejectedConsecutive[1m].max() >= 3"
-    provider_failure = "ProviderFailureConsecutive[1m].max() >= 3"
+    delivery_unknown = "DeliveryUnknownNew[5m].max() > 0"
+    auth_rejected    = "AuthRejectedNew[5m].max() > 0"
+    quota_rejected   = "QuotaRejectedConsecutive[5m].max() >= 3"
+    provider_failure = "ProviderFailureConsecutive[5m].max() >= 3"
     due_backlog      = "DueBacklogOldestMs[1m].max() > 5000"
     heartbeat_absent = "CollectorHeartbeat[1m].absent(5m)"
   }
