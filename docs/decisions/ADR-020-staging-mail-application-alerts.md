@@ -16,7 +16,7 @@ ADR-019 要求对 `delivery_unknown`、认证失败、配额拒绝、连续 prov
 
 1. Backend 在 `APP_ENV=staging` 且单独启用应用告警配置时，按固定周期从本地 PostgreSQL 读取安全聚合值，使用现有 Instance Principal 向 OCI Monitoring 的专用 namespace 发布自定义指标；mock 模式也可发布零值/心跳，验证通道时不发送邮件。Local/CI 使用 fake client，不访问 OCI。
 2. 最小指标覆盖：新增 `delivery_unknown`、新增 `OCI_AUTH_REJECTED`、配额/429 拒绝及连续次数、连续 provider 失败、到期积压、采集心跳。只使用部署级固定维度；不得带 tenant、邮箱、正文、人员码、任务或 attempt ID。采集使用有界时间窗、可重复读取的数据库聚合，不改变 job 状态或重试语义。
-3. Terraform 为现有单实例 Dynamic Group 增加**仅在 Staging compartment、仅在专用 namespace** 的 `use metrics` 权限，并配置对应 CRITICAL 告警，复用现有 OCI Notifications topic。不得授予实例管理 alarms、Notifications、Logging、IAM 或 Email Domain 的权限。Terraform 开关默认关闭，人工审核 plan、费用边界与 IAM 后才可应用。
+3. Terraform 为现有单实例 Dynamic Group 增加**仅在 Staging compartment、仅在专用 namespace、仅限 `request.permission='METRIC_WRITE'`** 的 `use metrics` policy，并配置对应 CRITICAL 告警，复用现有 OCI Notifications topic。OCI 的裸 `use metrics` 还包含读取权限，不能省略该权限条件。不得授予实例管理 alarms、Notifications、Logging、IAM 或 Email Domain 的权限。Terraform 开关默认关闭，人工审核 plan、费用边界与 IAM 后才可应用。
 4. 保持已批准停止阈值：任意新增 unknown/认证失败立即通知；连续 3 次配额拒绝通知；积压/连续 provider 失败按既有观测阈值提醒。原生 complaint/hard bounce/suppressed 告警不变。通知只包含稳定事件类别、计数、时间窗和环境，不复制 PII。
 5. 发布失败或采集心跳缺失必须产生可见的健康失败/独立告警，不能把“没有指标”解释为“没有异常”；在告警链路未经验证时，真实邮件开关保持关闭。告警本身不自动重发、不改写 `delivery_unknown`、不自动清空 suppression。
 6. 仅在 #145 新窗口获批后，才用一封受控邮件验证 OCI accepted/relayed 真实事件；应用告警的链路先以不含邮件和 PII 的合成信号验证。任何真实发送与回滚仍遵循 ADR-019。

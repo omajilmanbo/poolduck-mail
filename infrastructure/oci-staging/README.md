@@ -142,7 +142,7 @@ API 分位延迟、队列等待与数据库锁等待不能用主机 CPU 指标�
 
 `enable_email_instance_principal=false` 是 #141 IAM 的源码默认门禁；2026-10-11 用户批准后，本地忽略的 tfvars 已设为 `true`，Terraform 创建单实例 Dynamic Group 与精确 sender policy，均为 ACTIVE，完整 plan 无漂移。HTTPS 权限映射、容器身份 preflight 和负面权限测试仍待完成。`email_log_retention_days=null` 是 #142 日志的默认门禁；用户批准 90 天及可能存储费用；用户已指定当前唯一 OCI 用户负责读取、告警接收与回滚；OCI API 已核验其为唯一 ACTIVE 管理员，保守停止规则获批准；本地忽略的 tfvars 已启用 90 天日志和通知，Terraform 已创建两类日志、主题、订阅及三条原生告警。订阅 ACTIVE，合成通知已由运维确认收到；新增管理员需复核 PII 访问边界。任何后续 apply 均先执行**完整** `terraform plan`，禁止用 `-target` 隐藏 Compute 或其他资源漂移。Terraform 管理邮件基础设施，不管理容器中的真实发信开关；#145 仍须单独批准。
 
-ADR-020 于 2026-10-11 获接受；`enable_email_application_alerts=false` 是源码默认门禁，本地忽略的 tfvars 已设为 `true`。完整 plan 为新增 1 条仅限 `poolduck_staging_mail` namespace 的实例指标写入 policy 和 6 条 CRITICAL 应用告警、0 变更、0 销毁，随后已应用。Backend 容器还需单独启用 `OCI_MAIL_APP_ALERTS_ENABLED=true`、`OCI_MONITORING_REGION` 与 `OCI_MONITORING_COMPARTMENT_ID` 才会上报匿名聚合指标；这不启用真实发信。心跳和合成告警送达仍须运行时验收；避免在这之前声称应用级通知完成。
+ADR-020 于 2026-10-11 获接受；`enable_email_application_alerts=false` 是源码默认门禁，本地忽略的 tfvars 已设为 `true`。完整 plan 为新增 1 条仅限 `poolduck_staging_mail` namespace 的实例指标 policy 和 6 条 CRITICAL 应用告警、0 变更、0 销毁，随后已应用。2026-10-14 按 OCI 官方 IAM 权限表再将 policy 限定为 `request.permission='METRIC_WRITE'`（裸 `use metrics` 还包含读权限），完整 plan 仅 1 条 policy 更新，已应用；目标容器读取负面测试返回 404。Staging Backend 已通过 Compose 启用 `OCI_MAIL_APP_ALERTS_ENABLED=true`、region 和 compartment，在 mock 模式持续发布 7 类匿名指标；无邮件合成认证失败触发 FIRING，指定邮箱收到通知。该配置不启用真实发信；真实 accepted/relayed 事件仍须 #145 新窗口。
 
 ## 非范围声明
 

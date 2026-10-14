@@ -148,7 +148,7 @@ resource "oci_identity_policy" "staging_mail_metrics" {
   name           = "${var.resource_prefix}-email-app-metrics"
   description    = "Write-only staging mail aggregate metrics in one namespace."
   statements = [
-    "Allow dynamic-group ${oci_identity_dynamic_group.staging_mail[0].name} to use metrics in compartment id ${var.compartment_ocid} where target.metrics.namespace = 'poolduck_staging_mail'"
+    "Allow dynamic-group ${oci_identity_dynamic_group.staging_mail[0].name} to use metrics in compartment id ${var.compartment_ocid} where all {target.metrics.namespace = 'poolduck_staging_mail', request.permission = 'METRIC_WRITE'}"
   ]
 
   lifecycle {
