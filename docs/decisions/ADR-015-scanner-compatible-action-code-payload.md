@@ -4,6 +4,8 @@
 - 日期：2026-08-06
 - 相关 Issue：#117
 
+> 2026-10-16：ADR-022 已 Accepted，并 supersede 本 ADR 的 `V2E` / `V2X` 负载语法与资产编码。下文保留当时的历史决策；当前动作码为 `E<person_code>` / `X<person_code>`。
+
 ## Context
 
 ADR-008 已批准并实现 `PD1|ENTRY|<person_code>` / `PD1|EXIT|<person_code>`，并保留每人进入、离开两张逻辑动作码以及 QR/Code 128 四张本地资产。实际键盘模拟扫码枪可能无法稳定输入分隔符 `|`。

@@ -6,7 +6,7 @@
 - 后端：NestJS（Node.js 20 LTS，REST API）
 - 数据库：PostgreSQL 16 + Prisma
 - 认证：JWT（access + refresh）+ RBAC
-- 邮件服务：MVP 使用 Sandbox/Mock Provider（不接入真实供应商）
+- 邮件服务：当前 Staging 运行时仍使用 Mock Provider；ADR-019 的 OCI HTTPS adapter、结果分类和节流已部署，目标容器的 Instance Principal 身份获取通过，但 #141 的 SubmitEmail 权限效果及负面权限仍未验证。真实发信仍关闭。
 
 ### 1.1 Local 容器运行拓扑（Issue #60）
 
@@ -49,8 +49,10 @@
   `location_limit` 管理；默认不读取租户业务明细
 - Tenant 模块：租户管理与隔离
 - Subscription 模块：订阅状态与有效期校验
-- Scan 模块：按 ADR-015 严格解析产品名无关的 `V2E<person_code>` / `V2X<person_code>`、扫码事件入库、幂等与冲突处理；不双读 `PD1|...` 或迁移旧资产
+- Scan 模块：按 ADR-022 严格解析 `E<person_code>` / `X<person_code>`、扫码事件入库、幂等与冲突处理；不双读旧 `V2` / `PD1|...` 动作码
 - Mail 模块：邮件任务创建、发送、重试
+- Mail Provider 选择器只接受 `mock` 与 `oci_email_delivery_https`；后者要求 Staging 专用的显式开关、region、approved sender compartment、From 和 Message-ID domain。#137 的 OCI HTTPS adapter 使用 Instance Principal、禁用 SDK 自动重试，并在 tenant-scoped attempt 上保存调用前 Message-ID 与响应标识；#138 将 OCI 结果明确分为 accepted、transient、permanent、suppressed、unknown，只有明确未被接受的 transient 可有限重试，unknown 不自动重发。#139 阶段性以 PostgreSQL 跨实例预约确保 OCI 提交至少间隔 50 ms（应用侧最多 20 次/秒），不设应用侧每日上限；这不是 OCI 实际配额。本地 selector 已接通真实 adapter，但 Staging 当前仍保持 mock，只有受控预检通过后才可切换。收件人始终来自按 tenant/location/person 映射创建的不可变任务快照；新增人员邮箱不需维护第二份地址清单。Staging 真实启用前须人工核查测试数据。
+- 应用级 OCI 邮件异常告警方案见 Accepted [ADR-020](decisions/ADR-020-staging-mail-application-alerts.md)。Backend 在 Staging 显式启用后每分钟发布匿名聚合指标和心跳，Terraform 为专用 namespace 配置最小写入权限及 CRITICAL 告警；部署和合成告警验收之前不得宣称自动通知已接通，真实发送仍关闭。
 - Audit 模块：以 best-effort 方式写入关键操作审计日志；审计写入失败不改变主业务结果
 
 > ADR-017 已在本地实现：首次发送使用数据库时间权威的 10 秒 `waiting` 犹豫期，并以原子条件更新决定
@@ -102,6 +104,11 @@
 
 ## 6. 邮件服务集成
 
+OCI 真实邮件链路按边界拆为两张主题图：
+[提交前：扫码、任务与 Provider 门禁](architecture/oci/submit-before.md)；
+[提交后：OCI 接收、转交与旁路观测](architecture/oci/submit-after.md)。
+两图描述同一条候选真实发信路径，不表示当前 Staging 已启用真实邮件。
+
 - 抽象邮件发送 provider 接口（便于后续替换 SMTP/第三方）
 - MVP 默认启用 Sandbox/Mock provider，仅记录请求与回执，不实际投递
 - 保存发送请求与回执状态
@@ -109,7 +116,7 @@
 - 每个映射扫码事件保存 `person_mapping_id`、`person_code_snapshot`、`action` 与 `action_source`；邮件任务同时保存 person/location/tenant 外键及发送时的名称/人员码/动作快照。历史读取和重试使用快照及已固化正文，不因后续改名或扫描而改变。
 
 > ADR-019 已 Accepted：Issue #85 将在现有抽象下增加 OCI Email Delivery HTTPS Submission，
-> 并以 Compute Instance Principal、显式真实发送开关、Staging 收件 allowlist、provider 错误分类和
+> 并以 Compute Instance Principal、显式真实发送开关、Staging 测试数据核查、provider 错误分类和
 > OCI Email Domain 日志/指标作为安全边界。实现与另行批准 Staging 启用前，当前运行行为
 > 仍是 mock/sandbox；发件域、From、region、SPF/DKIM/DMARC 与启用窗口均未由仓库代选。
 

@@ -1,7 +1,6 @@
 import { AuditService } from '../src/audit/audit.service';
 import { LicenseService } from '../src/license/license.service';
 import { MailJobsService } from '../src/mail-jobs/mail-jobs.service';
-import { SandboxMailProvider } from '../src/mail-jobs/sandbox-mail.provider';
 import { PrismaService } from '../src/prisma.service';
 import { ScanEventsService } from '../src/scan-events/scan-events.service';
 
@@ -53,7 +52,7 @@ describe('history CSV exports', () => {
     const prisma = {
       scanEvent: {
         findMany: jest.fn().mockResolvedValue([{
-          id: 'scan-1', locationId: 'location-1', scanCode: 'V2E01K0ABC10001', scanType: 'entry',
+          id: 'scan-1', locationId: 'location-1', scanCode: 'E01K0ABC10001', scanType: 'entry',
           personCodeSnapshot: '01K0ABC10001', action: 'entry', actionSource: 'person_action_code',
           receivedAt: new Date('2026-07-22T00:00:00.000Z'), createdAt: new Date('2026-07-22T00:00:00.000Z'),
           canceledAt,
@@ -97,9 +96,11 @@ describe('history CSV exports', () => {
     const service = new MailJobsService(
       prisma,
       {} as LicenseService,
-      {} as SandboxMailProvider,
+      {} as never,
       audit,
       locationAccess as never,
+      { kind: 'mock' },
+      {} as never,
     );
 
     const csv = await service.exportMailJobs(user, range);

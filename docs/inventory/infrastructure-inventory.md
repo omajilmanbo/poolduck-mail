@@ -18,8 +18,8 @@
 | Frontend Hosting | 前端页面托管 | Local process/Compose (`localhost:3000`) | OCI VM / Compose / Caddy HTTPS reverse proxy | TBD | URL / 域名 / 部署平台 | `docs/inventory/` | 人工指定 | `https://app.poolducktest.com` |
 | Backend API Hosting | API 服务托管 | Local process/Compose (`localhost:3001`) | OCI VM / Compose / Caddy HTTPS reverse proxy | TBD | Base URL / Runtime / Region | `docs/inventory/` | 人工指定 | 与 Frontend 同源、同 VM、不同容器 |
 | PostgreSQL | 业务数据存储 | Docker Compose / PostgreSQL 16 / `5432` | 同一 Staging VM 内独立 PostgreSQL 16 容器 | 独立实例（TBD） | engine/version/port/instance-id | `docs/inventory/` | 人工指定 | 禁止跨环境共用数据库或数据 |
-| Mail Provider | 邮件发送能力 | sandbox/mock provider | mock provider（当前） | TBD（正式链路） | provider name / account alias | `docs/inventory/` | 人工指定 | Staging 禁止真实客户投递 |
-| Log & Monitoring | 日志、指标、告警 | 本地日志 | 容器日志；集中日志与指标待补齐 | 集中日志、指标、告警（TBD） | service name / project id | `docs/inventory/` | 人工指定 | #39 已定义策略；实际集成另行实施 |
+| Mail Provider | 邮件发送能力 | mock provider | mock（当前）；OCI HTTPS 待 #141–#145 | TBD（正式链路） | region / sender compartment / approved sender（值不入仓库） | `docs/oci-mail-staging-readiness.md` | 人工指定 | 精确 IAM 已应用但运行时权限未验收；真实发送未启用 |
+| Log & Monitoring | 日志、指标、告警 | 本地日志 | 容器聚合日志；OCI Email Domain 两类日志、三条原生告警和通知订阅 ACTIVE；应用级告警待完成 | 集中日志、指标、告警（TBD） | Email Domain / log group / 90 天保留 / 唯一 OCI 管理员 | `docs/oci-mail-staging-readiness.md` | 人工指定 | OCI 原始日志含收件 PII |
 | Backup | 备份与恢复 | 可选（本地快照） | 备份策略（TBD） | 备份策略（TBD） | schedule / retention / storage | `docs/inventory/` | 人工指定 | 不记录真实存储凭据 |
 | Deployment Method | 发布方式 | 手工启动（dev） | cloud-init 仅做 bootstrap；人工批准后由操作者/Agent 执行 Compose Runbook，目标为幂等部署脚本 | CI/CD（TBD） | workflow name / runner / approval | `docs/inventory/` | 人工指定 | ADR-005；`workflow_dispatch` 尚未实施 |
 | DNS & TLS | 域名与证书 | N/A | `app.poolducktest.com` / Caddy / Let's Encrypt HTTP-01 | TBD | domain / cert source / expiry owner | `docs/inventory/` | 人工指定 | ADR-012；Caddy `/data` 持久化证书和 ACME 状态 |

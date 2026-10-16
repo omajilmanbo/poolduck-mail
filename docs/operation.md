@@ -20,7 +20,9 @@
 5. 检查是否有长期停留在 `processing` 的异常任务；原子领取应阻止同一任务并发重复发送
 6. 重试期间订阅失效时，任务应安全终止为 `failed` / `SUBSCRIPTION_NOT_SENDABLE`
 7. 检查收件箱地址格式与域名策略
-8. 仅在非 MVP 阶段接入真实 provider 后，再排查 SMTP/provider 凭据与连接性
+8. OCI 真实模式尚未启用；未来启用后，`sent` 仅表示 accepted。只有明确未接受的限流/配额拒绝可按 30 秒、2 分钟、10 分钟退避；4xx 与 suppression 不重试，timeout/断线/5xx/回执不完整进入 `delivery_unknown` 并按 Message-ID、envelope ID、OCI request ID 人工对账，不直接改回 `queued`。排查时不复制收件邮箱、正文或 SDK 原始错误。
+
+OCI Email Domain 的 `OutboundAccepted`/`OutboundRelayed`、bounce/complaint 对账、停止条件、回滚 mock 与 IAM 撤销顺序见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。OCI 原始日志含收件人 PII，只允许获批运维角色查看；`delivery_unknown` 无日志命中也不得自动重发。
 
 ### 2.1 ADR-017 等待、取消与不确定投递
 

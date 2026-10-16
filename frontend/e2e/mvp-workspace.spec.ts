@@ -33,14 +33,14 @@ test('MVP GUI: login, rejected/mapped scan, history refresh, and sandbox result'
 
   await page
     .getByTestId('scan-code-input')
-    .fill('V2E01K0ABC19999');
+    .fill('E01K0ABC19999');
   await page.getByTestId('scan-submit').click();
   await expect(page.getByText('person_code未在当前 location 找到映射邮箱')).toBeVisible();
   await expect(page.getByText('01K0ABC19999')).toHaveCount(0);
 
   await page
     .getByTestId('scan-code-input')
-    .fill('V2E01K0ABC10001');
+    .fill('E01K0ABC10001');
   await page.getByTestId('scan-submit').click();
 
   const latestMailStatus = page.getByTestId('mail-status').first();
@@ -89,7 +89,7 @@ test('ADR-017 cancellation survives refresh/relogin and treats a network failure
     identifier: 'local-operator',
   });
 
-  await page.getByTestId('scan-code-input').fill('V2X01K0ABC10001');
+  await page.getByTestId('scan-code-input').fill('X01K0ABC10001');
   await page.getByTestId('scan-submit').click();
   const cancel = page.getByTestId('scan-cancel').first();
   await expect(cancel).toContainText('取消发送');
@@ -117,7 +117,7 @@ test('ADR-017 cancellation survives refresh/relogin and treats a network failure
   await expect(page.getByTestId('mail-status').first()).toHaveText('已取消');
 
   await page.route('**/api/scan-events/*/cancel', (route) => route.abort('failed'));
-  await page.getByTestId('scan-code-input').fill('V2X01K0ABC10001');
+  await page.getByTestId('scan-code-input').fill('X01K0ABC10001');
   await page.getByTestId('scan-submit').click();
   await page.getByTestId('scan-cancel').first().click();
   await expect(page.getByText('取消结果未知，正在刷新权威状态。')).toBeVisible();
@@ -153,8 +153,8 @@ test('operator can create, edit, deactivate and reactivate a person mapping', as
   await row.getByRole('button', { name: '查看动作码' }).click();
   const codeDialog = page.getByRole('dialog');
   await expect(codeDialog.getByRole('img')).toHaveCount(4);
-  await expect(codeDialog).toContainText(`V2E${personCode}`);
-  await expect(codeDialog).toContainText(`V2X${personCode}`);
+  await expect(codeDialog).toContainText(`E${personCode}`);
+  await expect(codeDialog).toContainText(`X${personCode}`);
   const downloadPromise = page.waitForEvent('download');
   await codeDialog.getByRole('button', { name: '下载全部四张图片 ZIP' }).click();
   expect((await downloadPromise).suggestedFilename()).toBe(`${personCode}-action-codes.zip`);

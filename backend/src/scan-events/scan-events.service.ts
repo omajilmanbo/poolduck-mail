@@ -33,7 +33,7 @@ const MAIL_TEMPLATE_KEYS = {
 const SCAN_DEDUPLICATION_WINDOW_MS = 10_000;
 const IDEMPOTENCY_RETENTION_MS = 24 * 60 * 60 * 1000;
 const SCAN_ROUTE = 'POST:/api/scan-events';
-const ACTION_CODE_PATTERN = /^V2([EX])([0-9A-HJKMNP-TV-Z]{12})$/;
+const ACTION_CODE_PATTERN = /^([EX])([0-9A-HJKMNP-TV-Z]{12})$/;
 
 type ParsedActionCode = {
   personCode: string;
@@ -336,7 +336,6 @@ export class ScanEventsService {
 
     const rawPayload = JSON.stringify({
       location_id: dto.location_id,
-      version: 'V2',
       person_code: parsedCode.personCode,
       action: parsedCode.action,
     });
@@ -731,7 +730,7 @@ export class ScanEventsService {
     if (!match) {
       throw new BadRequestException({
         code: 'ACTION_CODE_INVALID',
-        message: '动作码格式无效，应为 V2E<person_code> 或 V2X<person_code>',
+        message: '动作码格式无效，应为 E<person_code> 或 X<person_code>',
       });
     }
 

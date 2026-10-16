@@ -258,6 +258,9 @@ model MailDeliveryAttempt {
   providerInvokedAt DateTime? @map("provider_invoked_at")
   completedAt       DateTime? @map("completed_at")
   providerMessageId String?   @map("provider_message_id") @db.VarChar(255)
+  rfcMessageId      String?   @map("rfc_message_id") @db.VarChar(512)
+  envelopeId        String?   @map("envelope_id") @db.VarChar(512)
+  opcRequestId      String?   @map("opc_request_id") @db.VarChar(512)
   errorCode         String?   @map("error_code") @db.VarChar(64)
   tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   mailJob           MailJob   @relation(fields: [mailJobId], references: [id], onDelete: Restrict)
@@ -265,6 +268,7 @@ model MailDeliveryAttempt {
   @@index([tenantId, claimedAt])
   @@index([mailJobId, claimedAt])
   @@index([status, claimedAt])
+  @@index([providerInvokedAt])
   @@map("mail_delivery_attempts")
 }
 

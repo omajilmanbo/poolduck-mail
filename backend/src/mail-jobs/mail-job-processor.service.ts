@@ -43,6 +43,7 @@ export class MailJobProcessorService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MailJobProcessorService.name);
   private timer?: ReturnType<typeof setInterval>;
   private running = false;
+  private lastBacklogWarningAt = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -79,22 +80,30 @@ export class MailJobProcessorService implements OnModuleInit, OnModuleDestroy {
                 GREATEST(
                   0,
                   EXTRACT(EPOCH FROM (
-                    CURRENT_TIMESTAMP - COALESCE("send_not_before", "scheduled_at", "created_at")
+                    CURRENT_TIMESTAMP - CASE
+                      WHEN "status" = 'waiting' THEN "send_not_before"
+                      ELSE COALESCE("scheduled_at", "created_at")
+                    END
                   )) * 1000
                 )::double precision AS "overdueMs"
          FROM "mail_jobs"
          WHERE ("status" = 'waiting' AND "send_not_before" <= CURRENT_TIMESTAMP)
             OR ("status" = 'queued' AND "scheduled_at" <= CURRENT_TIMESTAMP)
             OR ("status" = 'queued' AND "scheduled_at" IS NULL AND "send_not_before" IS NULL)
-         ORDER BY COALESCE("send_not_before", "scheduled_at", "created_at") ASC, "id" ASC
+         ORDER BY CASE
+           WHEN "status" = 'waiting' THEN "send_not_before"
+           ELSE COALESCE("scheduled_at", "created_at")
+         END ASC, "id" ASC
          LIMIT 20`,
       );
       const pollStartedAt = Date.now();
       const observedLatencies: number[] = [];
+      let rateDeferredCount = 0;
       for (const job of due) {
         const observedLatency = Number(job.overdueMs) + (Date.now() - pollStartedAt);
         try {
-          await this.mailJobs.processQueuedMailJob(job.tenantId, job.id, null);
+          const result = await this.mailJobs.processQueuedMailJob(job.tenantId, job.id, null);
+          if (result.provider_result?.error_message === 'PROVIDER_RATE_LIMITED') rateDeferredCount += 1;
           observedLatencies.push(observedLatency);
         } catch (error) {
           // Another process may have claimed the row after this due-job snapshot.
@@ -112,6 +121,33 @@ export class MailJobProcessorService implements OnModuleInit, OnModuleDestroy {
         });
         if (summary.overAlertThreshold > 0) {
           this.logger.warn(payload);
+        } else {
+          this.logger.debug(payload);
+        }
+      }
+      const [backlog] = await this.prisma.$queryRawUnsafe<Array<{ dueCount: number; oldestDueMs: number }>>(`
+        SELECT COUNT(*)::int AS "dueCount",
+          COALESCE(MAX(GREATEST(0, EXTRACT(EPOCH FROM (
+            CURRENT_TIMESTAMP - CASE
+              WHEN "status" = 'waiting' THEN "send_not_before"
+              ELSE COALESCE("scheduled_at", "created_at")
+            END
+          )) * 1000)), 0)::double precision AS "oldestDueMs"
+        FROM "mail_jobs"
+        WHERE ("status" = 'waiting' AND "send_not_before" <= CURRENT_TIMESTAMP)
+           OR ("status" = 'queued' AND "scheduled_at" <= CURRENT_TIMESTAMP)
+           OR ("status" = 'queued' AND "scheduled_at" IS NULL AND "send_not_before" IS NULL)
+      `);
+      if (backlog && (backlog.dueCount > 0 || rateDeferredCount > 0)) {
+        const payload = JSON.stringify({
+          event: 'mail_job.backlog_snapshot',
+          dueCount: backlog.dueCount,
+          oldestDueMs: Math.round(backlog.oldestDueMs),
+          rateDeferredCount,
+        });
+        if (backlog.oldestDueMs > CLAIM_ALERT_THRESHOLD_MS && Date.now() - this.lastBacklogWarningAt >= 60_000) {
+          this.logger.warn(payload);
+          this.lastBacklogWarningAt = Date.now();
         } else {
           this.logger.debug(payload);
         }
