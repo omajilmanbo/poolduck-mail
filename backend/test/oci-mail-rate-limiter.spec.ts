@@ -10,7 +10,7 @@ describe('OCI global application pacing', () => {
   function setup(latest: Date | null, recentCount = latest ? 1 : 0, oldest = latest) {
     const prisma = {
       $queryRawUnsafe: jest.fn()
-        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ acquired: 1 }])
         .mockResolvedValueOnce([{ dbNow: now, latest, recentCount, oldest }]),
       mailJob: { update: jest.fn().mockResolvedValue(undefined) },
       mailDeliveryAttempt: { update: jest.fn().mockResolvedValue(undefined) },
@@ -28,7 +28,7 @@ describe('OCI global application pacing', () => {
       .resolves.toEqual({ admitted: true });
 
     expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(1,
-      'SELECT pg_advisory_xact_lock($1::bigint)', 19019139);
+      'SELECT 1::int AS acquired FROM pg_advisory_xact_lock($1::bigint)', 19019139);
     expect(prisma.mailDeliveryAttempt.update).toHaveBeenCalledWith({
       where: { id: attemptId, tenantId },
       data: { status: 'invoked', providerInvokedAt: now, rfcMessageId },
@@ -65,7 +65,7 @@ describe('OCI global application pacing', () => {
   it('fails closed when the shared database window cannot be read', async () => {
     const { prisma, limiter } = setup(null);
     prisma.$queryRawUnsafe.mockReset()
-      .mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([{ acquired: 1 }]).mockResolvedValueOnce([]);
 
     await expect(limiter.reserve(tenantId, jobId, attemptId, rfcMessageId))
       .rejects.toThrow('OCI_EMAIL_RATE_WINDOW_UNAVAILABLE');

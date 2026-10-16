@@ -22,10 +22,10 @@ const smoke = {
     process.env.API_SMOKE_LOCATION_ID ??
     "10CA1001",
   scanCode:
-    process.env.API_SMOKE_SCAN_CODE ?? "V2E01K0ABC10001",
+    process.env.API_SMOKE_SCAN_CODE ?? "E01K0ABC10001",
   unmappedScanCode:
     process.env.API_SMOKE_UNMAPPED_SCAN_CODE ??
-    "V2E01K0ABC19999",
+    "E01K0ABC19999",
 };
 
 async function request(path, options = {}) {

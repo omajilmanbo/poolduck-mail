@@ -33,12 +33,12 @@ describe('person action codes', () => {
       'exit-code128',
     ]);
     expect(specs.map((spec) => spec.payload)).toEqual([
-      `V2E${personCode}`,
-      `V2E${personCode}`,
-      `V2X${personCode}`,
-      `V2X${personCode}`,
+      `E${personCode}`,
+      `E${personCode}`,
+      `X${personCode}`,
+      `X${personCode}`,
     ]);
-    expect(specs.every((spec) => /^[A-Z0-9]{15}$/.test(spec.payload))).toBe(true);
+    expect(specs.every((spec) => /^[EX][0-9A-HJKMNP-TV-Z]{12}$/.test(spec.payload))).toBe(true);
     expect(specs.every((spec) => !/[|\s]/.test(spec.payload))).toBe(true);
     expect(specs.every((spec) => spec.filename.startsWith(personCode))).toBe(true);
     expect(JSON.stringify(specs)).not.toContain('person@example.local');
@@ -69,10 +69,10 @@ describe('person action codes', () => {
   it('uses product-neutral format tokens without tenant or product prefixes', () => {
     const payloads = createPersonActionCodeSpecs(personCode).map((spec) => spec.payload);
     expect(payloads).toEqual([
-      `V2E${personCode}`,
-      `V2E${personCode}`,
-      `V2X${personCode}`,
-      `V2X${personCode}`,
+      `E${personCode}`,
+      `E${personCode}`,
+      `X${personCode}`,
+      `X${personCode}`,
     ]);
     expect(payloads.every((payload) => !payload.includes('PD'))).toBe(true);
   });

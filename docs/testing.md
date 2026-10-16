@@ -75,8 +75,8 @@ seed 数据仅使用 `example.local` 邮箱和固定 UUID，不包含真实客�
 - tenant_manager email：`tenant-manager@example.local`（tenant_manager 没有 username，只能使用邮箱登录）
 - 以上账号密码：`PoolduckLocal123!`
 - `location_id`: `10CA1001`（公开地点 ID；内部 UUID 仅用于数据库追溯）
-- active `person_code`: `01K0ABC10001`；进入动作码：`V2E01K0ABC10001`；离开动作码：`V2X01K0ABC10001`
-- not-mapped 拒绝动作码：`V2E01K0ABC19999`
+- active `person_code`: `01K0ABC10001`；进入动作码：`E01K0ABC10001`；离开动作码：`X01K0ABC10001`
+- not-mapped 拒绝动作码：`E01K0ABC19999`
 
 ### 4.2 API happy path 冒烟
 
@@ -145,15 +145,15 @@ Issue #60 后，本地 GUI 黑盒前应额外验证容器组形态：
 - 错误与边界：提交客户端自定义 `person_code`/`scan_code` 返回 `400`；模拟唯一冲突时最多重试 5 次，耗尽返回 `PERSON_CODE_GENERATION_EXHAUSTED`；同秒生成不重复，后一秒代码字典序更大。
 - 权限与隔离：使用其他 tenant 的 location，或在同 tenant 的其他 location 使用人员码，均不得解析人员或创建业务记录、处理工单或邮件任务。
 - 历史一致性：扫码后修改 tenant/location/person 名称，确认邮件任务详情和导出仍显示发送时快照；只读列表、审计、错误和 CSV 不含完整邮箱、邮件正文或 UUID/人员码批量对应。
-- 回归：人员管理接口仍返回兼容字段 `scan_code=person_code`，但扫码写接口只接受两张 `V2E` / `V2X` 动作码；新建人员不能编辑或移动 `person_code`，停用/恢复仍保留同一业务 ID。
-- 动作码图片：在人员管理打开“查看动作码”，确认展示进入/离开 × 二维码/Code 128 共四张预览，单张 PNG 与 ZIP 文件名仅含 `person_code`、动作和格式；使用开源解码器往返还原 `V2E<person_code>` / `V2X<person_code>`。
+- 回归：人员管理接口仍返回兼容字段 `scan_code=person_code`，但扫码写接口只接受两张 `E` / `X` 动作码；新建人员不能编辑或移动 `person_code`，停用/恢复仍保留同一业务 ID。
+- 动作码图片：在人员管理打开“查看动作码”，确认展示进入/离开 × 二维码/Code 128 共四张预览，单张 PNG 与 ZIP 文件名仅含 `person_code`、动作和格式；使用开源解码器往返还原 `E<person_code>` / `X<person_code>`。
 - 图片安全与错误：断言图片、文件名和 ZIP 不含姓名、邮箱、tenant/location UUID 或内部人员 UUID；缺失、非法 `person_code` 及画布/ZIP 生成失败时显示错误并保持下载不可用，不使用 UUID 回退，也不发起外部图片请求。
 
 人工步骤：
 
 1. 备份本地合成数据库，执行 `npm.cmd run db:deploy` 与 `npm.cmd run local:seed`。
 2. 在人员管理新增一名合成人员，记录系统生成的 `person_code`；确认页面没有可编辑扫描码输入。
-3. 在正确 location 扫描 `V2E<person_code>`，确认邮件详情的 `context` 含发送时 tenant/location/person 名称和相同 `person_code`，且不返回完整邮箱或正文。
+3. 在正确 location 扫描 `E<person_code>`，确认邮件详情的 `context` 含发送时 tenant/location/person 名称和相同 `person_code`，且不返回完整邮箱或正文。
 4. 修改人员或地点名称后重新读取旧邮件任务，确认 `context` 未变化。
 5. 在另一个 location 或 tenant 扫描同一人员动作码，确认返回统一未映射/不存在结果且未创建 scan event、case 或 mail job。
 6. 在一次性数据库运行 `backend/prisma/rollback/20260724000000_add_person_codes_and_mail_context.sql`，确认 `scan_code`、UUID、人员映射、扫码事件和邮件任务行仍保留；禁止在未备份或仍有写流量的数据库直接回滚。
@@ -177,7 +177,7 @@ Issue #60 后，本地 GUI 黑盒前应额外验证容器组形态：
 
 ### 4.7 Issue #95 进出动作一致性验证
 
-- 正常：分别提交 `V2E<person_code>` 与 `V2X<person_code>`，确认响应、scan event、mail job、历史列表、CSV 与固定正文分别一致显示 `entry/进入/入室` 和 `exit/离开/退室`。
+- 正常：分别提交 `E<person_code>` 与 `X<person_code>`，确认响应、scan event、mail job、历史列表、CSV 与固定正文分别一致显示 `entry/进入/入室` 和 `exit/离开/退室`。
 - 错误：裸 `person_code`、未知版本、未知动作、错误大小写和非法长度均返回 `ACTION_CODE_INVALID`，且不创建 scan event/mail job；格式正确但没有当前 active 映射的动作码返回 `SCAN_CODE_NOT_MAPPED`，也不创建任何业务记录。
 - 重复与边界：同 tenant/location/person/action 在 10 秒内返回首次结果；相反动作返回 `SCAN_ACTION_CONFLICT`；窗口外可创建下一次动作。并发请求不得创建重复可发送任务。
 - 幂等与重试：相同 `Idempotency-Key` 和请求在 24 小时内重放原结果且不再次调用 provider；同 key 不同动作返回 `IDEMPOTENCY_KEY_CONFLICT`；自动重试继续使用原 `action_snapshot` 与已固化正文。
@@ -195,20 +195,20 @@ Issue #60 后，本地 GUI 黑盒前应额外验证容器组形态：
 
 ### 4.7a Issue #117 扫码枪兼容负载 ADR 验证
 
-ADR-015 已 `Accepted`：上线前以 `V2E<person_code>` / `V2X<person_code>` 一次性替换 `PD1|...`，不实施双读、旧资产迁移或 T0/T1/T2 阶段。以下矩阵是运行时同步切换的准入要求，不要求指定扫码枪厂牌/型号。
+ADR-022 已 `Accepted`：以 `E<person_code>` / `X<person_code>` 一次性替换 ADR-015 的 `V2` 格式；旧码失效，现有图片同步重新生成或重印，不实施双读。以下矩阵是运行时同步切换的准入要求，不要求指定扫码枪厂牌/型号。
 
 - 已知证据（2026-08-06）：业务负责人用网页二维码解析器读取现有动作二维码，结果完整包含 `|`。该结果验证二维码图像/逻辑文本层并把排障范围收窄到其后的 HID/Windows/浏览器输入链路；不得单独据此宣称 Code 128 键盘模拟已通过。
 - 证据记录：只使用合成 `person_code=01K0ABC10001`；记录 USB HID/键盘模拟模式、扫码枪键盘国家/布局配置、Windows 当前键盘布局、输入法状态、前后缀/Enter 配置、QR/Code 128、屏显/打印，以及提交前逐字符原始值和 code point。厂牌/型号可作为排障附注，但不是通过条件。
-- 正常：`V2E01K0ABC10001` / `V2X01K0ABC10001` 的 QR 与 Code 128 必须在代表性的 US QWERTY、Japanese 106、French AZERTY、German QWERTZ Windows 布局测试夹具中逐字符还原；只允许无后缀或单个 `CR`、`LF`、`CRLF`，并验证图片仍为进入/离开 × QR/Code 128 四张本地 PNG/ZIP。
+- 正常：`E01K0ABC10001` / `X01K0ABC10001` 的 QR 与 Code 128 必须在代表性的 US QWERTY、Japanese 106、French AZERTY、German QWERTZ Windows 布局测试夹具中逐字符还原；只允许无后缀或单个 `CR`、`LF`、`CRLF`，并验证图片仍为进入/离开 × QR/Code 128 四张本地 PNG/ZIP。
 - 错误：逐项提交旧新格式拼接、未知版本、未知动作、非法字符、错误大小写、缺失/额外字段、内部空白、前导/尾随空格、截断、设备前缀和重复 CR/LF；全部应稳定归为 `ACTION_CODE_INVALID`，不创建成功事件或 mail job。
 - 权限与租户隔离：相同候选负载由 operator/tenant_manager 在未授权 location 或其他 tenant 提交时不得解析人员或泄露存在性；客户端不能另传 `action`、actor 或 tenant。
 - 订阅与网络：`trial` / `active` 保持原路径；`expired` / `suspended` 阻止事件和 mail job；捕获页或网络失败不得把部分输入当作成功扫码重放。
-- 边界：验证固定 15 位、大小写、快速连扫、10 秒边界和同 `Idempotency-Key` 的同/不同语义输入；`PD1`、旧新拼接和其他版本必须统一拒绝，不能存在双读分支。
+- 边界：验证固定 13 位、大小写、快速连扫、10 秒边界和同 `Idempotency-Key` 的同/不同语义输入；`V2`、`PD1`、旧新拼接和其他版本必须统一拒绝，不能存在双读分支。
 - 回归：相同动作去重、相反动作冲突、mail retry 不重推动作、成功历史/CSV/邮件正文一致、not-mapped 无持久化、四 PNG/ZIP 本地生成及不含 PII/UUID/认证信息均保持不变。
 
 人工步骤：
 
-1. 在不连接业务 API 的本地纯文本捕获页关闭输入法联想，记录 `V2E01K0ABC10001` 与 `V2X01K0ABC10001` 的 QR/Code 128 屏显和打印输入。
+1. 在不连接业务 API 的本地纯文本捕获页关闭输入法联想，记录 `E01K0ABC10001` 与 `X01K0ABC10001` 的 QR/Code 128 屏显和打印输入。
 2. 使用独立软件解码器读取同一图片，比较逻辑负载、独立解码值与 HID 原始输入；按 ADR-015 把差异定位到图片编码、HID 字符→按键转换、Windows 布局映射或应用输入层。
 3. 覆盖代表性 Windows 键盘布局、匹配/不匹配的扫码枪键盘布局、无后缀与 Enter 后缀配置；重点证明仅大写字母数字的固定长度格式不依赖标点按键。
 4. 将精确原始值、code point 和通用输入配置回填 ADR-015；不得附姓名、邮箱、真实 tenant/location 标识或生产扫码日志，也不得把单个型号列为兼容白名单。
@@ -218,7 +218,7 @@ ADR-015 已 `Accepted`：上线前以 `V2E<person_code>` / `V2X<person_code>` �
 
 ADR-018 已 `Accepted`：服务未上线且没有业务数据，直接删除未映射 event/case/API/UI，不设置历史或兼容期。
 
-- 正常：当前 tenant/location 的 active 人员 `V2E/V2X` 创建动作一致的 scan event 与唯一 mail job，不进入未映射路径。
+- 正常：当前 tenant/location 的 active 人员 `E/X` 创建动作一致的 scan event 与唯一 mail job，不进入未映射路径。
 - 错误：覆盖 inactive、pending deletion、purged、随机合法码、`PD1`、裸码、未知版本/动作、非法长度/字符和关系异常；所有 not-mapped 拒绝均不含 `scan_event_id`，且不得创建 scan event、case、mail job 或逐请求数据库审计。
 - 权限：tenant_manager/operator 继续按当前角色和 location assignment fail closed；未分配 operator 不得读取历史或从错误差异判断人员状态。
 - 租户隔离：同码跨 location/tenant 不执行跨 scope 存在性查询，不泄露人员是否存在，也不把记录展示给无权用户。
@@ -387,9 +387,9 @@ The command is idempotent and writes only synthetic `.example.local` data. It pr
 
 | Subscription | Location code | Person code | ENTRY action code |
 |---|---|---|---|
-| active | `5A6E0001` | `01K0ABC20001` | `V2E01K0ABC20001` |
-| suspended | `5A6E0002` | `01K0ABC20002` | `V2E01K0ABC20002` |
-| expired | `5A6E0003` | `01K0ABC20003` | `V2E01K0ABC20003` |
+| active | `5A6E0001` | `01K0ABC20001` | `E01K0ABC20001` |
+| suspended | `5A6E0002` | `01K0ABC20002` | `E01K0ABC20002` |
+| expired | `5A6E0003` | `01K0ABC20003` | `E01K0ABC20003` |
 
 Expected Staging checks:
 
@@ -435,9 +435,9 @@ npm run test:e2e
 
 - active tenant 登录进入扫码工作台
 - location 与人员映射展示
-- `V2E01K0ABC19999` 返回 `SCAN_CODE_NOT_MAPPED`，不持久化、不显示历史且不创建 mail job
-- `V2E01K0ABC10001` 创建 mail_job 并显示“进入”，自动触发 sandbox，按 CI matrix 验证“已发送”或“等待重试/发送失败”
-- `V2X01K0ABC10001` 在冲突窗口外创建离开记录并使用“退室”正文
+- `E01K0ABC19999` 返回 `SCAN_CODE_NOT_MAPPED`，不持久化、不显示历史且不创建 mail job
+- `E01K0ABC10001` 创建 mail_job 并显示“进入”，自动触发 sandbox，按 CI matrix 验证“已发送”或“等待重试/发送失败”
+- `X01K0ABC10001` 在冲突窗口外创建离开记录并使用“退室”正文
 - 页面刷新后从 tenant-scoped API 恢复历史记录
 - 当前 location 的扫码记录首列显示人员名称，不重复显示地点；缺少人员名称的历史记录安全显示 `-`
 - Tenant A token 不能用 Tenant B location 查询历史

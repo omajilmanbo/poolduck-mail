@@ -185,7 +185,7 @@ UI 在成功响应后仅临时显示并可立即清除。
 
 > `person_code` 为 12 位大写 Crockford Base32：前 7 位编码 Unix 秒，后 5 位为密码学随机后缀。同一进程同秒生成时后缀单调递增；数据库全局唯一约束与最多 5 次重试处理跨节点碰撞。客户端不能指定或修改该值。
 >
-> 查询约束：扫码写接口只接受 ADR-015 的 `V2E<person_code>` / `V2X<person_code>`。解析后必须同时带上服务端认证得到的 `tenant_id` 与当前 `location_id` 查人，禁止仅按全局唯一 `person_code` 查询，也不接受 `PD1`、裸 `person_code` 或旧 `scan_code`。
+> 查询约束：扫码写接口只接受 ADR-022 的 `E<person_code>` / `X<person_code>`。解析后必须同时带上服务端认证得到的 `tenant_id` 与当前 `location_id` 查人，禁止仅按全局唯一 `person_code` 查询，也不接受旧 `V2`、`PD1`、裸 `person_code` 或旧 `scan_code`。
 
 ## 8. mail_jobs
 

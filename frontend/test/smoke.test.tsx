@@ -37,7 +37,7 @@ describe('frontend API client', () => {
     await client.createScanEvent(
       'token-1',
       'location-1',
-      'V2E01K0ABC10001',
+      'E01K0ABC10001',
       'scan-test-key-123',
     );
 
@@ -48,7 +48,7 @@ describe('frontend API client', () => {
         body: JSON.stringify(
           createScanEventBody(
             'location-1',
-            'V2E01K0ABC10001',
+            'E01K0ABC10001',
           ),
         ),
         headers: expect.objectContaining({
@@ -61,7 +61,7 @@ describe('frontend API client', () => {
     const body = JSON.parse(request.body as string) as Record<string, unknown>;
     expect(body).toEqual({
       location_id: 'location-1',
-      scan_code: 'V2E01K0ABC10001',
+      scan_code: 'E01K0ABC10001',
     });
     expect(body).not.toHaveProperty('tenant_id');
     expect(body).not.toHaveProperty('custom_message');

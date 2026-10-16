@@ -52,7 +52,7 @@ describe('history CSV exports', () => {
     const prisma = {
       scanEvent: {
         findMany: jest.fn().mockResolvedValue([{
-          id: 'scan-1', locationId: 'location-1', scanCode: 'V2E01K0ABC10001', scanType: 'entry',
+          id: 'scan-1', locationId: 'location-1', scanCode: 'E01K0ABC10001', scanType: 'entry',
           personCodeSnapshot: '01K0ABC10001', action: 'entry', actionSource: 'person_action_code',
           receivedAt: new Date('2026-07-22T00:00:00.000Z'), createdAt: new Date('2026-07-22T00:00:00.000Z'),
           canceledAt,

@@ -22,7 +22,8 @@ export class OciMailRateLimiter {
 
   async reserve(tenantId: string, mailJobId: string, attemptId: string, rfcMessageId: string): Promise<OciRateDecision> {
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock($1::bigint)', OCI_RATE_LOCK);
+      // The lock function returns void, which Prisma's pg adapter cannot decode.
+      await tx.$queryRawUnsafe('SELECT 1::int AS acquired FROM pg_advisory_xact_lock($1::bigint)', OCI_RATE_LOCK);
       const [window] = await tx.$queryRawUnsafe<WindowSnapshot[]>(`
         SELECT CURRENT_TIMESTAMP AS "dbNow", MAX("provider_invoked_at") AS "latest",
           COUNT(*)::int AS "recentCount", MIN("provider_invoked_at") AS "oldest"

@@ -42,7 +42,7 @@ export function actionCode(prefix, sequence, personCount) {
   const offset = sequence % personCount;
   const cycle = Math.floor(sequence / personCount);
   const action = cycle % 2 === 0 ? "E" : "X";
-  return `V2${action}${prefix}${String(offset + 1).padStart(5, "0")}`;
+  return `${action}${prefix}${String(offset + 1).padStart(5, "0")}`;
 }
 
 export function loadConfiguration(env = process.env) {
@@ -84,8 +84,8 @@ export function loadConfiguration(env = process.env) {
     suspendedTenantCode: env.CAPACITY_SUSPENDED_TENANT_CODE ?? "5A6E116002",
     suspendedLocationCode: env.CAPACITY_SUSPENDED_LOCATION_CODE ?? "5A6E1162",
     suspendedIdentifier: env.CAPACITY_SUSPENDED_IDENTIFIER ?? "capacity-s-op-00001",
-    suspendedScanCode: env.CAPACITY_SUSPENDED_SCAN_CODE ?? "V2E01K0CAS00001",
-    unmappedScanCode: env.CAPACITY_UNMAPPED_SCAN_CODE ?? "V2E01K0CAA99999",
+    suspendedScanCode: env.CAPACITY_SUSPENDED_SCAN_CODE ?? "E01K0CAS00001",
+    unmappedScanCode: env.CAPACITY_UNMAPPED_SCAN_CODE ?? "E01K0CAA99999",
     password: readPassword(env),
     planOnly: env.CAPACITY_PLAN_ONLY === "true" || process.argv.includes("--plan"),
   };

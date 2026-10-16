@@ -188,7 +188,7 @@ ADR-017 当前契约：
 - 错误：`location_id` 非法或不属于当前 tenant 时返回 `LOCATION_NOT_FOUND`
 
 ### POST `/api/scan-events`
-- 入参：`location_id`, `scan_code`；`scan_code` 必须是精确、区分大小写、固定 15 位的 `V2E<12 位 person_code>` 或 `V2X<12 位 person_code>`
+- 入参：`location_id`, `scan_code`；`scan_code` 必须是精确、区分大小写、固定 13 位的 `E<12 位 person_code>` 或 `X<12 位 person_code>`；旧 `V2E` / `V2X` 不再接受
 - 允许无提交后缀或单个 `CR`、`LF`、`CRLF`/Enter 后缀；前导/尾随空格、内部空白、设备前缀、重复后缀、未知版本/动作、错误大小写、截断和 `PD1` 旧格式统一返回 `ACTION_CODE_INVALID`。不实施 `PD1`/`V2` 双读
 - 可选请求头：`Idempotency-Key`（8–200 位可见 ASCII）。相同 tenant、route、key 与相同请求内容在 24 小时内返回首次结果；同一 key 携带不同 location/person/action 返回 `IDEMPOTENCY_KEY_CONFLICT`
 - 说明：

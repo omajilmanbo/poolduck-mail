@@ -51,8 +51,8 @@ describe('Scan Events API', () => {
   const personMappingId = '77777777-7777-4777-8777-777777777777';
   const personCode = '01K0ABC50001';
   const unmappedPersonCode = '01K0ABC59999';
-  const entryActionCode = `V2E${personCode}`;
-  const exitActionCode = `V2X${personCode}`;
+  const entryActionCode = `E${personCode}`;
+  const exitActionCode = `X${personCode}`;
   const email = 'operator@example.local';
   const receivedAt = new Date('2026-06-22T03:04:05.000Z');
 
@@ -213,7 +213,6 @@ describe('Scan Events API', () => {
           actionSource: 'person_action_code',
           rawPayload: JSON.stringify({
             location_id: locationId,
-            version: 'V2',
             person_code: personCode,
             action: 'entry',
           }),
@@ -333,17 +332,18 @@ describe('Scan Events API', () => {
   it.each([
     ['bare person code', personCode],
     ['legacy PD1 code', `PD1|ENTRY|${personCode}`],
-    ['unknown version', `V3E${personCode}`],
-    ['unknown action', `V2A${personCode}`],
-    ['lowercase token', `V2e${personCode}`],
-    ['truncated code', `V2E${personCode.slice(0, -1)}`],
-    ['extra character', `V2E${personCode}A`],
-    ['leading space', ` V2E${personCode}`],
-    ['trailing space', `V2E${personCode} `],
-    ['internal space', `V2E${personCode.slice(0, 6)} ${personCode.slice(6)}`],
-    ['device prefix', `SCANV2E${personCode}`],
-    ['repeated suffix', `V2E${personCode}\r\n\r\n`],
-    ['legacy/new concatenation', `PD1|ENTRY|${personCode}V2E${personCode}`],
+    ['old V2 entry code', `V2E${personCode}`],
+    ['old V2 exit code', `V2X${personCode}`],
+    ['unknown action', `A${personCode}`],
+    ['lowercase token', `e${personCode}`],
+    ['truncated code', `E${personCode.slice(0, -1)}`],
+    ['extra character', `E${personCode}A`],
+    ['leading space', ` E${personCode}`],
+    ['trailing space', `E${personCode} `],
+    ['internal space', `E${personCode.slice(0, 6)} ${personCode.slice(6)}`],
+    ['device prefix', `SCANE${personCode}`],
+    ['repeated suffix', `E${personCode}\r\n\r\n`],
+    ['legacy/new concatenation', `PD1|ENTRY|${personCode}E${personCode}`],
   ])(
     'rejects %s without creating a scan event',
     async (_caseName, scanCode) => {
@@ -564,7 +564,7 @@ describe('Scan Events API', () => {
       .set('Authorization', `Bearer ${accessToken()}`)
       .send({
         location_id: locationId,
-        scan_code: `V2X${unmappedPersonCode}`,
+        scan_code: `X${unmappedPersonCode}`,
       })
       .expect(404);
 
