@@ -20,9 +20,9 @@ test("computes nearest-rank percentiles", () => {
 });
 
 test("cycles person codes and alternates actions only after a full pool", () => {
-  assert.equal(actionCode("01K0CAA", 0, 100), "V2E01K0CAA00001");
-  assert.equal(actionCode("01K0CAA", 99, 100), "V2E01K0CAA00100");
-  assert.equal(actionCode("01K0CAA", 100, 100), "V2X01K0CAA00001");
+  assert.equal(actionCode("01K0CAA", 0, 100), "E01K0CAA00001");
+  assert.equal(actionCode("01K0CAA", 99, 100), "E01K0CAA00100");
+  assert.equal(actionCode("01K0CAA", 100, 100), "X01K0CAA00001");
 });
 
 test("plan configuration excludes Production and enforces the 50-session ceiling", () => {

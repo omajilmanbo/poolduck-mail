@@ -4,6 +4,8 @@
 - 日期：2026-07-24
 - 相关 Issue：#90, #91, #92, #93
 
+> 2026-10-16：ADR-022 已将动作码负载更新为 `E<person_code>` / `X<person_code>`。下文 `V2` 引用为历史实施记录；`person_code` 与 tenant/location 查询边界不变。
+
 ## Context
 
 当前 `tenants`、`locations` 与 `person_mappings` 均使用 UUID 作为内部主键，所有关联表也通过 UUID 外键追溯数据。现有登录接口直接接收 tenant UUID；`locations` 另有人工提供的 `location_code`；人员扫码使用可人工维护的 `scan_code`。

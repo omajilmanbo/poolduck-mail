@@ -138,6 +138,29 @@ describe('Mail Jobs API', () => {
     });
   });
 
+  it('ignores client attempts to override recipient, provider, sender, region, or headers', async () => {
+    mockAuthenticatedUser();
+    mockSubscription('active');
+    mockMailJob('queued');
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/mail-jobs/${mailJobId}/send`)
+      .set('Authorization', `Bearer ${accessToken()}`)
+      .send({
+        to_email: 'attacker@example.local',
+        provider: 'oci_email_delivery_https',
+        from: 'attacker@example.local',
+        region: 'ap-tokyo-1',
+        headers: { 'X-Test': 'override' },
+      })
+      .expect(201);
+
+    expect(response.body.provider_result.provider).toBe('sandbox');
+    expect(prisma.mailJob.findFirstOrThrow).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: mailJobId, tenantId }),
+    }));
+  });
+
   it('POST /api/mail-jobs/:mail_job_id/send should schedule the first sandbox retry after 30 seconds', async () => {
     process.env.MAIL_MOCK_SEND_RESULT = 'failure';
     mockAuthenticatedUser();

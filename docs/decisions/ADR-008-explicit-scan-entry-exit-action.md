@@ -4,7 +4,7 @@
 - 日期：2026-07-24
 - 相关 Issue：#94, #68, #95
 
-> 2026-08-06：ADR-015 supersede 本 ADR 的 `PD1|...` 负载语法与资产编码，改为上线前直接使用 `V2E<person_code>` / `V2X<person_code>`；本 ADR 的双动作来源、授权、幂等、去重、冲突、历史与邮件语义继续有效。
+> 2026-08-06：ADR-015 supersede 本 ADR 的 `PD1|...` 负载语法与资产编码，改为上线前直接使用 `V2E<person_code>` / `V2X<person_code>`；2026-10-16 ADR-022 又将负载更新为 `E<person_code>` / `X<person_code>`。本 ADR 的双动作来源、授权、幂等、去重、冲突、历史与邮件语义继续有效。
 
 ## Context
 

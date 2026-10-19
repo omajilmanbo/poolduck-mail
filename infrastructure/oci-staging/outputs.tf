@@ -33,3 +33,18 @@ output "backup_bucket_name" {
   description = "Object Storage bucket name for staging backups."
   value       = oci_objectstorage_bucket.backups.name
 }
+
+output "email_domain_id" {
+  description = "Terraform-managed staging Email Domain OCID."
+  value       = oci_email_email_domain.staging.id
+}
+
+output "email_dkim_dns_name" {
+  description = "OCI-generated DKIM DNS owner; publish the target from OCI, not from hardcoded Terraform values."
+  value       = oci_email_dkim.staging.dns_subdomain_name
+}
+
+output "email_sender_id" {
+  description = "Terraform-managed exact approved sender OCID."
+  value       = oci_email_sender.staging.id
+}

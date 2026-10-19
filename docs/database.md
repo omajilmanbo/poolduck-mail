@@ -185,7 +185,7 @@ UI 在成功响应后仅临时显示并可立即清除。
 
 > `person_code` 为 12 位大写 Crockford Base32：前 7 位编码 Unix 秒，后 5 位为密码学随机后缀。同一进程同秒生成时后缀单调递增；数据库全局唯一约束与最多 5 次重试处理跨节点碰撞。客户端不能指定或修改该值。
 >
-> 查询约束：扫码写接口只接受 ADR-015 的 `V2E<person_code>` / `V2X<person_code>`。解析后必须同时带上服务端认证得到的 `tenant_id` 与当前 `location_id` 查人，禁止仅按全局唯一 `person_code` 查询，也不接受 `PD1`、裸 `person_code` 或旧 `scan_code`。
+> 查询约束：扫码写接口只接受 ADR-022 的 `E<person_code>` / `X<person_code>`。解析后必须同时带上服务端认证得到的 `tenant_id` 与当前 `location_id` 查人，禁止仅按全局唯一 `person_code` 查询，也不接受旧 `V2`、`PD1`、裸 `person_code` 或旧 `scan_code`。
 
 ## 8. mail_jobs
 
@@ -234,8 +234,12 @@ UI 在成功响应后仅临时显示并可立即清除。
 ## 8a. mail_delivery_attempts
 
 - 保存 `tenant_id`、`mail_job_id`、attempt ID、`claimed_at`、`provider_invoked_at`、`completed_at`、结果与安全错误码。
+- #137 增量迁移 `20260929000000_add_oci_submission_identifiers` 添加三个可空列：`rfc_message_id`、`envelope_id`、`opc_request_id`（均 varchar(512)）；历史及 mock attempt 不回填。OCI 调用前持久化 RFC 5322 Message-ID，收到响应后保存 envelope/request ID；原始请求、响应与收件地址不放入这些列。
 - provider 调用前先持久化 `provider_invoked_at`；崩溃恢复只有在能够证明未越过该边界时才重新入队。
 - attempt 和取消证据属于审计数据，rollback 不删除，也不把不确定投递重新变为可发送。
+- 应用回滚须保留以上三个标识列；仅在全部为空、停写且已备份时，才可使用该迁移的 guarded schema rollback。
+- #139 为全局 50 ms OCI 预约查询增加 `provider_invoked_at` 索引（迁移 `20260929001000_index_mail_attempt_provider_invoked_at`）；索引 rollback 不删除 attempt 或标识数据。
+- OCI 预约未获时该 attempt 标记 `deferred/PROVIDER_RATE_LIMITED`，`provider_invoked_at` 仍为空；关联 job 回到 `queued` 并设置新的 `scheduled_at`，`retry_count` 不变。预约获准时才写入 `provider_invoked_at` 与 Message-ID，再调用 provider。
 
 ## 9. scan_request_idempotency
 

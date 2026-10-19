@@ -11,10 +11,10 @@
 | DATABASE_URL | 数据库连接串 | GitHub Secrets / Secret Manager（TBD） | Staging / Production | 人工管理 | 不写真实值 |
 | JWT_SECRET | Access Token 签名 | GitHub Secrets / Secret Manager（TBD） | Staging / Production | 人工管理 | 定期轮换 |
 | REFRESH_TOKEN_SECRET | Refresh Token 签名 | GitHub Secrets / Secret Manager（TBD） | Staging / Production | 人工管理 | 定期轮换 |
-| MAIL_PROVIDER_API_KEY | 邮件服务认证 | GitHub Secrets / Secret Manager（TBD） | Staging / Production | 人工管理 | MVP 阶段优先 sandbox |
-| MAIL_FROM_ADDRESS | 发件地址标识 | GitHub Secrets / Config Store（TBD） | Staging / Production | 人工管理 | 仅记录名称 |
 | DB_BACKUP_STORAGE_CREDENTIAL | 备份存储访问凭据 | Secret Manager（TBD） | Production | 人工管理 | 仅记录名称 |
 | MONITORING_DSN | 监控/告警接入参数 | GitHub Secrets / Secret Manager（TBD） | Staging / Production | 人工管理 | 不写真实值 |
+
+Staging OCI HTTPS 路径使用 Compute Instance Principal，不需要 `MAIL_PROVIDER_API_KEY`、SMTP 用户/密码或 API 私钥。`OCI_EMAIL_FROM_ADDRESS` 等为非秘密配置，定义于 `docs/inventory/environment-parameters.md`，但实际地址仍不写入仓库。
 
 ## 2. 轮换与审计建议
 

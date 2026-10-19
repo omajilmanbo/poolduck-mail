@@ -8,11 +8,11 @@
 |---|---|---|---|---|---|---|---|---|
 | CI/CD | GitHub Actions | 构建、测试、发布流程 | Yes | Yes | Yes | Repo workflow + Secrets | 人工指定 | 与 `docs/workflow.md` 对齐 |
 | Database | PostgreSQL | 业务数据存储 | Yes（本地） | Yes（独立实例） | Yes（独立实例） | Infra config + Secrets | 人工指定 | 版本建议 16 |
-| Mail Provider | Sandbox/Mock（MVP） | 邮件任务验证 | Yes | Yes | TBD | Secret Manager / Config | 人工指定 | 生产 provider 待决策 |
+| Mail Provider | Mock（当前）；OCI Email Delivery HTTPS（待准入） | 邮件任务验证；未来受控真实提交 | Yes（mock） | Yes（当前仅 mock） | TBD | 非秘密容器配置 + OCI Instance Principal（未来） | 人工指定 | #141–#145 未验收；OCI 无 SMTP/API 私钥 |
 | DNS | Domain provider | `app.poolducktest.com` 解析 | No | Yes | TBD | DNS 控制台 | 人工指定 | 仅保存 A record，不把 provider 凭据放到 VM |
 | TLS Certificate | Let's Encrypt | Staging HTTPS 证书 | No | Yes | TBD | Caddy `/data` volume | 人工指定 | Caddy 通过 HTTP-01 自动签发与续期 |
 | Hosting Platform | OCI Always Free | 前后端托管 | Local machine | Yes | TBD | OCI Console + IaC | 人工指定 | Staging 单 VM + Docker Compose |
-| Monitoring/Logging | TBD | 日志、指标、告警 | Local logs | TBD | TBD | 平台配置 + Secrets | 人工指定 | 生产需告警通道 |
+| Monitoring/Logging | 应用聚合日志；OCI Email Domain logs/metrics | 日志、指标、告警 | Local logs | 当前聚合日志；两类 90 天 OCI 日志、三条原生告警和邮件订阅 ACTIVE；应用级告警待完成 | TBD | OCI Logging/Monitoring/Notifications | 人工指定 | OCI 原始日志含收件 PII；唯一 ACTIVE 管理员负责读取与接收，90 天保留；合成通知已确认送达 |
 | Backup Storage | TBD | 备份文件存储 | Optional | TBD | TBD | 存储控制台 + Secrets | 人工指定 | 不记录真实存储 key |
 
 ## 2. 维护规则

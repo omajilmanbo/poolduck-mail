@@ -610,7 +610,7 @@ export default function HomePage() {
                   className="mt-2 w-full rounded-md border border-slate-300 px-3 py-3 font-mono text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
                   disabled={!canSend || workspaceLoading}
                   autoFocus
-                  placeholder="V2E<person_code> 或 V2X<person_code>"
+                  placeholder="E<person_code> 或 X<person_code>"
                 />
               </label>
               <button

@@ -11,6 +11,7 @@ Terraform 将准备以下 Staging 资源：
 - DB NSG：PostgreSQL `5432` 仅允许 Staging 子网访问，禁止公网访问。
 - Always Free Compute：默认 `VM.Standard.A1.Flex`，用于 MVP Staging 单机承载 Frontend / Backend / PostgreSQL 16 容器。
 - Object Storage Bucket：用于 Staging 非真实数据备份与运维产物归档，并配置生命周期自动清理。
+- ADR-019 Email Delivery：纳管已存在的 Email Domain 与 DKIM；按批准的精确 From 创建 approved sender。最小 IAM 和包含 PII 的两类服务日志采用显式开关，未获相关审批时不创建。
 - Cloud-init：安装 `docker.io` 与 Ubuntu 22.04 arm64 默认源可用的 `docker-compose-v2`、将默认 `ubuntu` SSH 用户加入 `docker` 组、创建目录和占位配置，不写入真实 secrets，不自动启动应用。
 
 ## Always Free 人工确认项
@@ -133,10 +134,20 @@ APM 每小时 1,000 tracing events / 10 次 Synthetic Monitor runs；接入前�
 API 分位延迟、队列等待与数据库锁等待不能用主机 CPU 指标替代。
 采集频率、保留量、告警接收方与开销在 #116 确认，本轮尚未安装采集组件或启用通知。
 
+## ADR-019：Email Delivery Terraform 纳管与审批边界
+
+2026-10-11 已将 `mail.poolducktest.com` Email Domain 和 `stg202610` DKIM 导入本地 Terraform state，并用完整 plan 确认仅新增 `no-reply@mail.poolducktest.com` approved sender 后应用；再次 plan 为 No changes。现有 Domain/DKIM 不得在其他 state 中重复创建，且三个邮件资源均设置 `prevent_destroy`。OCI 生成的 DKIM DNS 目标不写入代码或 state 输入；DNS 由域名管理人维护。
+
+若从**不含邮件资源的旧 state** 接手，先在 OCI Console/CLI 只读核对目标 region、compartment、Domain 与 DKIM 都唯一且 `ACTIVE`，再将各自 OCID 导入对应地址。禁止跳过导入直接 apply，否则 Terraform 会尝试重复创建域和 selector。导入后先运行 `terraform plan` 并确认没有对既有 Compute、网络、备份资源的替换或删除；本地 state、plan 和 `terraform.tfvars` 均不得提交。
+
+`enable_email_instance_principal=false` 是 #141 IAM 的源码默认门禁；2026-10-11 用户批准后，本地忽略的 tfvars 已设为 `true`，Terraform 创建单实例 Dynamic Group 与精确 sender policy，均为 ACTIVE，完整 plan 无漂移。HTTPS 权限映射、容器身份 preflight 和负面权限测试仍待完成。`email_log_retention_days=null` 是 #142 日志的默认门禁；用户批准 90 天及可能存储费用；用户已指定当前唯一 OCI 用户负责读取、告警接收与回滚；OCI API 已核验其为唯一 ACTIVE 管理员，保守停止规则获批准；本地忽略的 tfvars 已启用 90 天日志和通知，Terraform 已创建两类日志、主题、订阅及三条原生告警。订阅 ACTIVE，合成通知已由运维确认收到；新增管理员需复核 PII 访问边界。任何后续 apply 均先执行**完整** `terraform plan`，禁止用 `-target` 隐藏 Compute 或其他资源漂移。Terraform 管理邮件基础设施，不管理容器中的真实发信开关；#145 仍须单独批准。
+
+ADR-020 于 2026-10-11 获接受；`enable_email_application_alerts=false` 是源码默认门禁，本地忽略的 tfvars 已设为 `true`。完整 plan 为新增 1 条仅限 `poolduck_staging_mail` namespace 的实例指标 policy 和 6 条 CRITICAL 应用告警、0 变更、0 销毁，随后已应用。2026-10-14 按 OCI 官方 IAM 权限表再将 policy 限定为 `request.permission='METRIC_WRITE'`（裸 `use metrics` 还包含读权限），完整 plan 仅 1 条 policy 更新，已应用；目标容器读取负面测试返回 404。Staging Backend 已通过 Compose 启用 `OCI_MAIL_APP_ALERTS_ENABLED=true`、region 和 compartment，在 mock 模式持续发布 7 类匿名指标；无邮件合成认证失败触发 FIRING，指定邮箱收到通知。该配置不启用真实发信；真实 accepted/relayed 事件仍须 #145 新窗口。
+
 ## 非范围声明
 
 - 本 IaC 不创建 Production 资源。
-- 本 IaC 不接入真实邮件服务；MVP Staging 仍使用 mock/sandbox provider。
+- 本 IaC 不自动启用应用真实发信；MVP Staging 仍使用 mock/sandbox provider。
 - 本 IaC 不写入或生成任何真实 secret。
 - 本 IaC 不自动部署 Poolduck Mail 应用镜像；应用发布流程由后续 Issue 单独定义。
 - 本 IaC 不创建 OCI Autonomous Database，因为当前 ADR-004 已确定 MVP 数据库为 PostgreSQL 16。
