@@ -344,7 +344,7 @@ describe('Scan Events API', () => {
     prisma.personMapping.findFirst.mockResolvedValue({
       id: personMappingId,
       personCode,
-      personName: '山田 太郎',
+      personName: '山田\n太郎',
       email: 'taro.yamada@example.local',
     });
     prisma.scanEvent.create.mockResolvedValue({ id: scanEventId });
@@ -361,6 +361,7 @@ describe('Scan Events API', () => {
     expect(data.subject).toMatch(/^【Tenant /);
     expect(data.subject).toMatch(/】からのお知らせ-入室$/);
     expect(data.subject).not.toMatch(/[\r\n]/);
+    expect(data.body).toContain('山田 太郎 様');
     expect(data.body).toContain('時刻：2026年06月23日 00:04:05（日本時間）');
   });
 

@@ -35,6 +35,13 @@ const IDEMPOTENCY_RETENTION_MS = 24 * 60 * 60 * 1000;
 const SCAN_ROUTE = 'POST:/api/scan-events';
 const ACTION_CODE_PATTERN = /^([EX])([0-9A-HJKMNP-TV-Z]{12})$/;
 
+function singleLineMailText(value: string): string {
+  return Array.from(value, (character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return code < 32 || code === 127 ? ' ' : character;
+  }).join('');
+}
+
 type ParsedActionCode = {
   personCode: string;
   action: Exclude<ScanAction, 'unknown'>;
@@ -935,10 +942,7 @@ export class ScanEventsService {
     const actionText = action === 'entry' ? '入室' : '退室';
     const fixed = `【】【】からのお知らせ-${actionText}`;
     const names = [tenantName, locationName].map((name) =>
-      Array.from(name, (character) => {
-        const code = character.codePointAt(0) ?? 0;
-        return code < 32 || code === 127 ? ' ' : character;
-      }),
+      Array.from(singleLineMailText(name)),
     );
     const originalLengths = names.map((name) => name.length);
     const budget = 255 - fixed.length;
@@ -960,7 +964,7 @@ export class ScanEventsService {
     action: Exclude<ScanAction, 'unknown'>;
   }): string {
     const actionText = input.action === 'entry' ? '入室' : '退室';
-    return `${input.personName} 様\n\n区分：${actionText}\n時刻：${input.timestamp}（日本時間）\n\n※このメールは入退室メール送信アプリから自動送信されています。\nお心当たりがない場合は、お手数ですが、このメールを破棄してください。`;
+    return `${singleLineMailText(input.personName)} 様\n\n区分：${actionText}\n時刻：${input.timestamp}（日本時間）\n\n※このメールは入退室メール送信アプリから自動送信されています。\nお心当たりがない場合は、お手数ですが、このメールを破棄してください。`;
   }
 
   private formatJapanTimestamp(value: Date): string {
