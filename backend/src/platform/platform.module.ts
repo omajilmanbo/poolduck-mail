@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma.module';
+import { MailJobsModule } from '../mail-jobs/mail-jobs.module';
 import { PlatformAuditService } from './platform-audit.service';
 import { PlatformAuthController } from './platform-auth.controller';
 import { PlatformAuthGuard } from './platform-auth.guard';
@@ -14,6 +15,7 @@ import { PlatformTenantsService } from './platform-tenants.service';
   imports: [
     PrismaModule,
     AuthModule,
+    MailJobsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

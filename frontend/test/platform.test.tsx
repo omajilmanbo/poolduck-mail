@@ -7,6 +7,7 @@ import {
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import PlatformLoginPage from '../app/platform/login/page';
+import PlatformPage from '../app/platform/page';
 import { createPlatformApiClient } from '../src/api/client';
 
 describe('platform API client', () => {
@@ -101,4 +102,33 @@ describe('platform login UI', () => {
     await waitFor(() => expect(password.value).toBe(''));
     expect(screen.getByText(/API/)).toBeTruthy();
   });
+});
+
+describe('platform mail mode', () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ['mock', '模拟发信（mock）'],
+    ['oci_email_delivery_https', '真实发信（OCI）'],
+    ['invalid', '状态未知'],
+  ])('shows %s only in the platform console', async (mode, label) => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const payload = url.endsWith('/api/platform/auth/me')
+        ? { admin: { platform_admin_id: 'admin-1', email_masked: 'r***t@example.local' } }
+        : url.endsWith('/api/platform/tenants')
+          ? []
+          : { mode };
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    render(<PlatformPage />);
+    await waitFor(() => expect(screen.getByTestId('platform-mail-mode').textContent).toBe(label));
+  });
+
 });

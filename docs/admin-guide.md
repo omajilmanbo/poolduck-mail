@@ -25,6 +25,7 @@ ADR-006/ADR-013 已 Accepted；运行时已由 #110–#112 在本地实现。pla
   并完成二次确认
 - platform_admin 只能查看 tenant/subscription/额度/脱敏 manager 摘要，不读取人员、扫码、
   邮件正文、收件邮箱、租户审计或 impersonate 租户用户
+- 平台控制台只读显示当前后端邮件提交模式：“模拟发信（mock）”“真实发信（OCI）”或请求失败时的“状态未知”；这不是单封邮件的最终投递状态。租户管理员和 operator 界面不显示此项，也不能通过租户接口读取
 - platform_admin 不受 tenant subscription 到期/暂停影响，但其账号和 Session 仍可过期、禁用和
   全量撤销。MVP 延后 TOTP，使用单 active 账号、高熵密码、限流、有限 Session、独立 audience、
   审计和异常告警作为补偿控制；TOTP 见 #114

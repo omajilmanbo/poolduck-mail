@@ -93,7 +93,7 @@ describe('Scan Events API', () => {
         findFirstOrThrow: jest.fn().mockResolvedValue({
           id: mailJobId,
           toEmail: 'taro.yamada@example.local',
-          subject: 'Office Aからのお知らせ',
+          subject: '【Poolduck Tenant】【Office A】からのお知らせ-入室',
           body: 'mail body',
           retryCount: 0,
         }),
@@ -155,7 +155,7 @@ describe('Scan Events API', () => {
         .expect({
           scan_event_id: scanEventId,
           mail_job_id: mailJobId,
-          mail_subject: 'Office Aからのお知らせ',
+          mail_subject: '【Poolduck Tenant】【Office A】からのお知らせ-入室',
           person_code: personCode,
           action: 'entry',
           action_source: 'person_action_code',
@@ -234,9 +234,9 @@ describe('Scan Events API', () => {
           actionSnapshot: 'entry',
           contextSnapshotSource: 'scan_relation',
           toEmail: 'taro.yamada@example.local',
-          subject: 'Office Aからのお知らせ',
-          body: 'Poolduck Tenant，Office Aからのお知らせ：山田 太郎　さんは　20260622030405　に入室しました。',
-          templateKey: 'scan_entry_notice_v1',
+          subject: '【Poolduck Tenant】【Office A】からのお知らせ-入室',
+          body: '山田 太郎 様\n\n区分：入室\n時刻：2026年06月22日 12:04:05（日本時間）\n\n※このメールは入退室メール送信アプリから自動送信されています。\nお心当たりがない場合は、お手数ですが、このメールを破棄してください。',
+          templateKey: 'scan_entry_notice_v2',
           status: 'waiting',
         },
         select: {
@@ -291,8 +291,9 @@ describe('Scan Events API', () => {
     expect(prisma.mailJob.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         actionSnapshot: 'exit',
-        body: 'Poolduck Tenant，Office Aからのお知らせ：山田 太郎　さんは　20260622030405　に退室しました。',
-        templateKey: 'scan_exit_notice_v1',
+        subject: '【Poolduck Tenant】【Office A】からのお知らせ-退室',
+        body: '山田 太郎 様\n\n区分：退室\n時刻：2026年06月22日 12:04:05（日本時間）\n\n※このメールは入退室メール送信アプリから自動送信されています。\nお心当たりがない場合は、お手数ですが、このメールを破棄してください。',
+        templateKey: 'scan_exit_notice_v2',
       }),
       select: {
         id: true,
@@ -327,6 +328,40 @@ describe('Scan Events API', () => {
         createdAt: receivedAt,
       }),
     });
+  });
+
+  it('uses Japan time across midnight and keeps long subject names within the database limit', async () => {
+    mockAuthenticatedUser();
+    mockSubscription('active');
+    const longName = '長'.repeat(240);
+    prisma.location.findFirst.mockResolvedValue({
+      id: locationId,
+      name: longName,
+      status: 'active',
+      tenant: { name: `Tenant\n${longName}` },
+    });
+    prisma.$queryRawUnsafe.mockResolvedValue([{ now: new Date('2026-06-22T15:04:05.000Z') }]);
+    prisma.personMapping.findFirst.mockResolvedValue({
+      id: personMappingId,
+      personCode,
+      personName: '山田 太郎',
+      email: 'taro.yamada@example.local',
+    });
+    prisma.scanEvent.create.mockResolvedValue({ id: scanEventId });
+    prisma.mailJob.create.mockResolvedValue({ id: mailJobId });
+
+    await request(app.getHttpServer())
+      .post('/api/scan-events')
+      .set('Authorization', `Bearer ${accessToken()}`)
+      .send({ location_id: locationId, scan_code: entryActionCode })
+      .expect(201);
+
+    const data = prisma.mailJob.create.mock.calls[0][0].data;
+    expect(data.subject.length).toBeLessThanOrEqual(255);
+    expect(data.subject).toMatch(/^【Tenant /);
+    expect(data.subject).toMatch(/】からのお知らせ-入室$/);
+    expect(data.subject).not.toMatch(/[\r\n]/);
+    expect(data.body).toContain('時刻：2026年06月23日 00:04:05（日本時間）');
   });
 
   it.each([

@@ -186,6 +186,10 @@ describe('Platform control plane', () => {
       .get('/api/platform/tenants')
       .set('Authorization', `Bearer ${tenantToken}`)
       .expect(401);
+    await request(app.getHttpServer())
+      .get('/api/platform/auth/mail-mode')
+      .set('Authorization', `Bearer ${tenantToken}`)
+      .expect(401);
 
     const platformJwt = new JwtService({
       secret: process.env.PLATFORM_JWT_SECRET,
@@ -204,6 +208,19 @@ describe('Platform control plane', () => {
       .get('/api/locations')
       .set('Authorization', `Bearer ${platformToken}`)
       .expect(401);
+  });
+
+  it('exposes only the effective mail mode to an authenticated platform admin', async () => {
+    await request(app.getHttpServer())
+      .get('/api/platform/auth/mail-mode')
+      .expect(401);
+    const agent = request.agent(app.getHttpServer());
+    await agent.post('/api/platform/auth/login')
+      .send({ email: 'root@example.local', password })
+      .expect(201);
+    const response = await agent.get('/api/platform/auth/mail-mode').expect(200);
+    expect(response.body).toEqual({ mode: 'mock' });
+    expect(response.headers['cache-control']).toBe('no-store');
   });
 
   it('lists only minimal summaries and atomically creates an idempotent tenant', async () => {

@@ -570,6 +570,11 @@ export function createPlatformApiClient(config: ApiClientConfig = {}) {
       }),
     getMe: () =>
       request<{ admin: PlatformAdminSummary }>('/api/platform/auth/me'),
+    getMailMode: () =>
+      request<{ mode: 'mock' | 'oci_email_delivery_https' }>(
+        '/api/platform/auth/mail-mode',
+        { headers: { 'Cache-Control': 'no-cache' } },
+      ),
     getTenants: () =>
       request<PlatformTenantSummary[]>('/api/platform/tenants'),
     getTenant: (tenantCode: string) =>
