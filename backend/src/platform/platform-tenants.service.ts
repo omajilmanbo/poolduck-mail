@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
+  HttpException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -18,6 +20,7 @@ import {
 } from '../tenants/tenant-code.generator';
 import {
   CreatePlatformTenantDto,
+  DeletePlatformTenantDto,
   UpdateLocationLimitDto,
   UpdateSubscriptionDto,
 } from './platform.dto';
@@ -217,10 +220,6 @@ export class PlatformTenantsService {
       });
     }
     const tenant = await this.findTenantIdentity(tenantCode);
-    const current = await this.prisma.subscription.findUnique({
-      where: { tenantId: tenant.id },
-    });
-    if (!current) throw this.notFound();
     if (
       (dto.status === 'trial' || dto.status === 'active') &&
       endAt <= new Date()
@@ -236,26 +235,40 @@ export class PlatformTenantsService {
         message: 'expired 的 end_at 不能晚于当前时间',
       });
     }
-    if (
-      dto.status === 'suspended' &&
-      (startAt.getTime() !== current.startAt.getTime() ||
-        endAt.getTime() !== current.endAt.getTime())
-    ) {
-      throw new BadRequestException({
-        code: 'SUSPENSION_INTERVAL_MUST_BE_PRESERVED',
-        message: '暂停时必须保留原订阅时间区间',
+    const current = await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ id: string; status: string }[]>(
+        Prisma.sql`SELECT id, status FROM tenants WHERE id = ${tenant.id}::uuid FOR UPDATE`,
+      );
+      if (!locked[0]) throw this.notFound();
+      if (locked[0].status === 'pending_delete' || locked[0].status === 'purged') {
+        throw this.deletionConflict();
+      }
+      const subscription = await tx.subscription.findUnique({
+        where: { tenantId: tenant.id },
       });
-    }
-    const updated = await this.prisma.subscription.updateMany({
-      where: { tenantId: tenant.id, version: dto.version },
-      data: {
-        status: dto.status,
-        startAt,
-        endAt,
-        version: { increment: 1 },
-      },
+      if (!subscription) throw this.notFound();
+      if (
+        dto.status === 'suspended' &&
+        (startAt.getTime() !== subscription.startAt.getTime() ||
+          endAt.getTime() !== subscription.endAt.getTime())
+      ) {
+        throw new BadRequestException({
+          code: 'SUSPENSION_INTERVAL_MUST_BE_PRESERVED',
+          message: '暂停时必须保留原订阅时间区间',
+        });
+      }
+      const updated = await tx.subscription.updateMany({
+        where: { tenantId: tenant.id, version: dto.version },
+        data: {
+          status: dto.status,
+          startAt,
+          endAt,
+          version: { increment: 1 },
+        },
+      });
+      if (updated.count !== 1) throw this.versionConflict();
+      return subscription;
     });
-    if (updated.count !== 1) throw this.versionConflict();
     await this.audit.record({
       platformAdminId: admin.platform_admin_id,
       targetTenantId: tenant.id,
@@ -272,6 +285,147 @@ export class PlatformTenantsService {
       },
     });
     return this.getTenant(tenant.tenantCode);
+  }
+
+  async deleteTenant(
+    admin: AuthenticatedPlatformAdmin,
+    tenantCode: string,
+    dto: DeletePlatformTenantDto,
+    requestId?: string,
+  ) {
+    const environment = process.env.APP_ENV ?? 'unknown';
+    const safeRequestId = requestId && /^[A-Za-z0-9_-]{1,128}$/.test(requestId)
+      ? requestId
+      : undefined;
+    let targetTenantId: string | undefined;
+    try {
+      const target = await this.findTenantIdentity(tenantCode);
+      targetTenantId = target.id;
+      const result = await this.prisma.$transaction(async (tx) => {
+        const identity = await tx.$queryRaw<{
+          password_hash: string;
+        }[]>(Prisma.sql`
+          SELECT a.password_hash
+          FROM platform_sessions s
+          JOIN platform_admins a ON a.id = s.platform_admin_id
+          WHERE s.id = ${admin.session_id}::uuid
+            AND s.platform_admin_id = ${admin.platform_admin_id}::uuid
+            AND s.revoked_at IS NULL
+            AND s.expires_at > clock_timestamp()
+            AND s.identity_version_snapshot = ${admin.identity_version}
+            AND a.identity_version = ${admin.identity_version}
+            AND a.status = 'active'
+          FOR UPDATE OF s, a
+        `);
+        if (!identity[0]) {
+          throw new ForbiddenException({
+            code: 'PLATFORM_DELETE_SESSION_INVALID',
+            message: '平台会话已失效',
+          });
+        }
+        if (!(await this.passwordMatches(identity[0].password_hash, dto.password))) {
+          throw new ForbiddenException({
+            code: 'PLATFORM_DELETE_PASSWORD_INVALID',
+            message: '管理员密码错误',
+          });
+        }
+        if (environment !== 'production') {
+          throw new ServiceUnavailableException({
+            code: 'PLATFORM_TENANT_DELETE_ENV_UNAVAILABLE',
+            message: '当前环境尚未开放租户删除',
+          });
+        }
+        const locked = await tx.$queryRaw<{
+          id: string;
+          status: string;
+          deleted_at: Date | null;
+          purge_after: Date | null;
+        }[]>(Prisma.sql`
+          SELECT id, status, deleted_at, purge_after
+          FROM tenants WHERE id = ${target.id}::uuid FOR UPDATE
+        `);
+        const tenant = locked[0];
+        if (!tenant) throw this.notFound();
+        if (tenant.status === 'pending_delete') {
+          return { deletedAt: tenant.deleted_at!, purgeAfter: tenant.purge_after!, replayed: true };
+        }
+        if (tenant.status === 'purged') throw this.deletionConflict();
+        const subscription = await tx.subscription.findUnique({
+          where: { tenantId: target.id },
+        });
+        if (!subscription) throw this.notFound();
+        const updated = await tx.$queryRaw<{
+          deleted_at: Date;
+          purge_after: Date;
+        }[]>(Prisma.sql`
+          WITH stamp AS (
+            SELECT date_trunc('milliseconds', clock_timestamp() AT TIME ZONE 'UTC') AS value
+          )
+          UPDATE tenants AS t
+          SET status = 'pending_delete',
+              deleted_at = stamp.value,
+              purge_after = stamp.value + INTERVAL '1 year',
+              deleted_from_status = ${tenant.status},
+              deleted_from_subscription_status = ${subscription.status},
+              updated_at = stamp.value,
+              platform_version = platform_version + 1
+          FROM stamp WHERE t.id = ${target.id}::uuid
+          RETURNING t.deleted_at, t.purge_after
+        `);
+        await tx.subscription.update({
+          where: { id: subscription.id },
+          data: { status: 'suspended', version: { increment: 1 } },
+        });
+        return { deletedAt: updated[0].deleted_at, purgeAfter: updated[0].purge_after, replayed: false };
+      });
+      await this.audit.record({
+        platformAdminId: admin.platform_admin_id,
+        targetTenantId,
+        requestId: safeRequestId,
+        action: 'platform.tenant.delete',
+        resourceType: 'tenant',
+        resourceId: targetTenantId,
+        result: 'success',
+        metadata: { environment, reason: result.replayed ? 'ALREADY_PENDING' : 'DELETE_STARTED' },
+      });
+      return {
+        tenant_code: target.tenantCode,
+        status: 'pending_delete',
+        deleted_at: result.deletedAt.toISOString(),
+        purge_after: result.purgeAfter.toISOString(),
+        idempotency_replayed: result.replayed,
+      };
+    } catch (error) {
+      const cause = error instanceof HttpException
+        ? (error.getResponse() as { code?: string }).code ?? 'REQUEST_REJECTED'
+        : 'TRANSACTION_FAILED';
+      await this.audit.record({
+        platformAdminId: admin.platform_admin_id,
+        targetTenantId,
+        requestId: safeRequestId,
+        action: 'platform.tenant.delete',
+        resourceType: 'tenant',
+        resourceId: targetTenantId ?? 'unknown',
+        result: 'failure',
+        metadata: { environment, reason: cause },
+      });
+      throw error;
+    }
+  }
+
+  private async passwordMatches(hash: string, password: string) {
+    try {
+      return await argon2.verify(hash, password);
+    } catch {
+      return false;
+    }
+  }
+
+  private deletionConflict() {
+    return new ConflictException({
+      code: 'PLATFORM_TENANT_PENDING_DELETE',
+      message: '租户处于删除流程，不能通过普通订阅变更恢复',
+    });
   }
 
   async updateLocationLimit(
@@ -340,6 +494,8 @@ export class PlatformTenantsService {
       tenantCode: true,
       name: true,
       status: true,
+      deletedAt: true,
+      purgeAfter: true,
       locationLimit: true,
       platformVersion: true,
       createdAt: true,
@@ -381,6 +537,8 @@ export class PlatformTenantsService {
       tenant_code: tenant.tenantCode,
       name: tenant.name,
       status: tenant.status,
+      deleted_at: tenant.deletedAt?.toISOString() ?? null,
+      purge_after: tenant.purgeAfter?.toISOString() ?? null,
       created_at: tenant.createdAt.toISOString(),
       platform_version: tenant.platformVersion,
       location_limit: tenant.locationLimit,

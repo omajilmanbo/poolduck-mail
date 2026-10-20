@@ -367,6 +367,7 @@ tenant 查询。响应只包含 tenant/subscription/额度/脱敏 manager 摘要
 - 说明：查询 tenant name、`tenant_code`、subscription、`location_limit`/当前计数、
   脱敏首个 tenant_manager 和平台版本
 - 权限：platform_admin
+- 列表摘要包含 `deleted_at`、`purge_after`（未删除时均为 `null`）
 
 ### POST `/api/platform/tenants`
 
@@ -382,14 +383,26 @@ tenant 查询。响应只包含 tenant/subscription/额度/脱敏 manager 摘要
 ### GET `/api/platform/tenants/{tenant_code}`
 
 - 返回 ADR-013 最小 tenant 摘要和乐观并发 `version`
+- 摘要还包含 `deleted_at`、`purge_after`（未删除时均为 `null`）；不返回删除前状态快照
 
 ### PATCH `/api/platform/tenants/{tenant_code}/subscription`
 
 - 入参：`status`, `start_at`, `end_at`, `version`
 - 支持 `trial|active|expired|suspended`；高影响变更记录旧/新状态和非 PII 平台审计
 
-暂停通过 subscription PATCH 写入 `suspended`；恢复通过同一 PATCH 显式写入 `trial|active`、
-有效 `start_at`/`end_at` 与当前 `version`。不新增含义重叠的 tenant 停用状态，也不删除历史数据。
+普通暂停通过 subscription PATCH 写入 `suspended`；非删除中租户可通过同一 PATCH 显式写入
+`trial|active`、有效 `start_at`/`end_at` 与当前 `version`。`pending_delete` / `purged`
+租户的普通订阅更新返回 `PLATFORM_TENANT_PENDING_DELETE`，不能绕过删除流程重新激活；恢复由 #161 独立实现。
+
+### POST `/api/platform/tenants/{tenant_code}/delete`
+
+- 仅 active `platform_admin` 且当前 Session 有效；请求体仅 `{ "password": "当前管理员密码" }`，服务端在同一次请求中重新验密
+- 仅 `APP_ENV=production` 开放：以数据库时间原子设置 tenant `status=pending_delete`、`deleted_at`、`purge_after=deleted_at + interval '1 year'` 及删除前 tenant/订阅状态快照，同时将订阅改为 `suspended`
+- 返回 `{ tenant_code, status, deleted_at, purge_after, idempotency_replayed }`；重复删除不重置期限或重复修改订阅
+- `APP_ENV=staging` 及其他环境返回 `PLATFORM_TENANT_DELETE_ENV_UNAVAILABLE`；Staging 立即清理由 #164 实现，此接口不执行软删除
+- 错误密码返回 `PLATFORM_DELETE_PASSWORD_INVALID`，请求期间失效的 Session 返回 `PLATFORM_DELETE_SESSION_INVALID`；未知 tenant 返回 `PLATFORM_TENANT_NOT_FOUND`，已终结 tenant 返回 `PLATFORM_TENANT_PENDING_DELETE`
+- `environment`、保留期及任何其他额外请求字段均拒绝；删除期间的登录、Session 和既有读取继续遵循暂停订阅语义，新扫码及等待/重试邮件由现有 `suspended` 门禁阻断
+- 审计只记录内部 tenant/admin ID、合法 request ID、环境、结果和原因码，不记录密码或业务 PII
 
 ### PATCH `/api/platform/tenants/{tenant_code}/location-limit`
 

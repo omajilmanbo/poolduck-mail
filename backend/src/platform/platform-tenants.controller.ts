@@ -12,6 +12,7 @@ import { PlatformAuthGuard } from './platform-auth.guard';
 import { CurrentPlatformAdmin } from './platform-current-admin.decorator';
 import {
   CreatePlatformTenantDto,
+  DeletePlatformTenantDto,
   UpdateLocationLimitDto,
   UpdateSubscriptionDto,
 } from './platform.dto';
@@ -66,5 +67,15 @@ export class PlatformTenantsController {
     @Body() dto: UpdateLocationLimitDto,
   ) {
     return this.tenants.updateLocationLimit(admin, tenantCode, dto, requestId);
+  }
+
+  @Post(':tenantCode/delete')
+  deleteTenant(
+    @CurrentPlatformAdmin() admin: AuthenticatedPlatformAdmin,
+    @Param('tenantCode') tenantCode: string,
+    @Headers('x-request-id') requestId: string | undefined,
+    @Body() dto: DeletePlatformTenantDto,
+  ) {
+    return this.tenants.deleteTenant(admin, tenantCode, dto, requestId);
   }
 }

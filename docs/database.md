@@ -9,19 +9,20 @@
 - `id` (pk, uuid)
 - `tenant_code` (varchar(10), unique) - 服务端生成的全局唯一 Crockford Base32 登录标识；不可由客户指定或修改
 - `name` (varchar)
-- `status` (varchar) - active/suspended；ADR-023 后续删除实现使用 pending_delete/purged
+- `status` (varchar) - 通常为 active/suspended；#160 Production 删除设为 pending_delete，后续到期清理可设为 purged
 - `deleted_at` / `purge_after` (timestamp, nullable) - ADR-023 Production 删除起点与一日历年恢复截止；数据库时间为权威，恰好到期不可恢复
 - `deleted_from_status` / `deleted_from_subscription_status` (varchar(32), nullable) - 删除前 tenant 与 subscription 状态快照，供后续恢复 API 使用
 - `location_limit` (integer, positive) - ADR-013 的人工运营额度；active/inactive/pending deletion
   location 均计数，purged 后释放
-- `platform_version` (integer) - platform_admin 修改 subscription/额度时使用的乐观并发版本
+- `platform_version` (integer) - platform_admin 调整额度的乐观并发版本；Production 删除时递增
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
 
 `deleted_at`、`purge_after` 和两项状态快照必须同时为空或同时非空；非空时 tenant
 `status` 为 `pending_delete` / `purged`，且 `purge_after = deleted_at + interval '1 year'`。
 PostgreSQL 的日历年计算将 2024-02-29 12:00 映射为 2025-02-28 12:00（数据库时间）。
-到期扫描索引为 `(purge_after, status)`。#157 只增加数据模型，不开放删除/恢复入口。
+到期扫描索引为 `(purge_after, status)`。#160 的 Production 删除事务写入生命周期与原状态快照，
+同时将订阅改为 `suspended`；Staging 删除、Production 恢复和到期清理由后续 Issue 实现。
 
 ## 2. users
 
