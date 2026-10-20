@@ -39,6 +39,18 @@ export class PlatformTenantPurgeService {
           };
         }
 
+        const expected = {
+          users: await tx.user.count({ where: { tenantId } }),
+          devices: await tx.device.count({ where: { tenantId } }),
+          people: await tx.personMapping.count({ where: { tenantId } }),
+          locations: await tx.location.count({ where: { tenantId } }),
+          assignments: await tx.operatorLocationAssignment.count({ where: { tenantId } }),
+          legacy_identifiers: await tx.locationLegacyIdentifier.count({ where: { tenantId } }),
+          sessions: await tx.session.count({ where: { tenantId } }),
+          scan_idempotencies: await tx.scanRequestIdempotency.count({ where: { tenantId } }),
+          platform_idempotencies: await tx.platformTenantIdempotency.count({ where: { tenantId } }),
+        };
+
         // Current-only rows can be removed before their parent tombstones are rewritten.
         const assignments = await tx.operatorLocationAssignment.deleteMany({ where: { tenantId } });
         const legacyIdentifiers = await tx.locationLegacyIdentifier.deleteMany({ where: { tenantId } });
@@ -96,6 +108,9 @@ export class PlatformTenantPurgeService {
           sessions: sessions.count, scan_idempotencies: scanIdempotencies.count,
           platform_idempotencies: platformIdempotencies.count,
         };
+        if (Object.keys(expected).some((key) => counts[key as keyof typeof counts] !== expected[key as keyof typeof expected])) {
+          throw new Error('TENANT_PURGE_COUNT_MISMATCH');
+        }
         await tx.platformAuditLog.create({
           data: {
             targetTenantId: tenantId, action: 'platform.tenant.purged',

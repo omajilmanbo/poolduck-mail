@@ -65,3 +65,9 @@ Issue #116 的执行与恢复使用 [`docs/testing/staging-capacity-runbook.md`]
 运维人员负责确认测试窗口、备份、mock provider、宿主机采集和停止条件；测试负责人负责外部负载机、
 阶梯与结果报告。出现提前 provider 调用、真实误发、跨租户读取、OOM/restart、数据库异常或持续 5xx 时，
 立即停止负载，保留聚合证据并按 P0/P1 流程处理。
+
+## 6. Production 租户到期清理（#163）
+
+自动清理只在 `APP_ENV=production` 且人工审核后显式设置 `TENANT_PURGE_PROCESSOR_ENABLED=true` 时启动；默认关闭。每分钟用数据库时间取最多 20 个到期 tenant，逐个运行 #162 事务。多个实例可以同时运行；tenant 行锁保证每个租户只完成一次。失败时本轮停止，保留 `pending_delete` 与 `suspended`，下一轮或重启后重试；到期恢复立即被拒，即使清理尚未成功。
+
+查看结构化 `tenant_purge_metrics`：`pending`、`oldestOverdueSeconds`、`purged`、`failed`、`skipped`。`tenant_purge_alert` 的 `WRONG_ENVIRONMENT`、`SCAN_FAILED`、`TENANT_TRANSACTION_FAILED` 和 `BACKLOG_OVERDUE`（最老逾期超过 15 分钟）需进入生产运维告警路由。日志只有内部 tenant UUID、原因码和计数，不含名称、邮箱和正文。若出现环境错误或关联计数不符，保持开关关闭或立即设为 `false` 并重启 worker，核对数据库状态、迁移和 FK 计数后再恢复；不可直接将 `pending_delete` 改回可用状态，也不可重发未知邮件。停机及回滚保留生命周期字段和 `suspended` 门禁。发布前必须核准告警接收方、值班安排、迁移与回滚步骤；本次未启用生产任务。

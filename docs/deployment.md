@@ -97,6 +97,7 @@ Local/CI/Staging 合成验证，Production 会拒绝执行。
 - Backend 启动命令会先执行 `npm run db:deploy`，再执行 `npm run start`。
 - Backend 默认每分钟按数据库时间扫描一批到期的人员/地点删除任务。仅在受控维护窗口可设置
   `DELETION_PURGE_PROCESSOR_ENABLED=false` 暂停清理；恢复服务时必须移除该设置，任务会幂等补跑。
+- Production 租户终结清理独立于人员/地点任务。#163 实现默认关闭；仅经人工审核 #162 事务、迁移、告警与回滚步骤后，在可信 `APP_ENV=production` 显式设置 `TENANT_PURGE_PROCESSOR_ENABLED=true`。每轮最多处理 20 个到期租户；多实例通过 tenant 行锁避免重复完成。Staging 或未知环境即使设置开关也拒绝启动。关闭开关并重启仅暂停任务，不能重新开放已到期租户恢复或扫码/发信。
 - MVP 邮件 provider 默认保持 `MAIL_PROVIDER=mock`，不会接入真实邮件服务。
 
 常用操作：

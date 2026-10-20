@@ -35,6 +35,7 @@
     "test:platform-delete-transaction": "npm run build && node scripts/platform-delete-transaction-test.mjs",
     "test:platform-restore-transaction": "npm run build && node scripts/platform-restore-transaction-test.mjs",
     "test:platform-tenant-purge-transaction": "npm run build && node scripts/platform-tenant-purge-transaction-test.mjs",
+    "test:platform-tenant-purge-scheduler": "npm run build && node scripts/platform-tenant-purge-scheduler-test.mjs",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
   },

@@ -11,6 +11,7 @@ import { PlatformAuthService } from './platform-auth.service';
 import { PlatformTenantsController } from './platform-tenants.controller';
 import { PlatformTenantsService } from './platform-tenants.service';
 import { PlatformTenantPurgeService } from './platform-tenant-purge.service';
+import { PlatformTenantPurgeSchedulerService } from './platform-tenant-purge-scheduler.service';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { PlatformTenantPurgeService } from './platform-tenant-purge.service';
     PlatformAuthGuard,
     PlatformTenantsService,
     PlatformTenantPurgeService,
+    PlatformTenantPurgeSchedulerService,
   ],
   exports: [PlatformAuthGuard, PlatformAuthService, PlatformTenantPurgeService],
 })
