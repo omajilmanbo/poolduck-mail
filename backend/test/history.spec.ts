@@ -50,6 +50,7 @@ describe('Tenant-scoped history APIs', () => {
       email: 'operator@example.local',
       role: 'operator',
       status: 'active',
+      tenant: { tenantCode: '10CA000001', status: 'active' },
     });
   });
 

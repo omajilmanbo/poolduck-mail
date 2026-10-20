@@ -99,3 +99,5 @@ worker 当前以安全聚合日志实现本地/CI 可验证出口：`mail_job.cl
 ## Production 租户终结清理信号（#163）
 
 启用后每分钟产生不含 PII 的 `tenant_purge_metrics` 结构化日志，字段为 `pending`、`oldestOverdueSeconds`、`purged`、`failed`、`skipped`。环境错误、扫描失败、事务失败与最老逾期超过 15 分钟产生 `tenant_purge_alert`；告警只含安全原因码和可选内部 tenant UUID。生产发布时须把此事件接入经批准的日志告警/值班路由并验证通知；本地实现只产生结构化事件，没有部署生产告警资源。Success 审计为 `platform.tenant.purged`，记录内部 ID 和清理计数；失败记录通用原因码，禁止输出原始数据库异常或客户明细。
+
+本地 #166 验收只检查结构化事件及测试数据库中的审计字段，不接入真实告警接收方。Production 放行前应以合成到期任务验证告警路由、值班收件与恢复通知；任何 `TENANT_TRANSACTION_FAILED`、持续积压或环境错误必须可追溯到内部 tenant UUID 和安全原因码，且不得把 PII 写入日志。

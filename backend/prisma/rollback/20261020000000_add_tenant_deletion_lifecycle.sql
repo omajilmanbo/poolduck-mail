@@ -12,7 +12,7 @@ BEGIN
        OR "purge_after" IS NOT NULL
        OR "deleted_from_status" IS NOT NULL
        OR "deleted_from_subscription_status" IS NOT NULL
-       OR "status" IN ('pending_delete', 'purged')
+       OR "status" IN ('pending_delete', 'purged', 'staging_deleting')
   ) THEN
     RAISE EXCEPTION 'tenant lifecycle rollback blocked: deletion state exists';
   END IF;

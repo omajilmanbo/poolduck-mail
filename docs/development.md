@@ -62,6 +62,10 @@
   脚本在随机命名的临时数据库中验证 25 个合成 tenant、双 worker、重启、失败重试与错误环境。
 - #164 Staging 即时清理：在相同本地环境下，于 `backend/` 执行 `npm run test:staging-tenant-deletion`；
   脚本在随机命名的临时数据库中验证验密、环境隔离、完整 FK 图、补偿重试、重复请求及跨租户隔离。
+- #166 跨模块 HTTP 验收：在相同本地环境下，于 `backend/` 执行 `npm run test:tenant-deletion-acceptance`；
+  脚本使用随机命名的临时数据库、合成租户和 mock 邮件 provider 验证认证、订阅/扫码/邮件门禁、恢复、到期墓碑及 Staging 全图清理。
+- #166 迁移回滚守卫：在相同本地环境下，于 `backend/` 执行 `npm run test:tenant-deletion-rollback`；
+  脚本仅在临时数据库中验证三层 rollback 对删除中状态的拒绝，以及状态清空后的逆序回滚。
 - Frontend：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`
 - 关键 E2E：准备合成 seed 并启动前后端后，在 `frontend/` 执行 `npm run test:e2e`
 

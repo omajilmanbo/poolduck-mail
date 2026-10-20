@@ -37,6 +37,8 @@
     "test:platform-tenant-purge-transaction": "npm run build && node scripts/platform-tenant-purge-transaction-test.mjs",
     "test:platform-tenant-purge-scheduler": "npm run build && node scripts/platform-tenant-purge-scheduler-test.mjs",
     "test:staging-tenant-deletion": "npm run build && node scripts/staging-tenant-deletion-test.mjs",
+    "test:tenant-deletion-acceptance": "npm run build && node scripts/tenant-deletion-acceptance-test.mjs",
+    "test:tenant-deletion-rollback": "node scripts/tenant-deletion-rollback-test.mjs",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
   },

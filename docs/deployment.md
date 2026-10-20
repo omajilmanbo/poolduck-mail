@@ -511,8 +511,5 @@ Safety rules:
 - 回滚 #96 时先停止写入并回滚应用，再运行 `backend/prisma/rollback/20260724020000_add_operator_location_assignments.sql`。旧应用会恢复此前“operator 可访问 tenant 全部地点”的宽权限行为，执行前必须获得安全负责人确认。
 - `20260728020000_add_delayed_deletion` 不删除或回填现有记录。发布后确认 migration 已应用、清理器启动且
   使用数据库时间；应用回滚时保留新增列，避免丢失尚在 14 天恢复期内的生命周期状态。
-- `20261020000000_add_tenant_deletion_lifecycle` 只扩展租户表，不启动租户删除功能。
-  应先应用迁移并确认既有租户状态及订阅未改变，后续 #160 才能开放删除入口。
-  回滚应用前保留生命周期字段；仅在确认没有租户进入删除流程且停止相关写入后，
-  才可执行 `backend/prisma/rollback/20261020000000_add_tenant_deletion_lifecycle.sql`。
-  若脚本拒绝回滚，保留字段和暂停订阅状态，不得通过旧代码重新开放扫码或发信。
+- `20261020000000_add_tenant_deletion_lifecycle` 只扩展租户表，不启动租户删除功能；其后两次迁移分别保护 Production 墓碑和 Staging 清理中当前对象写入。先迁移再部署应用，确认现有租户状态、订阅和历史未改变；Production 清理调度及 Staging 物理删除开关默认关闭，启用前须完成 #166 验收、告警接收方及人工审核。
+- 应用回滚时保留三次迁移及 `suspended` 门禁。若确需移除数据库变更，先停写并确认没有 `staging_deleting`、`pending_delete`、`purged` 记录，按 200 → 100 → 000 的逆序执行 `backend/prisma/rollback/` 中对应脚本。守卫拒绝回滚时不得手改删除状态或用旧版本重新开放业务；参照 `docs/operation.md` 的故障流程。

@@ -9,7 +9,7 @@
 - `id` (pk, uuid)
 - `tenant_code` (varchar(10), unique) - 服务端生成的全局唯一 Crockford Base32 登录标识；不可由客户指定或修改
 - `name` (varchar)
-- `status` (varchar) - 通常为 active/suspended；#160 Production 删除设为 pending_delete，后续到期清理可设为 purged
+- `status` (varchar) - 通常为 active/suspended；Production 删除设为 pending_delete，到期清理设为 purged；Staging 即时清理的待补偿状态为 staging_deleting
 - `deleted_at` / `purge_after` (timestamp, nullable) - ADR-023 Production 删除起点与一日历年恢复截止；数据库时间为权威，恰好到期不可恢复
 - `deleted_from_status` / `deleted_from_subscription_status` (varchar(32), nullable) - 删除前 tenant 与 subscription 状态快照，供后续恢复 API 使用
 - `location_limit` (integer, positive) - ADR-013 的人工运营额度；active/inactive/pending deletion
@@ -23,7 +23,7 @@
 PostgreSQL 的日历年计算将 2024-02-29 12:00 映射为 2025-02-28 12:00（数据库时间）。
 到期扫描索引为 `(purge_after, status)`。#160 的 Production 删除事务写入生命周期与原状态快照，
 同时将订阅改为 `suspended`。#161 恢复事务仅在数据库时间早于 `purge_after` 时清空四项生命周期字段，
-恢复原 tenant/subscription 状态并递增版本。#162 提供 Production 到期后单租户事务清理入口；#163 才接入到期调度，Staging 删除由 #164 实现。
+恢复原 tenant/subscription 状态并递增版本。#162 提供 Production 到期后单租户事务清理入口；#163 接入到期调度，Staging 删除由 #164 实现。
 
 ### ADR-023 Production 到期清理矩阵（#162）
 
@@ -42,7 +42,7 @@ PostgreSQL 的日历年计算将 2024-02-29 12:00 映射为 2025-02-28 12:00（�
 
 `scan_events`、`mail_jobs`、`mail_delivery_attempts`、`audit_logs`、`platform_audit_logs` 的原有行与历史快照不改写；其中可能含当时的 PII。清理不重置邮件状态或 provider 回执。上述业务码仍被墓碑行占用，不能重新发配；设备旧 code 与兼容地点标识被删除，但终结 tenant 永远不能重新执行业务。
 
-`20261020010000_guard_purged_tenant_current_writes` 为上述当前对象表的 INSERT/UPDATE 加数据库门禁：写入时共享锁定 tenant 行并拒绝 `purged`，与清理事务的独占行锁串行化，防止已进入处理的请求在清理提交后重新写入 PII、Session 或兼容标识。历史表不加此门禁，也不改写原记录。
+`20261020010000_guard_purged_tenant_current_writes` 为上述当前对象表的 INSERT/UPDATE 加数据库门禁：写入时共享锁定 tenant 行并拒绝 `purged`，与清理事务的独占行锁串行化，防止已进入处理的请求在清理提交后重新写入 PII、Session 或兼容标识。后续 `20261020020000_guard_staging_tenant_deletion` 也拒绝 `staging_deleting`。历史表不加此门禁，也不改写原记录。
 
 ### ADR-023 Staging 物理清理矩阵（#164）
 
@@ -362,7 +362,7 @@ Implementation notes:
   不提供破坏性 SQL 回滚；需要回滚应用时保留新增列，待恢复版本再次接管到期清理。
 - `20261020000000_add_tenant_deletion_lifecycle` 仅扩展 `tenants` 的可空字段、约束和索引，
   不回填或更改现有租户及其外键/历史关系。`backend/prisma/rollback/20261020000000_add_tenant_deletion_lifecycle.sql`
-  仅在没有任何租户进入删除流程时允许移除新字段；否则拒绝回滚并保留状态。
+  仅在没有任何租户进入删除流程时允许移除新字段；否则拒绝回滚并保留状态。先在停写维护窗口确认无 `staging_deleting`、`pending_delete` 或 `purged`，再依逆序运行 `20261020020000_guard_staging_tenant_deletion.sql`、`20261020010000_guard_purged_tenant_current_writes.sql`、生命周期 rollback；每步均有状态守卫，拒绝时保留现有门禁。
 - Core tenant-scoped indexes are included for users, devices, locations, person mappings, scan events, mail jobs, and audit logs.
 
 Local migration commands:
