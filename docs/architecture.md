@@ -237,3 +237,9 @@ MVP 阶段邮件主题和纯文本正文由后端根据动作码中的动作生�
 主题限制为 255 字符；tenant/location 名称含控制字符时替换为空格，过长时截断并以省略号标示，保留动作后缀。正文使用创建时的人员姓名快照，姓名中的控制字符同样替换为空格；重试不重新读取人员资料。
 
 说明：用户自定义邮件文本为后续扩展，不在当前 MVP 范围内。
+
+## Production 租户到期墓碑清理（ADR-023 / #162）
+
+内部 `PlatformTenantPurgeService` 提供单租户事务入口，供 #163 调度器调用；本阶段不启动调度，也不提供 HTTP 路由。入口只允许 `APP_ENV=production`，以 tenant UUID 锁定行，按数据库时间判定到期。恢复事务使用同一行锁；到期后恢复被拒。清理当前授权、Session 和兼容标识后，将 tenant、user、device、location、person 当前对象改为非 PII 墓碑；subscription 继续 `suspended`。成功审计与状态切换同事务提交，失败时全量回滚，可重试。当前对象的数据库写入门禁共用该行锁，阻止清理后并发写回。完整表顺序及外键矩阵见 `docs/database.md`。
+
+不可变扫码、邮件、provider 回执及审计历史维持原字段值和 UUID 关联；历史快照可能仍有 PII。终结 tenant 不可恢复或复用，平台控制面仍只读最小 tenant 摘要，不暴露历史业务明细。

@@ -23,7 +23,26 @@
 PostgreSQL 的日历年计算将 2024-02-29 12:00 映射为 2025-02-28 12:00（数据库时间）。
 到期扫描索引为 `(purge_after, status)`。#160 的 Production 删除事务写入生命周期与原状态快照，
 同时将订阅改为 `suspended`。#161 恢复事务仅在数据库时间早于 `purge_after` 时清空四项生命周期字段，
-恢复原 tenant/subscription 状态并递增版本；Staging 删除和 Production 到期清理由后续 Issue 实现。
+恢复原 tenant/subscription 状态并递增版本。#162 提供 Production 到期后单租户事务清理入口；#163 才接入到期调度，Staging 删除由 #164 实现。
+
+### ADR-023 Production 到期清理矩阵（#162）
+
+`platformTenantPurgeService.purgeDueTenant(tenant.id)` 仅供内部调度调用。先锁定 tenant 行，确认数据库时间达到 `purge_after` 且状态为 `pending_delete`；与恢复共用行锁。整个租户在同一事务中按下列顺序清理，任何一步失败均回滚，重试时 `purged` 为无操作结果。仅接受内部 UUID；没有对租户开放的清理 API。
+
+| 顺序 | 表 | 处理 | 外键与保留理由 |
+| --- | --- | --- | --- |
+| 1 | `operator_location_assignments`, `location_legacy_identifiers` | 删除当前授权和兼容地点标识 | 前者依赖 user/location，后者依赖 location；均非不可变历史 |
+| 2 | `sessions`, `scan_request_idempotency`, `platform_tenant_idempotency` | 删除登录 Session 与当前幂等记录 | Session 依赖 user；幂等记录依赖 scan/mail 或 platform_admin/tenant；已不再服务业务 |
+| 3 | `users` | 保留 UUID/角色；移除真实邮箱、用户名、密码哈希和最后登录时间，写入唯一非 PII 登录占位符，状态 `purged` | `scan_events`、`audit_logs` 的 user 外键无需 SetNull，历史关系仍稳定；必填身份约束继续成立 |
+| 4 | `devices` | 移除原 device code、名称、最后在线时间；UUID 构造非 PII code/name，状态 `purged` | `scan_events.device_id` 仍可引用 UUID 墓碑 |
+| 5 | `person_mappings` | 姓名/邮箱改为非 PII 墓碑，状态 `purged`，清除独立删除前状态 | 保留 UUID、不可复用 `person_code` 和 `scan_code`；`scan_events`/`mail_jobs` Restrict 关系不变 |
+| 6 | `locations` | 名称改为非 PII 墓碑，状态 `purged`，清除独立删除前状态 | 保留 UUID 与不可复用 `location_code`；历史 Restrict/SetNull 关系不变 |
+| 7 | `subscriptions`, `tenants` | 订阅保持 `suspended` 并递增版本；tenant 名称改为非 PII UUID 墓碑、状态 `purged`、版本递增 | 保留 tenant UUID、不可复用 `tenant_code`、删除日期/恢复期限/原状态快照以满足生命周期约束；平台历史审计仍可引用 tenant |
+| 8 | `platform_audit_logs` | 同事务追加仅含内部 ID、原因码和清理计数的成功记录 | 原有平台审计行不改写 |
+
+`scan_events`、`mail_jobs`、`mail_delivery_attempts`、`audit_logs`、`platform_audit_logs` 的原有行与历史快照不改写；其中可能含当时的 PII。清理不重置邮件状态或 provider 回执。上述业务码仍被墓碑行占用，不能重新发配；设备旧 code 与兼容地点标识被删除，但终结 tenant 永远不能重新执行业务。
+
+`20261020010000_guard_purged_tenant_current_writes` 为上述当前对象表的 INSERT/UPDATE 加数据库门禁：写入时共享锁定 tenant 行并拒绝 `purged`，与清理事务的独占行锁串行化，防止已进入处理的请求在清理提交后重新写入 PII、Session 或兼容标识。历史表不加此门禁，也不改写原记录。
 
 ## 2. users
 
