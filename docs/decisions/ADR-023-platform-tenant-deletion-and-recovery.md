@@ -1,6 +1,6 @@
 # ADR-023：平台管理员整租户删除与环境化恢复期
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-10-20
 - 相关 Issue：#149
 
@@ -10,11 +10,11 @@
 
 当前数据库中 tenant 与用户、地点、人员、扫码、邮件任务、发送尝试、Session、审计、平台开通幂等记录等存在 Restrict/SetNull 外键。仅删除 `tenants` 主行既不能实现整租户删除，也可能因外键失败。Production 恢复还涉及订阅到期、已领取或结果未知的邮件、Session 撤销和跨 tenant 隔离。数据库备份生命周期尚未设计，本 ADR 暂不规定备份中的数据如何保留或清除；因此这里的“删除”仅指在线业务数据库中的数据。
 
-本 ADR 是供人工审阅的提案。接受前不新增删除 API、数据库字段、清理器或 UI 操作，也不删除任何现有租户。
+2026-10-20 已获人工接受。本 ADR 确定后续实现边界；接受决策本身不执行数据删除。
 
 ## Decision
 
-拟采用如下方案，待人工批准后生效：
+采用如下方案；本决策于 2026-10-20 获得人工接受：
 
 1. **权限与确认。** 仅 active platform_admin 可从独立平台控制台发起整租户删除或恢复。删除确认展示目标 tenant name、`tenant_code`、当前环境、影响和恢复期限；服务端重新校验当前平台管理员密码，并要求有限有效期的 Session。密码不进入日志、审计或持久化数据。服务端按受信任的 `APP_ENV` 选择策略，客户端不得指定环境或保留期。错误、重复及并发请求必须安全且幂等。
 2. **Production 删除。** 用数据库时间原子写入 tenant 级 `deleted_at`、`purge_after` 和删除前状态快照；恢复期限按日历年计算，`purge_after = deleted_at + interval '1 year'`，闰日映射及时间边界须在实施前用测试明确。提交成功后立即拒绝该 tenant 的登录、Session 刷新、新扫描、业务写入、新邮件任务和后台待发送任务。所有仍有效的 tenant Session 撤销；取消或终止尚未调用 provider 的任务，但不改写已发送、已取消或 `delivery_unknown` 等历史事实。删除期间保留 tenant 及关联数据，仅平台控制台显示最小删除状态、剩余期限和恢复入口，不开放业务数据读取。
@@ -23,7 +23,7 @@
 5. **Staging 删除。** 在同一密码确认和目标核对后，立即执行整租户及其关联数据的受控清理；不创建一年恢复期，也不显示恢复入口。Staging 不设数据保留期，本 ADR 不设计 Staging 备份。若清理不能原子完成，外部状态先保持不可访问并记录待补偿步骤；不得显示“已完成”而留下可业务访问的残余数据。仅使用 Staging 专用数据验证。
 6. **历史和回执。** 已提交的 provider 调用不能撤回；`sent` 与 `delivery_unknown` 不得改回待发送。Production 到期后沿用 ADR-011 的历史规则：`scan_events`、`mail_jobs`、provider 回执、上下文快照与 `audit_logs` 保持不可变，内部 UUID 关联指向非 PII 墓碑。历史快照可能仍含当时固化的名称、邮箱或邮件内容；“非 PII 墓碑”只描述当前对象的清理结果，不表示历史记录已去标识化。历史记录不得使已终结清理的 tenant 重新可用；平台管理员仍不得读取租户业务明细。
 
-**范围说明：** Production 的一年期限结束后，当前对象改为非 PII 墓碑，不删除不可变业务历史；这与 ADR-011 的人员/地点终结清理语义一致。数据库备份生命周期由后续独立决策处理；Staging 不考虑备份及数据保留。本 ADR 仍须经人工整体批准，之后才能开始删除实现。
+**范围说明：** Production 的一年期限结束后，当前对象改为非 PII 墓碑，不删除不可变业务历史；这与 ADR-011 的人员/地点终结清理语义一致。数据库备份生命周期由后续独立决策处理；Staging 不考虑备份及数据保留。
 
 ## Alternatives considered
 
@@ -50,7 +50,7 @@ Production 需要 tenant 生命周期字段、索引、约束和安全回填；�
 
 ## Follow-up
 
-1. 将本 ADR 交由人工整体审阅并取得 Accepted 状态，随后同步修订 ADR-013 的租户删除边界；ADR-011 的既有历史规则保持适用。数据库备份生命周期另行决策。
+1. 2026-10-20 人工接受本 ADR：Production 按日历年保留一年且可恢复，到期沿用 ADR-011 的非 PII 当前对象墓碑和不可变历史规则；Staging 立即删除且不保留。同步修订 ADR-013 的租户删除边界；ADR-011 的既有历史规则保持适用。数据库备份生命周期另行决策。
 2. 按 1–8 小时范围拆分 schema/门禁、平台重新验密与删除 API、Production 恢复/到期清理、Staging 立即清理、UI、运维和测试 Issue。
 3. 实施时更新 `docs/architecture.md`、`docs/database.md`、`docs/api.md`、`docs/admin-guide.md`、`docs/deployment.md` 和 `docs/issue-archive.md`。
 4. 最低测试矩阵：正常删除/恢复/到期；错误密码、过期 Session、未知目标、重复与并发；tenant 与角色越权；`trial/active/expired/suspended`；待发/已发/未知邮件；当前 PII 清理、非 PII 墓碑和历史快照不变；闰日、期限边界、清理失败和回滚；Staging/Production 环境判定及在线数据残留。全部使用合成数据，不调用真实邮件 provider。

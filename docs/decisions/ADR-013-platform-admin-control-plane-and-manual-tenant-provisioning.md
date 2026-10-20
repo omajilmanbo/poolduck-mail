@@ -132,11 +132,13 @@ platform_admin 默认不得读取或导出人员、扫码历史、邮件任务�
 
 ### 7. tenant 生命周期
 
-- platform_admin 可以创建、暂停和恢复 tenant；MVP 不提供物理删除 tenant。
+- platform_admin 可以创建、暂停和恢复 tenant。原“MVP 不提供物理删除 tenant”的范围限制由
+  Accepted ADR-023 局部取代：后续实现中，Production 提供一年恢复期及到期非 PII 墓碑清理，
+  Staging 提供立即受控清理；删除权限、确认和历史保留以 ADR-023 为准。
 - 暂停 tenant 使用 subscription `suspended` 表达，不新增含义重叠的 tenant 停用状态。
   恢复时必须显式选择 `trial` 或 `active` 并提供有效时间区间。
-- 平台操作不得修改人员、location 状态、扫码历史或邮件记录；租户恢复后这些数据继续按自身状态
-  和权限规则工作。
+- 除 ADR-023 规定的租户删除与终结清理外，平台操作不得修改人员、location 状态、扫码历史
+  或邮件记录；租户恢复后这些数据继续按自身状态和权限规则工作。
 - 所有破坏性或高影响操作必须显示目标 tenant name + `tenant_code`、影响摘要和二次确认，
   网络失败时 UI 不得假定成功。
 

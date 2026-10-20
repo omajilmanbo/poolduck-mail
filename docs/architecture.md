@@ -125,6 +125,9 @@ OCI 真实邮件链路按边界拆为两张主题图：
 - tenant 为一级隔离边界
 - user、device、scan_event、mail_job 均归属 tenant
 - 审计日志保留 tenant、actor、resource、result 与脱敏元数据；禁止密码、JWT、完整邮箱、邮件正文和 provider secret
+- ADR-023 已 Accepted，规定平台管理员整租户删除的后续实现边界：Production 删除后立即关闭业务访问，
+  一日历年内可恢复，到期将当前对象清理为非 PII 墓碑并保留 ADR-011 要求的不可变历史；
+  Staging 立即受控清理且不提供恢复。数据库备份生命周期另行决策。
 
 ## 8. 订阅模型
 
