@@ -98,7 +98,7 @@ Local/CI/Staging 合成验证，Production 会拒绝执行。
 - Backend 默认每分钟按数据库时间扫描一批到期的人员/地点删除任务。仅在受控维护窗口可设置
   `DELETION_PURGE_PROCESSOR_ENABLED=false` 暂停清理；恢复服务时必须移除该设置，任务会幂等补跑。
 - Production 租户终结清理独立于人员/地点任务。#163 实现默认关闭；仅经人工审核 #162 事务、迁移、告警与回滚步骤后，在可信 `APP_ENV=production` 显式设置 `TENANT_PURGE_PROCESSOR_ENABLED=true`。每轮最多处理 20 个到期租户；多实例通过 tenant 行锁避免重复完成。Staging 或未知环境即使设置开关也拒绝启动。关闭开关并重启仅暂停任务，不能重新开放已到期租户恢复或扫码/发信。
-- #164 的 Staging 立即物理清理默认关闭；只在确认 `APP_ENV=staging`、专用数据、迁移和补偿 Runbook 后，显式设置 `STAGING_TENANT_DELETE_ENABLED=true`。Production/未知环境不会进入该清理事务。删除故障时 `staging_deleting` 与 `suspended` 持续阻断访问和新业务；不能手改状态伪造成功，需在同一环境重新验密重试并核对无残留。成功后无法恢复，且本次未部署或清理任何真实租户。
+- #164 的 Staging 立即物理清理默认关闭；在已核对 `APP_ENV=staging`、专用数据、迁移和补偿 Runbook 后，可在主机 `.env` 显式设置 `STAGING_TENANT_DELETE_ENABLED=true` 并重建 Backend。Compose 将此值传入 Backend；平台控制台通过受保护环境接口显示删除入口。Production/未知环境不会进入该清理事务。删除故障时 `staging_deleting` 与 `suspended` 持续阻断访问和新业务；不能手改状态伪造成功，需在同一环境重新验密重试并核对无残留。成功后立即物理清除在线关联数据，没有一年期限，也无法恢复。2026-10-20 用户已批准在 Staging 开放此入口，仍禁止用真实客户数据验证。
 - MVP 邮件 provider 默认保持 `MAIL_PROVIDER=mock`，不会接入真实邮件服务。
 
 常用操作：
@@ -196,6 +196,7 @@ NEXT_PUBLIC_API_BASE_URL=https://app.poolducktest.com
 CORS_ORIGIN=https://app.poolducktest.com
 MAIL_PROVIDER=mock
 MAIL_MOCK_SEND_RESULT=success
+STAGING_TENANT_DELETE_ENABLED=true
 TENANT_CONTEXT_ENFORCED=true
 ```
 

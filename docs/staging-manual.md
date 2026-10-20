@@ -297,6 +297,7 @@ ssh -i .secrets\staging\id_ed25519 ubuntu@<staging-public-ip> "chmod 600 <stagin
 - `REFRESH_TOKEN_SECRET=<staging-only-random-secret>`
 - `MAIL_PROVIDER=mock`
 - `MAIL_MOCK_SEND_RESULT=success`
+- `STAGING_TENANT_DELETE_ENABLED=true`（仅在已批准的 Staging 主机启用；删除时重新验平台管理员密码，直接物理清理且不可恢复）
 - `LOG_LEVEL=info`
 - `API_BASE_URL=https://app.poolducktest.com`
 - `NEXT_PUBLIC_API_BASE_URL=https://app.poolducktest.com`
