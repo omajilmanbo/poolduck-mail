@@ -354,6 +354,12 @@ export class PlatformTenantsService {
           where: { tenantId: target.id },
         });
         if (!subscription) throw this.notFound();
+        if (subscription.status === 'active') {
+          throw new ConflictException({
+            code: 'PLATFORM_TENANT_ACTIVE_SUBSCRIPTION',
+            message: '订阅处于 active 状态的租户不能删除',
+          });
+        }
         const updated = await tx.$queryRaw<{
           deleted_at: Date;
           purge_after: Date;

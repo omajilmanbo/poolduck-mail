@@ -25,6 +25,8 @@
 
 **2026-10-20 后续人工修订：** 删除后的即时业务门禁改为复用 subscription `suspended` 语义；不另行封禁登录/Session 或新增邮件终止机制。原 #158、#159 不再单独实施。删除 API 必须在同一事务内保存原订阅状态并设为 `suspended`，恢复 API 按本节第 3 点处理。
 
+**2026-10-20 后续人工补充：** Production 与 Staging 均不可删除 `subscription.status=active` 的租户。删除 API 在锁定目标租户后读取当前订阅状态，若为 `active` 则拒绝且不写入生命周期字段或更改订阅；此限制不把 `tenant.status=active` 作为拒绝条件。`trial`、`expired`、`suspended` 仍按各环境的删除流程处理；#164 的 Staging 实现也须遵守此门禁。
+
 **范围说明：** Production 的一年期限结束后，当前对象改为非 PII 墓碑，不删除不可变业务历史；这与 ADR-011 的人员/地点终结清理语义一致。数据库备份生命周期由后续独立决策处理；Staging 不考虑备份及数据保留。
 
 ## Alternatives considered

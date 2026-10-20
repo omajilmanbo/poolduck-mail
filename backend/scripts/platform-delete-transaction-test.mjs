@@ -57,14 +57,14 @@ try {
       identity_version: platformAdmin.identityVersion,
       session_id: session.id,
     };
-    const makeTenant = (tenantCode) => prisma.tenant.create({
+    const makeTenant = (tenantCode, subscriptionStatus = 'trial') => prisma.tenant.create({
       data: {
         tenantCode,
         name: 'Synthetic Tenant',
         locationLimit: 1,
         subscription: {
           create: {
-            plan: 'manual', status: 'active',
+            plan: 'manual', status: subscriptionStatus,
             startAt: new Date(Date.now() - 60_000),
             endAt: new Date(Date.now() + 86_400_000),
           },
@@ -85,7 +85,7 @@ try {
     });
     assert.equal(stored.status, 'pending_delete');
     assert.equal(stored.deletedFromStatus, 'active');
-    assert.equal(stored.deletedFromSubscriptionStatus, 'active');
+    assert.equal(stored.deletedFromSubscriptionStatus, 'trial');
     assert.equal(stored.subscription.status, 'suspended');
     assert.equal(stored.subscription.version, 2);
     const dbDeadline = await prisma.$queryRaw`
@@ -97,7 +97,7 @@ try {
     const second = await makeTenant('10PDAEE002');
     const subscription = await prisma.subscription.findUniqueOrThrow({ where: { tenantId: second.id } });
     const update = service.updateSubscription(actor, second.tenantCode, {
-      status: 'active',
+      status: 'suspended',
       start_at: subscription.startAt.toISOString(),
       end_at: subscription.endAt.toISOString(),
       version: subscription.version,
@@ -135,8 +135,50 @@ try {
     });
     assert.equal(afterFailure.status, 'active');
     assert.equal(afterFailure.deletedAt, null);
-    assert.equal(afterFailure.subscription.status, 'active');
-    console.log('Production delete transaction, concurrent replay, subscription race, and rollback passed.');
+    assert.equal(afterFailure.subscription.status, 'trial');
+    await prisma.$executeRaw`DROP TRIGGER reject_synthetic_suspend ON subscriptions`;
+    await prisma.$executeRaw`DROP FUNCTION reject_synthetic_suspend()`;
+
+    const active = await makeTenant('10PDAEE004', 'active');
+    await assert.rejects(
+      service.deleteTenant(actor, active.tenantCode, { password }),
+      (error) => error.getResponse().code === 'PLATFORM_TENANT_ACTIVE_SUBSCRIPTION',
+    );
+    const unchanged = await prisma.tenant.findUniqueOrThrow({
+      where: { id: active.id }, include: { subscription: true },
+    });
+    assert.equal(unchanged.status, 'active');
+    assert.equal(unchanged.deletedAt, null);
+    assert.equal(unchanged.subscription.status, 'active');
+
+    const racing = await makeTenant('10PDAEE005');
+    const racingSubscription = await prisma.subscription.findUniqueOrThrow({
+      where: { tenantId: racing.id },
+    });
+    const activeRace = await Promise.allSettled([
+      service.updateSubscription(actor, racing.tenantCode, {
+        status: 'active',
+        start_at: racingSubscription.startAt.toISOString(),
+        end_at: racingSubscription.endAt.toISOString(),
+        version: racingSubscription.version,
+      }),
+      service.deleteTenant(actor, racing.tenantCode, { password }),
+    ]);
+    const afterActiveRace = await prisma.tenant.findUniqueOrThrow({
+      where: { id: racing.id }, include: { subscription: true },
+    });
+    if (activeRace[0].status === 'fulfilled') {
+      assert.equal(activeRace[1].status, 'rejected');
+      assert.equal(activeRace[1].reason.getResponse().code, 'PLATFORM_TENANT_ACTIVE_SUBSCRIPTION');
+      assert.equal(afterActiveRace.status, 'active');
+      assert.equal(afterActiveRace.subscription.status, 'active');
+    } else {
+      assert.equal(activeRace[1].status, 'fulfilled');
+      assert.equal(activeRace[0].reason.getResponse().code, 'PLATFORM_TENANT_PENDING_DELETE');
+      assert.equal(afterActiveRace.status, 'pending_delete');
+      assert.equal(afterActiveRace.subscription.status, 'suspended');
+    }
+    console.log('Production delete transaction, active subscription rejection, concurrent replay, subscription race, and rollback passed.');
   } finally {
     await prisma.$disconnect();
   }

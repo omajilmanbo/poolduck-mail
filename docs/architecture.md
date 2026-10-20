@@ -131,6 +131,7 @@ OCI 真实邮件链路按边界拆为两张主题图：
   Staging 立即受控清理且不提供恢复。数据库备份生命周期另行决策。
 - #157 引入 tenant 的可空生命周期字段、删除前状态快照、日历年约束与到期扫描索引；
   #160 的 Production 删除事务锁定 tenant，写入生命周期并暂停订阅，普通订阅更新使用同一锁防止重新激活。
+  删除前在同一锁定事务中拒绝 `subscription.status=active` 的租户；这里不按 tenant 主表的 `active` 状态判断。
   Staging 删除、Production 恢复与清理仍由后续 Issue 实现。
 
 ## 8. 订阅模型

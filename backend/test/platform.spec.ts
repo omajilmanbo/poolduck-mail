@@ -196,7 +196,7 @@ describe('Platform control plane', () => {
     expect(JSON.stringify(prisma.platformAuditLog.create.mock.calls)).not.toContain('root@example.local');
   });
 
-  it.each(['trial', 'active', 'expired', 'suspended'])(
+  it.each(['trial', 'expired', 'suspended'])(
     'snapshots the previous %s subscription state',
     async (subscriptionStatus) => {
       process.env.APP_ENV = 'production';
@@ -213,6 +213,23 @@ describe('Platform control plane', () => {
       expect(prisma.subscription.update).toHaveBeenCalledTimes(1);
     },
   );
+
+  it('rejects an active subscription without starting tenant deletion', async () => {
+    process.env.APP_ENV = 'production';
+    mockDeletionQueries('active', 'active');
+    const agent = request.agent(app.getHttpServer());
+    await agent.post('/api/platform/auth/login')
+      .send({ email: 'root@example.local', password }).expect(201);
+    const response = await agent.post(`/api/platform/tenants/${tenantCode}/delete`)
+      .send({ password }).expect(409);
+    expect(response.body.code).toBe('PLATFORM_TENANT_ACTIVE_SUBSCRIPTION');
+    expect(prisma.subscription.update).not.toHaveBeenCalled();
+    expect((prisma.$queryRaw.mock.calls as [any][])
+      .filter(([query]) => query.strings.join(' ').includes('UPDATE tenants'))).toHaveLength(0);
+    const audit = prisma.platformAuditLog.create.mock.calls.at(-1)[0].data;
+    expect(audit.result).toBe('failure');
+    expect(audit.metadataJson.reason).toBe('PLATFORM_TENANT_ACTIVE_SUBSCRIPTION');
+  });
 
   it('rejects revoked sessions and fails closed outside Production', async () => {
     process.env.APP_ENV = 'production';

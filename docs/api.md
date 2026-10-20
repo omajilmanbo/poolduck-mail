@@ -398,6 +398,7 @@ tenant 查询。响应只包含 tenant/subscription/额度/脱敏 manager 摘要
 
 - 仅 active `platform_admin` 且当前 Session 有效；请求体仅 `{ "password": "当前管理员密码" }`，服务端在同一次请求中重新验密
 - 仅 `APP_ENV=production` 开放：以数据库时间原子设置 tenant `status=pending_delete`、`deleted_at`、`purge_after=deleted_at + interval '1 year'` 及删除前 tenant/订阅状态快照，同时将订阅改为 `suspended`
+- 目标 `subscription.status=active` 时返回 `409 PLATFORM_TENANT_ACTIVE_SUBSCRIPTION`，不修改 tenant 或订阅；`trial`、`expired`、`suspended` 可继续删除。检查与删除写入位于同一租户锁定事务中
 - 返回 `{ tenant_code, status, deleted_at, purge_after, idempotency_replayed }`；重复删除不重置期限或重复修改订阅
 - `APP_ENV=staging` 及其他环境返回 `PLATFORM_TENANT_DELETE_ENV_UNAVAILABLE`；Staging 立即清理由 #164 实现，此接口不执行软删除
 - 错误密码返回 `PLATFORM_DELETE_PASSWORD_INVALID`，请求期间失效的 Session 返回 `PLATFORM_DELETE_SESSION_INVALID`；未知 tenant 返回 `PLATFORM_TENANT_NOT_FOUND`，已终结 tenant 返回 `PLATFORM_TENANT_PENDING_DELETE`
