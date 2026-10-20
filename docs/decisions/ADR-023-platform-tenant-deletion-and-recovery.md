@@ -19,21 +19,22 @@
 1. **权限与确认。** 仅 active platform_admin 可从独立平台控制台发起整租户删除或恢复。删除确认展示目标 tenant name、`tenant_code`、当前环境、影响和恢复期限；服务端重新校验当前平台管理员密码，并要求有限有效期的 Session。密码不进入日志、审计或持久化数据。服务端按受信任的 `APP_ENV` 选择策略，客户端不得指定环境或保留期。错误、重复及并发请求必须安全且幂等。
 2. **Production 删除。** 用数据库时间原子写入 tenant 级 `deleted_at`、`purge_after` 和删除前状态快照；恢复期限按日历年计算，`purge_after = deleted_at + interval '1 year'`，闰日映射及时间边界须在实施前用测试明确。提交成功后立即拒绝该 tenant 的登录、Session 刷新、新扫描、业务写入、新邮件任务和后台待发送任务。所有仍有效的 tenant Session 撤销；取消或终止尚未调用 provider 的任务，但不改写已发送、已取消或 `delivery_unknown` 等历史事实。删除期间保留 tenant 及关联数据，仅平台控制台显示最小删除状态、剩余期限和恢复入口，不开放业务数据读取。
 3. **Production 恢复。** 仅在数据库时间严格早于 `purge_after` 时允许恢复。恢复 tenant 级删除前状态，但不恢复已撤销 Session，也不重新排队因删除而终止的邮件；订阅仍按当前有效期和 ADR-003 门禁判断，过期订阅不因恢复自动续期。人员/地点若自身已进入 ADR-011 删除流程，不因 tenant 恢复而改变其独立状态。恢复与到期清理须以事务及条件更新防止竞态。
-4. **Production 到期。** `purge_after` 到达后立即拒绝恢复，即使后台清理尚未完成。后台按小批次、可重试流程清理在线业务数据库中的 tenant 关联数据和 PII，并留下不含业务数据的最小平台审计证据。清理顺序及外键处理须在 migration 与运维计划中完整列出；不得以仅匿名化 tenant 名称宣称已清理整个租户。备份生命周期及其中数据的清理由后续独立决策处理，本 ADR 不承诺清理备份副本。
+4. **Production 到期。** `purge_after` 到达后立即拒绝恢复，即使后台清理尚未完成。后台按小批次、可重试流程终结清理 tenant 及关联的当前业务对象：清除当前名称、邮箱等 PII，改写为非 PII 墓碑值，保留稳定的内部 UUID 关系；删除不再需要的当前授权、Session 和兼容标识。tenant 及其对象不得恢复或重新用于业务。清理顺序及外键处理须在 migration 与运维计划中完整列出；不得以仅匿名化 tenant 名称宣称已完成终结清理。备份生命周期及其中数据的清理由后续独立决策处理，本 ADR 不承诺清理备份副本。
 5. **Staging 删除。** 在同一密码确认和目标核对后，立即执行整租户及其关联数据的受控清理；不创建一年恢复期，也不显示恢复入口。Staging 不设数据保留期，本 ADR 不设计 Staging 备份。若清理不能原子完成，外部状态先保持不可访问并记录待补偿步骤；不得显示“已完成”而留下可业务访问的残余数据。仅使用 Staging 专用数据验证。
-6. **历史和回执。** 已提交的 provider 调用不能撤回；`sent` 与 `delivery_unknown` 不得改回待发送。Production 恢复期内保留原始扫码、邮件、attempt 和审计事实；到期清理与 ADR-011 的“历史不删除”规则之间的优先级须在接受本 ADR 时明确，并同步修订 ADR-011/013 的冲突文字。
+6. **历史和回执。** 已提交的 provider 调用不能撤回；`sent` 与 `delivery_unknown` 不得改回待发送。Production 到期后沿用 ADR-011 的历史规则：`scan_events`、`mail_jobs`、provider 回执、上下文快照与 `audit_logs` 保持不可变，内部 UUID 关联指向非 PII 墓碑。历史快照可能仍含当时固化的名称、邮箱或邮件内容；“非 PII 墓碑”只描述当前对象的清理结果，不表示历史记录已去标识化。历史记录不得使已终结清理的 tenant 重新可用；平台管理员仍不得读取租户业务明细。
 
-**待人工定案的细节：** 到期后不可变业务历史保留非 PII 墓碑，还是连同 tenant 一起从在线业务数据库清理；平台审计的最小保留字段和期限。上述事项直接影响数据处理承诺，未定案前不得把此提案改为 Accepted 或开始删除实现。数据库备份生命周期由后续独立决策处理；Staging 不考虑备份及数据保留。
+**范围说明：** Production 的一年期限结束后，当前对象改为非 PII 墓碑，不删除不可变业务历史；这与 ADR-011 的人员/地点终结清理语义一致。数据库备份生命周期由后续独立决策处理；Staging 不考虑备份及数据保留。本 ADR 仍须经人工整体批准，之后才能开始删除实现。
 
 ## Alternatives considered
 
 1. 只将 subscription 置为 `suspended`：可阻断部分业务，但仍可按现有流程恢复，不能表达一年保留、到期不可恢复或 Staging 立即清理。
 2. 对 tenant 直接执行数据库 `DELETE CASCADE`：会绕过当前 Restrict 关系、不可变历史和审计边界，也难以保证在途邮件一致，否决。
 3. Production 与 Staging 共用一年软删除：实现简单，但不满足用户指定的 Staging 立即删除，否决。
+4. Production 到期后物理删除全部关联历史：会破坏 ADR-011、ADR-008 的不可变历史及审计约束，且不符合本次人工选择，否决。
 
 ## Consequences
 
-平台控制台可提供与环境一致的删除/恢复体验；代价是所有 tenant 门禁、worker、数据模型、清理器和审计都要加入 tenant 生命周期判断。数据库备份尚无生命周期设计，产品文案必须明确本 ADR 的清理范围仅为在线业务数据库，不能承诺备份副本同步清除。
+平台控制台可提供与环境一致的删除/恢复体验；代价是所有 tenant 门禁、worker、数据模型、清理器和审计都要加入 tenant 生命周期判断。Production 到期后保留不可变历史及可能含有历史 PII 的快照，产品文案须明确“终结清理”并不等于清除所有历史 PII。数据库备份尚无生命周期设计，也不能承诺备份副本同步清除。
 
 ## Migration impact
 
@@ -49,7 +50,7 @@ Production 需要 tenant 生命周期字段、索引、约束和安全回填；�
 
 ## Follow-up
 
-1. 用户先决定到期后历史与平台审计的待定事项；按模板修订本 ADR 并取得 Accepted 状态，随后同步修订 ADR-013 和受影响的 ADR-011 文字。数据库备份生命周期另行决策。
+1. 将本 ADR 交由人工整体审阅并取得 Accepted 状态，随后同步修订 ADR-013 的租户删除边界；ADR-011 的既有历史规则保持适用。数据库备份生命周期另行决策。
 2. 按 1–8 小时范围拆分 schema/门禁、平台重新验密与删除 API、Production 恢复/到期清理、Staging 立即清理、UI、运维和测试 Issue。
 3. 实施时更新 `docs/architecture.md`、`docs/database.md`、`docs/api.md`、`docs/admin-guide.md`、`docs/deployment.md` 和 `docs/issue-archive.md`。
-4. 最低测试矩阵：正常删除/恢复/到期；错误密码、过期 Session、未知目标、重复与并发；tenant 与角色越权；`trial/active/expired/suspended`；待发/已发/未知邮件；闰日、期限边界、清理失败和回滚；Staging/Production 环境判定及在线数据残留。全部使用合成数据，不调用真实邮件 provider。
+4. 最低测试矩阵：正常删除/恢复/到期；错误密码、过期 Session、未知目标、重复与并发；tenant 与角色越权；`trial/active/expired/suspended`；待发/已发/未知邮件；当前 PII 清理、非 PII 墓碑和历史快照不变；闰日、期限边界、清理失败和回滚；Staging/Production 环境判定及在线数据残留。全部使用合成数据，不调用真实邮件 provider。
