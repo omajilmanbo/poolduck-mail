@@ -553,6 +553,9 @@ describe('Platform control plane', () => {
     const staging = await agent.get('/api/platform/auth/environment').expect(200);
     expect(staging.body).toEqual({ environment: 'staging', deletion_enabled: false });
     expect(staging.headers['cache-control']).toBe('no-store');
+    process.env.STAGING_TENANT_DELETE_ENABLED = 'true';
+    const enabled = await agent.get('/api/platform/auth/environment').expect(200);
+    expect(enabled.body).toEqual({ environment: 'staging', deletion_enabled: true });
     delete process.env.STAGING_TENANT_DELETE_ENABLED;
   });
 

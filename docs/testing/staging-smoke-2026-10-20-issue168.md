@@ -10,3 +10,9 @@
 - 公网：`/`、`/platform`、`/health`、`/healthz` 均为 HTTPS 200 且 TLS 校验通过；HTTP 首页 308 跳转 HTTPS。平台页返回 CSP、HSTS、`nosniff`、`X-Frame-Options: DENY`；外部访问 3000、3001、5432 均未建立连接。已部署平台页面 Playwright 用例 2/2 通过，API 为测试拦截，不操作真实平台租户。
 - 最终状态：Backend、Frontend、PostgreSQL、reverse-proxy 均 healthy；Backend 运行配置仍为 mock/false。Staging 物理删除入口未启用，未执行删除或恢复真实租户。
 - 回滚：保留上述数据库备份及所有 Compose 卷，代码回到前一个已验证提交 `7c8bb9e`，只重建 Backend/Frontend，并复核迁移兼容性、健康和 smoke。若数据库已有租户进入删除流程，保留生命周期字段及门禁，遵循 `docs/operation.md`，不得直接撤销迁移或重新开放业务。本次未执行回滚。
+
+## Staging 删除入口纠正
+
+初次部署把 `STAGING_TENANT_DELETE_ENABLED` 留为关闭，与用户要求开放 Staging 即时删除不符。用户再次明确要求开放，并确认 Staging 中 4 个非 `.example.local` 邮箱均为获批的受控测试地址。修正提交 `5072c8914236528d87ee6b8624d653f8699e139b` 将该开关从 Compose 传入 Backend；主机 `.env` 显式设为 `true`，权限仍为 600。`docker compose config` 的最终值为 `true`。
+
+仅重建 Backend 后，运行时确认 `APP_ENV=staging`、`STAGING_TENANT_DELETE_ENABLED=true`、`MAIL_PROVIDER=mock`、`REAL_MAIL_SEND_ENABLED=false`，Backend 和其余三个容器均 healthy。公网 `/platform` 与 `/health` 返回 HTTPS 200，未登录访问 `/api/platform/auth/environment` 返回 401。认证后接口对 Staging 的 `deletion_enabled=true` 在合成平台管理员测试中验证；本次未使用现有平台管理员凭据，也未实际删除租户。Staging 删除会直接物理清理在线关联数据，没有一年保留或恢复入口。
