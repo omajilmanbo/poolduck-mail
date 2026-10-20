@@ -201,7 +201,11 @@ describe('platform tenant deletion UI', () => {
     fireEvent.change(password, { target: { value: 'wrong' } });
     fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
     await waitFor(() => expect(password.value).toBe(''));
-    await waitFor(() => expect(screen.getByText('管理员密码错误，未执行删除。')).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('管理员密码错误，未执行删除。'));
+    expect(screen.getByRole('button', { name: '取消' }).hasAttribute('disabled')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText('管理员密码错误，未执行删除。')).toBeNull();
     expect(screen.queryByText(/已进入删除期/)).toBeNull();
   });
 
@@ -271,7 +275,7 @@ describe('platform tenant deletion UI', () => {
     const password = screen.getByLabelText('删除确认密码') as HTMLInputElement;
     fireEvent.change(password, { target: { value: 'synthetic-secret' } });
     fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
-    await waitFor(() => expect(screen.getByText(/请求结果未知/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('请求结果未知'));
     expect(password.value).toBe('');
     expect(screen.queryByText(/在线数据已删除/)).toBeNull();
   });

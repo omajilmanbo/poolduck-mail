@@ -364,6 +364,7 @@ Implementation notes:
   不回填或更改现有租户及其外键/历史关系。`backend/prisma/rollback/20261020000000_add_tenant_deletion_lifecycle.sql`
   仅在没有任何租户进入删除流程时允许移除新字段；否则拒绝回滚并保留状态。先在停写维护窗口确认无 `staging_deleting`、`pending_delete` 或 `purged`，再依逆序运行 `20261020020000_guard_staging_tenant_deletion.sql`、`20261020010000_guard_purged_tenant_current_writes.sql`、生命周期 rollback；每步均有状态守卫，拒绝时保留现有门禁。
 - Core tenant-scoped indexes are included for users, devices, locations, person mappings, scan events, mail jobs, and audit logs.
+- `20261020030000_index_tenant_staging_purge_foreign_keys` 为 Staging 整租户物理清理涉及的子表外键列增加索引。大租户删除父行时，PostgreSQL 外键检查因此无需反复全表扫描已删除但尚未 vacuum 的子表行。部署此迁移前须结束旧版正在运行的清理事务，迁移完成后再重试 `staging_deleting` 租户。
 
 Local migration commands:
 

@@ -524,6 +524,9 @@ export class PlatformTenantsService {
       if (process.env.APP_ENV !== 'staging' || process.env.STAGING_TENANT_DELETE_ENABLED !== 'true') {
         throw new Error('STAGING_PURGE_WRONG_ENVIRONMENT');
       }
+      // The Prisma transaction timeout does not cancel a PostgreSQL statement
+      // already running inside the driver. Bound the database work as well.
+      await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout', '110000', true)`);
       const locked = await tx.$queryRaw<Array<{ status: string }>>(Prisma.sql`
         SELECT status FROM tenants WHERE id = ${tenantId}::uuid FOR UPDATE
       `);

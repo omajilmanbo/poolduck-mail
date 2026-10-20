@@ -44,6 +44,7 @@ export default function PlatformPage() {
   const [environment, setEnvironment] = useState<PlatformEnvironment | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PlatformTenantSummary | null>(null);
   const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
   const [notice, setNotice] = useState('');
   const [tenants, setTenants] = useState<PlatformTenantSummary[]>([]);
   const [selectedCode, setSelectedCode] = useState('');
@@ -227,6 +228,7 @@ export default function PlatformPage() {
     setDeletePassword('');
     setBusy(true);
     setError('');
+    setDeleteError('');
     setNotice('');
     try {
       const result = await api.deleteTenant(targetCode, password);
@@ -236,10 +238,12 @@ export default function PlatformPage() {
         ? `租户 ${targetCode} 的 Staging 在线数据已删除，无法恢复。`
         : `租户 ${targetCode} 已进入删除期。请以服务端显示的恢复截止时间为准。`);
     } catch (caught) {
-      setError(caught instanceof ApiError && caught.code !== 'NETWORK_ERROR'
+      setDeleteError(caught instanceof ApiError && caught.code !== 'NETWORK_ERROR'
         ? message(caught)
         : '请求结果未知。请刷新租户状态；若 Staging 显示清理中，重新输入密码后重试。');
-      await load();
+      if (!(caught instanceof ApiError && caught.code === 'PLATFORM_DELETE_PASSWORD_INVALID')) {
+        void load();
+      }
     } finally {
       setBusy(false);
       setDeletePassword('');
@@ -413,7 +417,7 @@ export default function PlatformPage() {
                 {selected.status === 'staging_deleting' ? <p className="mt-2 text-sm text-amber-200">清理中或上次清理失败；目标已禁止访问。请重新输入密码重试。</p> : null}
                 <div className="mt-3 flex flex-wrap gap-2">
                   {environment?.deletion_enabled && selected.subscription?.status !== 'active' && !pending && selected.status !== 'purged' ? (
-                    <button type="button" disabled={busy} onClick={() => { setDeleteTarget(selected); setDeletePassword(''); setError(''); }} className="rounded-md border border-rose-500 px-3 py-2 text-sm text-rose-100 disabled:opacity-50">
+                    <button type="button" disabled={busy} onClick={() => { setDeleteTarget(selected); setDeletePassword(''); setDeleteError(''); setError(''); }} className="rounded-md border border-rose-500 px-3 py-2 text-sm text-rose-100 disabled:opacity-50">
                       {selected.status === 'staging_deleting' ? '重试清理' : '删除租户'}
                     </button>
                   ) : null}
@@ -454,8 +458,9 @@ export default function PlatformPage() {
                 onChange={(event) => setDeletePassword(event.target.value)} required autoFocus
                 className="mt-1 w-full rounded-md border border-slate-600 bg-slate-950 px-3 py-2" />
             </label>
+            {deleteError ? <p role="alert" className="mt-3 text-sm text-rose-200">{deleteError}</p> : null}
             <div className="mt-5 flex flex-wrap justify-end gap-2">
-              <button type="button" disabled={busy} onClick={() => { setDeleteTarget(null); setDeletePassword(''); }} className="rounded-md border border-slate-600 px-3 py-2 text-sm">取消</button>
+              <button type="button" disabled={busy} onClick={() => { setDeleteTarget(null); setDeletePassword(''); setDeleteError(''); }} className="rounded-md border border-slate-600 px-3 py-2 text-sm">取消</button>
               <button type="submit" disabled={busy || !deletePassword} className="rounded-md bg-rose-500 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">确认删除</button>
             </div>
           </form>

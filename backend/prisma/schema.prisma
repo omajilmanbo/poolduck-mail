@@ -204,6 +204,11 @@ model ScanEvent {
   idempotencyRecords ScanRequestIdempotency[]
 
   @@index([tenantId, receivedAt])
+  @@index([deviceId])
+  @@index([locationId])
+  @@index([personMappingId])
+  @@index([createdByUserId])
+  @@index([canceledByUserId])
   @@index([tenantId, locationId, createdAt])
   @@index([tenantId, personMappingId, createdAt])
   @@index([tenantId, locationId, personMappingId, receivedAt])
@@ -246,6 +251,9 @@ model MailJob {
   deliveryAttempts      MailDeliveryAttempt[]
 
   @@index([tenantId, status, createdAt])
+  @@index([locationId])
+  @@index([personMappingId])
+  @@index([scanEventId])
   @@index([status, sendNotBefore])
   @@index([status, scheduledAt])
   @@index([status, claimedAt])
@@ -292,6 +300,8 @@ model ScanRequestIdempotency {
   mailJob            MailJob   @relation(fields: [mailJobId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, route, keyHash])
+  @@index([scanEventId])
+  @@index([mailJobId])
   @@index([expiresAt])
   @@map("scan_request_idempotency")
 }
@@ -310,6 +320,7 @@ model AuditLog {
   actorUser    User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, createdAt])
+  @@index([actorUserId])
   @@map("audit_logs")
 }
 
