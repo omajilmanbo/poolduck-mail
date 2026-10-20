@@ -243,3 +243,7 @@ MVP 阶段邮件主题和纯文本正文由后端根据动作码中的动作生�
 内部 `PlatformTenantPurgeService` 提供单租户事务入口，供 #163 调度器调用；本阶段不启动调度，也不提供 HTTP 路由。入口只允许 `APP_ENV=production`，以 tenant UUID 锁定行，按数据库时间判定到期。恢复事务使用同一行锁；到期后恢复被拒。清理当前授权、Session 和兼容标识后，将 tenant、user、device、location、person 当前对象改为非 PII 墓碑；subscription 继续 `suspended`。成功审计与状态切换同事务提交，失败时全量回滚，可重试。当前对象的数据库写入门禁共用该行锁，阻止清理后并发写回。完整表顺序及外键矩阵见 `docs/database.md`。
 
 不可变扫码、邮件、provider 回执及审计历史维持原字段值和 UUID 关联；历史快照可能仍有 PII。终结 tenant 不可恢复或复用，平台控制面仍只读最小 tenant 摘要，不暴露历史业务明细。
+
+## Staging 整租户立即清理（ADR-023 / #164）
+
+可信 `APP_ENV=staging` 且人工审核后打开 `STAGING_TENANT_DELETE_ENABLED=true` 时，平台删除 API 先重新验密，将目标原子切换为不可访问的 `staging_deleting` 与订阅 `suspended`；第二事务按 `docs/database.md` 的 FK 顺序物理清理全部在线记录。第二事务失败时保留第一阶段的禁止访问状态和待补偿审计，平台管理员重新验密重试。成功仅留下无客户明细的最小平台操作结果供重复请求安全重放。Production 没有此物理清理路径。

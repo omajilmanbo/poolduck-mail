@@ -44,6 +44,12 @@ PostgreSQL 的日历年计算将 2024-02-29 12:00 映射为 2025-02-28 12:00（�
 
 `20261020010000_guard_purged_tenant_current_writes` 为上述当前对象表的 INSERT/UPDATE 加数据库门禁：写入时共享锁定 tenant 行并拒绝 `purged`，与清理事务的独占行锁串行化，防止已进入处理的请求在清理提交后重新写入 PII、Session 或兼容标识。历史表不加此门禁，也不改写原记录。
 
+### ADR-023 Staging 物理清理矩阵（#164）
+
+Staging 删除先在独立事务验平台 Session 与密码，确认订阅不是 `active`，将 tenant 置为 `staging_deleting`、订阅置为 `suspended`，记录仅含内部 ID 的待补偿审计。`staging_deleting` 不使用一年生命周期字段；认证拒绝登录、刷新及已有租户 token，`20261020020000_guard_staging_tenant_deletion` 使当前对象写入门禁也拒绝此状态。物理清理失败时前述状态持久保留，重新验密后可重试。
+
+物理清理在单个事务中按 FK 子表到父表顺序删除：`scan_request_idempotency` → `mail_delivery_attempts` → `mail_jobs` → `scan_events` → `audit_logs` → `sessions` → `operator_location_assignments` → `location_legacy_identifiers` → `person_mappings` → `locations` → `devices` → `users` → `subscriptions` → `platform_tenant_idempotency` → 目标 `platform_audit_logs` → `tenants`。外键 Restrict 保证遗漏子行会使事务回滚，不允许部分完成。成功事务最后仅保留一条无 tenant FK 的平台操作结果，含内部 UUID、随机公共码的 SHA-256、删除计数和安全原因码；重复请求重新验密后凭该记录幂等返回。Staging 不保留 tenant 当前对象、历史扫码/邮件/回执/审计，也没有恢复入口或数据保留期。此路径不用于 Production。
+
 ## 2. users
 
 > 用法：可登录系统的租户账号表（仅后台管理用户，不等同于收件人）。管理员分为

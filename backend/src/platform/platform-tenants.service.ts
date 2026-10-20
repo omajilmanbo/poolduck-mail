@@ -294,6 +294,9 @@ export class PlatformTenantsService {
     requestId?: string,
   ) {
     const environment = process.env.APP_ENV ?? 'unknown';
+    if (environment === 'staging') {
+      return this.deleteStagingTenant(admin, tenantCode, dto, requestId);
+    }
     const safeRequestId = requestId && /^[A-Za-z0-9_-]{1,128}$/.test(requestId)
       ? requestId
       : undefined;
@@ -417,6 +420,150 @@ export class PlatformTenantsService {
       });
       throw error;
     }
+  }
+
+  private async deleteStagingTenant(
+    admin: AuthenticatedPlatformAdmin,
+    tenantCode: string,
+    dto: DeletePlatformTenantDto,
+    requestId?: string,
+  ) {
+    const code = tenantCode.trim().toUpperCase();
+    const codeHash = this.sha256(code);
+    const safeRequestId = requestId && /^[A-Za-z0-9_-]{1,128}$/.test(requestId)
+      ? requestId : undefined;
+    let targetTenantId: string | undefined;
+    try {
+      const phase = await this.prisma.$transaction(async (tx) => {
+        const identity = await tx.$queryRaw<Array<{ password_hash: string }>>(Prisma.sql`
+          SELECT a.password_hash FROM platform_sessions s
+          JOIN platform_admins a ON a.id = s.platform_admin_id
+          WHERE s.id = ${admin.session_id}::uuid
+            AND s.platform_admin_id = ${admin.platform_admin_id}::uuid
+            AND s.revoked_at IS NULL
+            AND s.expires_at > (clock_timestamp() AT TIME ZONE 'UTC')
+            AND s.identity_version_snapshot = ${admin.identity_version}
+            AND a.identity_version = ${admin.identity_version}
+            AND a.status = 'active'
+          FOR UPDATE OF s, a
+        `);
+        if (!identity[0]) throw new ForbiddenException({
+          code: 'PLATFORM_DELETE_SESSION_INVALID', message: '平台会话已失效',
+        });
+        if (!(await this.passwordMatches(identity[0].password_hash, dto.password))) {
+          throw new ForbiddenException({
+            code: 'PLATFORM_DELETE_PASSWORD_INVALID', message: '管理员密码错误',
+          });
+        }
+        if (process.env.APP_ENV !== 'staging' || process.env.STAGING_TENANT_DELETE_ENABLED !== 'true') {
+          throw new ServiceUnavailableException({
+            code: 'PLATFORM_TENANT_DELETE_ENV_UNAVAILABLE', message: '当前环境尚未开放租户删除',
+          });
+        }
+        const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>(Prisma.sql`
+          SELECT id, status FROM tenants WHERE tenant_code = ${code} FOR UPDATE
+        `);
+        if (!locked[0]) {
+          const prior = await tx.$queryRaw<Array<{ resource_id: string }>>(Prisma.sql`
+            SELECT resource_id FROM platform_audit_logs
+            WHERE action = 'platform.tenant.staging_deleted'
+              AND metadata_json->>'tenant_code_hash' = ${codeHash}
+            ORDER BY created_at DESC LIMIT 1
+          `);
+          if (!prior[0]) throw this.notFound();
+          return { tenantId: prior[0].resource_id, replayed: true };
+        }
+        const tenant = locked[0];
+        if (tenant.status === 'staging_deleting') return { tenantId: tenant.id, replayed: false };
+        if (tenant.status === 'pending_delete' || tenant.status === 'purged') throw this.deletionConflict();
+        const subscription = await tx.subscription.findUnique({ where: { tenantId: tenant.id } });
+        if (!subscription) throw this.notFound();
+        if (subscription.status === 'active') throw new ConflictException({
+          code: 'PLATFORM_TENANT_ACTIVE_SUBSCRIPTION',
+          message: '订阅处于 active 状态的租户不能删除',
+        });
+        await tx.tenant.update({ where: { id: tenant.id }, data: {
+          status: 'staging_deleting', platformVersion: { increment: 1 },
+        } });
+        await tx.subscription.update({ where: { id: subscription.id }, data: {
+          status: 'suspended', version: { increment: 1 },
+        } });
+        await tx.platformAuditLog.create({ data: {
+          platformAdminId: admin.platform_admin_id, targetTenantId: tenant.id,
+          requestId: safeRequestId, action: 'platform.tenant.staging_delete_started',
+          resourceType: 'tenant', resourceId: tenant.id, result: 'success',
+          metadataJson: { environment: 'staging', reason: 'CLEANUP_PENDING' },
+        } });
+        return { tenantId: tenant.id, replayed: false };
+      });
+      targetTenantId = phase.tenantId;
+      let replayed = phase.replayed;
+      if (!phase.replayed) {
+        replayed = !(await this.purgeStagingTenant(phase.tenantId, admin.platform_admin_id, codeHash, safeRequestId));
+      }
+      return { tenant_code: code, status: 'deleted', deleted_at: null, purge_after: null,
+        idempotency_replayed: replayed };
+    } catch (error) {
+      const cause = error instanceof HttpException
+        ? (error.getResponse() as { code?: string }).code ?? 'REQUEST_REJECTED'
+        : 'TRANSACTION_FAILED';
+      await this.audit.record({
+        platformAdminId: admin.platform_admin_id, targetTenantId,
+        requestId: safeRequestId, action: 'platform.tenant.staging_delete',
+        resourceType: 'tenant', resourceId: targetTenantId ?? 'unknown', result: 'failure',
+        metadata: { environment: 'staging', reason: cause },
+      });
+      throw error;
+    }
+  }
+
+  private async purgeStagingTenant(
+    tenantId: string, platformAdminId: string, codeHash: string, requestId?: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      if (process.env.APP_ENV !== 'staging' || process.env.STAGING_TENANT_DELETE_ENABLED !== 'true') {
+        throw new Error('STAGING_PURGE_WRONG_ENVIRONMENT');
+      }
+      const locked = await tx.$queryRaw<Array<{ status: string }>>(Prisma.sql`
+        SELECT status FROM tenants WHERE id = ${tenantId}::uuid FOR UPDATE
+      `);
+      if (!locked[0]) {
+        const prior = await tx.platformAuditLog.findFirst({
+          where: { action: 'platform.tenant.staging_deleted', resourceId: tenantId,
+            metadataJson: { path: ['tenant_code_hash'], equals: codeHash } },
+          select: { id: true },
+        });
+        if (!prior) throw new Error('STAGING_PURGE_RESULT_MISSING');
+        return false;
+      }
+      if (locked[0].status !== 'staging_deleting') throw new Error('STAGING_PURGE_INVALID_STATE');
+
+      const counts = {
+        scan_idempotencies: (await tx.scanRequestIdempotency.deleteMany({ where: { tenantId } })).count,
+        attempts: (await tx.mailDeliveryAttempt.deleteMany({ where: { tenantId } })).count,
+        mail_jobs: (await tx.mailJob.deleteMany({ where: { tenantId } })).count,
+        scan_events: (await tx.scanEvent.deleteMany({ where: { tenantId } })).count,
+        audit_logs: (await tx.auditLog.deleteMany({ where: { tenantId } })).count,
+        sessions: (await tx.session.deleteMany({ where: { tenantId } })).count,
+        assignments: (await tx.operatorLocationAssignment.deleteMany({ where: { tenantId } })).count,
+        legacy_identifiers: (await tx.locationLegacyIdentifier.deleteMany({ where: { tenantId } })).count,
+        people: (await tx.personMapping.deleteMany({ where: { tenantId } })).count,
+        locations: (await tx.location.deleteMany({ where: { tenantId } })).count,
+        devices: (await tx.device.deleteMany({ where: { tenantId } })).count,
+        users: (await tx.user.deleteMany({ where: { tenantId } })).count,
+        subscriptions: (await tx.subscription.deleteMany({ where: { tenantId } })).count,
+        platform_idempotencies: (await tx.platformTenantIdempotency.deleteMany({ where: { tenantId } })).count,
+        platform_audit_logs: (await tx.platformAuditLog.deleteMany({ where: { targetTenantId: tenantId } })).count,
+      };
+      const deleted = await tx.tenant.deleteMany({ where: { id: tenantId, status: 'staging_deleting' } });
+      if (deleted.count !== 1 || counts.subscriptions !== 1) throw new Error('STAGING_PURGE_COUNT_MISMATCH');
+      await tx.platformAuditLog.create({ data: {
+        platformAdminId, requestId, action: 'platform.tenant.staging_deleted',
+        resourceType: 'tenant', resourceId: tenantId, result: 'success',
+        metadataJson: { environment: 'staging', reason: 'DELETED', tenant_code_hash: codeHash, counts },
+      } });
+      return true;
+    }, { timeout: 120_000 });
   }
 
   async restoreTenant(
