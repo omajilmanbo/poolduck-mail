@@ -51,6 +51,6 @@ Production 需要 tenant 生命周期字段、索引、约束和安全回填；�
 ## Follow-up
 
 1. 2026-10-20 人工接受本 ADR：Production 按日历年保留一年且可恢复，到期沿用 ADR-011 的非 PII 当前对象墓碑和不可变历史规则；Staging 立即删除且不保留。同步修订 ADR-013 的租户删除边界；ADR-011 的既有历史规则保持适用。数据库备份生命周期另行决策。
-2. 按 1–8 小时范围拆分 schema/门禁、平台重新验密与删除 API、Production 恢复/到期清理、Staging 立即清理、UI、运维和测试 Issue。
+2. 已按 1–8 小时范围拆分实施 Issue：#157 生命周期 schema，#158 认证与业务门禁，#159 邮件安全终止，#160 平台删除 API，#161 Production 恢复，#162 当前对象墓碑，#163 到期调度，#164 Staging 立即清理，#165 平台 UI，#166 集成验收与运维文档。
 3. 实施时更新 `docs/architecture.md`、`docs/database.md`、`docs/api.md`、`docs/admin-guide.md`、`docs/deployment.md` 和 `docs/issue-archive.md`。
 4. 最低测试矩阵：正常删除/恢复/到期；错误密码、过期 Session、未知目标、重复与并发；tenant 与角色越权；`trial/active/expired/suspended`；待发/已发/未知邮件；当前 PII 清理、非 PII 墓碑和历史快照不变；闰日、期限边界、清理失败和回滚；Staging/Production 环境判定及在线数据残留。全部使用合成数据，不调用真实邮件 provider。
