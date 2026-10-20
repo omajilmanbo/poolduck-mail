@@ -509,3 +509,8 @@ Safety rules:
 - 回滚 #96 时先停止写入并回滚应用，再运行 `backend/prisma/rollback/20260724020000_add_operator_location_assignments.sql`。旧应用会恢复此前“operator 可访问 tenant 全部地点”的宽权限行为，执行前必须获得安全负责人确认。
 - `20260728020000_add_delayed_deletion` 不删除或回填现有记录。发布后确认 migration 已应用、清理器启动且
   使用数据库时间；应用回滚时保留新增列，避免丢失尚在 14 天恢复期内的生命周期状态。
+- `20261020000000_add_tenant_deletion_lifecycle` 只扩展租户表，不启动租户删除功能。
+  应先应用迁移并确认既有租户状态及订阅未改变，后续 #160 才能开放删除入口。
+  回滚应用前保留生命周期字段；仅在确认没有租户进入删除流程且停止相关写入后，
+  才可执行 `backend/prisma/rollback/20261020000000_add_tenant_deletion_lifecycle.sql`。
+  若脚本拒绝回滚，保留字段和暂停订阅状态，不得通过旧代码重新开放扫码或发信。

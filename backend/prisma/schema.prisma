@@ -7,29 +7,34 @@ datasource db {
 }
 
 model Tenant {
-  id                          String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantCode                  String                       @unique @map("tenant_code") @db.VarChar(10)
-  name                        String                       @db.VarChar(255)
-  status                      String                       @default("active") @db.VarChar(32)
-  locationLimit               Int                          @map("location_limit")
-  platformVersion             Int                          @default(1) @map("platform_version")
-  createdAt                   DateTime                     @default(now()) @map("created_at")
-  updatedAt                   DateTime                     @updatedAt @map("updated_at")
-  users                       User[]
-  subscription                Subscription?
-  devices                     Device[]
-  locations                   Location[]
-  personMappings              PersonMapping[]
-  scanEvents                  ScanEvent[]
-  mailJobs                    MailJob[]
-  mailDeliveryAttempts        MailDeliveryAttempt[]
-  auditLogs                   AuditLog[]
-  sessions                    Session[]
-  scanIdempotencies           ScanRequestIdempotency[]
-  operatorLocationAssignments OperatorLocationAssignment[]
-  platformAuditLogs           PlatformAuditLog[]
-  platformIdempotencies       PlatformTenantIdempotency[]
+  id                            String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantCode                    String                       @unique @map("tenant_code") @db.VarChar(10)
+  name                          String                       @db.VarChar(255)
+  status                        String                       @default("active") @db.VarChar(32)
+  deletedAt                     DateTime?                    @map("deleted_at")
+  purgeAfter                    DateTime?                    @map("purge_after")
+  deletedFromStatus             String?                      @map("deleted_from_status") @db.VarChar(32)
+  deletedFromSubscriptionStatus String?                      @map("deleted_from_subscription_status") @db.VarChar(32)
+  locationLimit                 Int                          @map("location_limit")
+  platformVersion               Int                          @default(1) @map("platform_version")
+  createdAt                     DateTime                     @default(now()) @map("created_at")
+  updatedAt                     DateTime                     @updatedAt @map("updated_at")
+  users                         User[]
+  subscription                  Subscription?
+  devices                       Device[]
+  locations                     Location[]
+  personMappings                PersonMapping[]
+  scanEvents                    ScanEvent[]
+  mailJobs                      MailJob[]
+  mailDeliveryAttempts          MailDeliveryAttempt[]
+  auditLogs                     AuditLog[]
+  sessions                      Session[]
+  scanIdempotencies             ScanRequestIdempotency[]
+  operatorLocationAssignments   OperatorLocationAssignment[]
+  platformAuditLogs             PlatformAuditLog[]
+  platformIdempotencies         PlatformTenantIdempotency[]
 
+  @@index([purgeAfter, status])
   @@map("tenants")
 }
 

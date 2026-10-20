@@ -31,6 +31,7 @@
     "test": "jest --runInBand",
     "test:db": "npm run prisma:generate && node scripts/prisma-smoke-test.mjs",
     "validate:adr017": "npm run build && node scripts/adr017-release-validation.mjs",
+    "test:tenant-lifecycle-migration": "node scripts/tenant-lifecycle-migration-test.mjs",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
   },

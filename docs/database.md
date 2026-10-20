@@ -9,12 +9,19 @@
 - `id` (pk, uuid)
 - `tenant_code` (varchar(10), unique) - 服务端生成的全局唯一 Crockford Base32 登录标识；不可由客户指定或修改
 - `name` (varchar)
-- `status` (varchar) - active/suspended
+- `status` (varchar) - active/suspended；ADR-023 后续删除实现使用 pending_delete/purged
+- `deleted_at` / `purge_after` (timestamp, nullable) - ADR-023 Production 删除起点与一日历年恢复截止；数据库时间为权威，恰好到期不可恢复
+- `deleted_from_status` / `deleted_from_subscription_status` (varchar(32), nullable) - 删除前 tenant 与 subscription 状态快照，供后续恢复 API 使用
 - `location_limit` (integer, positive) - ADR-013 的人工运营额度；active/inactive/pending deletion
   location 均计数，purged 后释放
 - `platform_version` (integer) - platform_admin 修改 subscription/额度时使用的乐观并发版本
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
+
+`deleted_at`、`purge_after` 和两项状态快照必须同时为空或同时非空；非空时 tenant
+`status` 为 `pending_delete` / `purged`，且 `purge_after = deleted_at + interval '1 year'`。
+PostgreSQL 的日历年计算将 2024-02-29 12:00 映射为 2025-02-28 12:00（数据库时间）。
+到期扫描索引为 `(purge_after, status)`。#157 只增加数据模型，不开放删除/恢复入口。
 
 ## 2. users
 
@@ -326,6 +333,9 @@ Implementation notes:
   公开业务 ID 和关系锚点，但地点名称、人员姓名和邮箱被匿名化。成功扫码、邮件和审计历史不删除。
 - `20260728020000_add_delayed_deletion` 仅增加可空列与索引，不回填或删除现有数据。该生命周期迁移
   不提供破坏性 SQL 回滚；需要回滚应用时保留新增列，待恢复版本再次接管到期清理。
+- `20261020000000_add_tenant_deletion_lifecycle` 仅扩展 `tenants` 的可空字段、约束和索引，
+  不回填或更改现有租户及其外键/历史关系。`backend/prisma/rollback/20261020000000_add_tenant_deletion_lifecycle.sql`
+  仅在没有任何租户进入删除流程时允许移除新字段；否则拒绝回滚并保留状态。
 - Core tenant-scoped indexes are included for users, devices, locations, person mappings, scan events, mail jobs, and audit logs.
 
 Local migration commands:
