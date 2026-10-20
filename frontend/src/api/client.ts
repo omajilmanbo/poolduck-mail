@@ -188,6 +188,7 @@ export type PlatformTenantSummary = {
   manager: null | { email_masked: string | null; status: string };
   recent_platform_operation: null | {
     audit_id: string;
+    action: string;
     created_at: string;
     result: string;
   };

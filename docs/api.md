@@ -368,6 +368,7 @@ tenant 查询。响应只包含 tenant/subscription/额度/脱敏 manager 摘要
   脱敏首个 tenant_manager 和平台版本
 - 权限：platform_admin
 - 列表摘要包含 `deleted_at`、`purge_after`（未删除时均为 `null`）
+- `recent_platform_operation` 另返回平台审计的 `action`、`result`、时间与审计 ID；平台控制台仅用 Staging 删除开始/失败审计判断清理提示，不返回租户业务审计或敏感元数据
 
 ### GET `/api/platform/auth/environment`
 

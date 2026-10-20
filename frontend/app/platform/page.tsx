@@ -37,6 +37,21 @@ function message(error: unknown) {
   return '网络请求失败，请确认后端状态后重试。';
 }
 
+function stagingCleanupState(tenant: PlatformTenantSummary, now: number) {
+  if (tenant.status !== 'staging_deleting') return null;
+  const operation = tenant.recent_platform_operation;
+  if (operation?.action === 'platform.tenant.staging_delete' && operation.result === 'failure') {
+    return 'failed';
+  }
+  const startedAt = operation ? Date.parse(operation.created_at) : NaN;
+  if (operation?.action === 'platform.tenant.staging_delete_started' &&
+      operation.result === 'success' && Number.isFinite(startedAt) &&
+      startedAt <= now && now - startedAt < 10 * 60_000) {
+    return 'in_progress';
+  }
+  return 'unknown';
+}
+
 export default function PlatformPage() {
   const api = useMemo(() => createPlatformApiClient(), []);
   const [admin, setAdmin] = useState<PlatformAdminSummary | null>(null);
@@ -50,6 +65,7 @@ export default function PlatformPage() {
   const [selectedCode, setSelectedCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const [created, setCreated] = useState<CreatedTenantProvisioning | null>(null);
   const [name, setName] = useState('');
   const [managerEmail, setManagerEmail] = useState('');
@@ -87,6 +103,12 @@ export default function PlatformPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!tenants.some((tenant) => tenant.status === 'staging_deleting')) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [tenants]);
 
   useEffect(() => {
     void api.getMailMode()
@@ -273,6 +295,7 @@ export default function PlatformPage() {
   const pending = selected?.status === 'pending_delete';
   const expired = pending && selected?.purge_after
     ? new Date(selected.purge_after).getTime() <= Date.now() : false;
+  const cleanupState = selected ? stagingCleanupState(selected, now) : null;
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl px-4 py-5 sm:px-6">
@@ -414,9 +437,12 @@ export default function PlatformPage() {
                   </p>
                 ) : null}
                 {selected.status === 'purged' ? <p className="mt-2 text-sm text-slate-300">已终结清理，不能恢复或重新用于业务。</p> : null}
-                {selected.status === 'staging_deleting' ? <p className="mt-2 text-sm text-amber-200">清理中或上次清理失败；目标已禁止访问。请重新输入密码重试。</p> : null}
+                {cleanupState === 'in_progress' ? <p role="status" className="mt-2 text-sm text-amber-200">删除中：最近的清理请求已启动，目标已禁止访问。请刷新状态等待结果。</p> : null}
+                {cleanupState === 'failed' ? <p role="alert" className="mt-2 text-sm text-rose-200">删除失败：清理事务未完成，目标仍禁止访问。检查故障后重新验密重试。</p> : null}
+                {cleanupState === 'unknown' ? <p role="status" className="mt-2 text-sm text-amber-200">删除结果未确认：最近请求可能中断或超时，目标仍禁止访问。请核对后重新验密重试。</p> : null}
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {environment?.deletion_enabled && selected.subscription?.status !== 'active' && !pending && selected.status !== 'purged' ? (
+                  {cleanupState ? <button type="button" disabled={busy} onClick={() => void load()} className="rounded-md border border-slate-600 px-3 py-2 text-sm disabled:opacity-50">刷新删除状态</button> : null}
+                  {environment?.deletion_enabled && selected.subscription?.status !== 'active' && !pending && selected.status !== 'purged' && cleanupState !== 'in_progress' ? (
                     <button type="button" disabled={busy} onClick={() => { setDeleteTarget(selected); setDeletePassword(''); setDeleteError(''); setError(''); }} className="rounded-md border border-rose-500 px-3 py-2 text-sm text-rose-100 disabled:opacity-50">
                       {selected.status === 'staging_deleting' ? '重试清理' : '删除租户'}
                     </button>

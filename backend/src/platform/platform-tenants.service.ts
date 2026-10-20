@@ -474,7 +474,15 @@ export class PlatformTenantsService {
           return { tenantId: prior[0].resource_id, replayed: true };
         }
         const tenant = locked[0];
-        if (tenant.status === 'staging_deleting') return { tenantId: tenant.id, replayed: false };
+        if (tenant.status === 'staging_deleting') {
+          await tx.platformAuditLog.create({ data: {
+            platformAdminId: admin.platform_admin_id, targetTenantId: tenant.id,
+            requestId: safeRequestId, action: 'platform.tenant.staging_delete_started',
+            resourceType: 'tenant', resourceId: tenant.id, result: 'success',
+            metadataJson: { environment: 'staging', reason: 'CLEANUP_RETRY_PENDING' },
+          } });
+          return { tenantId: tenant.id, replayed: false };
+        }
         if (tenant.status === 'pending_delete' || tenant.status === 'purged') throw this.deletionConflict();
         const subscription = await tx.subscription.findUnique({ where: { tenantId: tenant.id } });
         if (!subscription) throw this.notFound();
@@ -812,7 +820,7 @@ export class PlatformTenantsService {
       platformAuditLogs: {
         orderBy: { createdAt: 'desc' as const },
         take: 1,
-        select: { id: true, createdAt: true, result: true },
+        select: { id: true, action: true, createdAt: true, result: true },
       },
     } satisfies Prisma.TenantSelect;
   }
@@ -851,6 +859,7 @@ export class PlatformTenantsService {
       recent_platform_operation: tenant.platformAuditLogs[0]
         ? {
             audit_id: tenant.platformAuditLogs[0].id,
+            action: tenant.platformAuditLogs[0].action,
             created_at: tenant.platformAuditLogs[0].createdAt.toISOString(),
             result: tenant.platformAuditLogs[0].result,
           }

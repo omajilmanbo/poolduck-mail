@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma.service';
+import { PlatformTenantsService } from '../src/platform/platform-tenants.service';
 
 describe('Platform control plane', () => {
   let app: INestApplication;
@@ -409,6 +410,30 @@ describe('Platform control plane', () => {
     const calls = prisma.platformAuditLog.create.mock.calls.map(([input]: [any]) => input.data);
     expect(calls.at(-1).result).toBe('failure');
     expect(calls.at(-1).metadataJson.reason).toBe('TRANSACTION_FAILED');
+  });
+
+  it('records a fresh staging cleanup start when retrying an inaccessible tenant', async () => {
+    process.env.APP_ENV = 'staging';
+    process.env.STAGING_TENANT_DELETE_ENABLED = 'true';
+    mockDeletionQueries('staging_deleting', 'suspended');
+    const service = app.get(PlatformTenantsService);
+    jest.spyOn(service as any, 'purgeStagingTenant').mockResolvedValue(true);
+    const agent = request.agent(app.getHttpServer());
+    try {
+      await agent.post('/api/platform/auth/login')
+        .send({ email: 'root@example.local', password }).expect(201);
+      const response = await agent.post(`/api/platform/tenants/${tenantCode}/delete`)
+        .send({ password }).expect(201);
+      expect(response.body.status).toBe('deleted');
+      expect(prisma.subscription.update).not.toHaveBeenCalled();
+      expect(prisma.platformAuditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+        targetTenantId: tenantId,
+        action: 'platform.tenant.staging_delete_started',
+        metadataJson: { environment: 'staging', reason: 'CLEANUP_RETRY_PENDING' },
+      }) });
+    } finally {
+      delete process.env.STAGING_TENANT_DELETE_ENABLED;
+    }
   });
 
   it('replays pending deletion without changing the deadline or subscription', async () => {

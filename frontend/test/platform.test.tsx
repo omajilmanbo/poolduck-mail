@@ -8,7 +8,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import PlatformLoginPage from '../app/platform/login/page';
 import PlatformPage from '../app/platform/page';
-import { createPlatformApiClient } from '../src/api/client';
+import { createPlatformApiClient, type PlatformTenantSummary } from '../src/api/client';
 
 describe('platform API client', () => {
   afterEach(() => {
@@ -133,7 +133,7 @@ describe('platform mail mode', () => {
 
 });
 
-const deletionTenant = {
+const deletionTenant: PlatformTenantSummary = {
   tenant_code: '10PDTEST01', name: 'Synthetic Tenant', status: 'active',
   created_at: '2026-01-01T00:00:00.000Z', platform_version: 1,
   location_limit: 1, location_count: 0,
@@ -144,7 +144,7 @@ const deletionTenant = {
 };
 
 function mockPlatformDeletion(environment: 'production' | 'staging',
-  tenant = deletionTenant, deleteResponse?: (password: string) => Promise<Response>) {
+  tenant: PlatformTenantSummary = deletionTenant, deleteResponse?: (password: string) => Promise<Response>) {
   return vi.fn(async (url: string, init?: RequestInit) => {
     const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), {
       status, headers: { 'content-type': 'application/json' },
@@ -218,6 +218,25 @@ describe('platform tenant deletion UI', () => {
     expect(screen.queryByRole('button', { name: '恢复租户' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '重试清理' }));
     expect(screen.getByRole('dialog').textContent).toContain('无法恢复');
+  });
+
+  it.each([
+    { action: 'platform.tenant.staging_delete_started', result: 'success',
+      created_at: new Date().toISOString(), label: '删除中', retry: false },
+    { action: 'platform.tenant.staging_delete', result: 'failure',
+      created_at: new Date().toISOString(), label: '删除失败', retry: true },
+    { action: 'platform.tenant.staging_delete_started', result: 'success',
+      created_at: '2020-01-01T00:00:00.000Z', label: '删除结果未确认', retry: true },
+  ])('distinguishes staging cleanup: $label', async (operation) => {
+    vi.stubGlobal('fetch', mockPlatformDeletion('staging', {
+      ...deletionTenant, status: 'staging_deleting',
+      subscription: { ...deletionTenant.subscription, status: 'suspended' },
+      recent_platform_operation: { audit_id: 'synthetic-audit', ...operation },
+    }));
+    render(<PlatformPage />);
+    await waitFor(() => expect(screen.getByText(new RegExp(operation.label))).toBeTruthy());
+    expect(Boolean(screen.queryByRole('button', { name: '重试清理' }))).toBe(operation.retry);
+    expect(screen.getByRole('button', { name: '刷新删除状态' })).toBeTruthy();
   });
 
   it('sends one deletion request when confirm is clicked twice', async () => {

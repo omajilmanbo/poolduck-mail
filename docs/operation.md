@@ -78,4 +78,6 @@ Issue #116 的执行与恢复使用 [`docs/testing/staging-capacity-runbook.md`]
 
 Staging 仅在 `APP_ENV=staging` 且 `STAGING_TENANT_DELETE_ENABLED=true` 时允许物理删除。若事务失败，目标停留在 `staging_deleting`，订阅保持 `suspended`；先用内部 tenant UUID 核对状态及各关联表计数，修复故障后由平台管理员在同一环境重新验密、重试相同目标。只有接口返回 `deleted` 且目标数据为零、平台结果审计存在，才确认完成。网络结果未知时先刷新平台状态再重试。不得将状态改回 active、绕开门禁或手工部分删除。Staging 不考虑备份和保留期。
 
+控制台“删除中”来自最近 10 分钟的开始审计，“删除失败”来自明确的失败审计；超过该窗口或缺少对应审计则显示“删除结果未确认”。这些是操作状态提示，不替代数据库残留核对。清理重试重新验密后写入新的开始审计，避免继续显示上一次失败。
+
 Production 到期失败时保留 `pending_delete` 与 `suspended`；查 `tenant_purge_alert` 原因码、待处理量和数据库锁/错误聚合，修复后由调度器重试。恢复只允许数据库时间严格早于 `purge_after`；到期即使清理还没运行也拒绝。暂停调度或回滚应用时保留 schema 与写入门禁。对于历史邮件的 `delivery_unknown`，仅人工对账，不重置发送状态。日志、工单和验收记录不得含管理员密码、租户名称、邮箱、邮件正文或原始 SQL 错误。
