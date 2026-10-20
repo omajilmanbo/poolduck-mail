@@ -157,6 +157,137 @@ describe('Platform control plane', () => {
     prisma.subscription.updateMany.mockResolvedValue({ count: 1 });
   }
 
+  function mockRestoreQueries(options: {
+    tenantStatus?: string;
+    originalTenantStatus?: string;
+    originalSubscriptionStatus?: string;
+    expired?: boolean;
+    subscriptionMismatch?: boolean;
+    sessionInvalid?: boolean;
+  } = {}) {
+    const tenantStatus = options.tenantStatus ?? 'pending_delete';
+    const originalTenantStatus = options.originalTenantStatus ?? 'active';
+    const originalSubscriptionStatus = options.originalSubscriptionStatus ?? 'trial';
+    prisma.$queryRaw = jest.fn(async (query: { strings: string[] }) => {
+      const sql = query.strings.join(' ');
+      if (sql.includes('FROM platform_sessions')) {
+        return options.sessionInvalid ? [] : [{ id: sessionId }];
+      }
+      if (sql.includes('FROM tenants')) return [{
+        status: tenantStatus,
+        deleted_from_status: originalTenantStatus,
+        deleted_from_subscription_status: originalSubscriptionStatus,
+      }];
+      if (sql.includes('UPDATE tenants')) {
+        return options.expired ? [] : [{ id: tenantId }];
+      }
+      throw new Error('Unexpected SQL');
+    });
+    prisma.subscription.updateMany.mockResolvedValue({
+      count: options.subscriptionMismatch ? 0 : 1,
+    });
+    prisma.tenant.findUnique.mockImplementation(async ({ where }: any) =>
+      where.id ? {
+        ...tenantRow,
+        status: originalTenantStatus,
+        deletedAt: null,
+        purgeAfter: null,
+        subscription: {
+          ...tenantRow.subscription,
+          status: originalSubscriptionStatus,
+          version: 3,
+        },
+      } : tenantRow,
+    );
+  }
+
+  it.each(['trial', 'active', 'expired', 'suspended'])(
+    'restores the previous %s subscription without changing its term',
+    async (originalSubscriptionStatus) => {
+      process.env.APP_ENV = 'production';
+      mockRestoreQueries({ originalSubscriptionStatus });
+      const endpoint = `/api/platform/tenants/${tenantCode}/restore`;
+      await request(app.getHttpServer()).post(endpoint).send({}).expect(401);
+      const agent = request.agent(app.getHttpServer());
+      await agent.post('/api/platform/auth/login')
+        .send({ email: 'root@example.local', password }).expect(201);
+      const response = await agent.post(endpoint).send({}).expect(201);
+      expect(response.body).toMatchObject({
+        tenant_code: tenantCode,
+        status: 'active',
+        deleted_at: null,
+        purge_after: null,
+        subscription: { status: originalSubscriptionStatus, version: 3 },
+      });
+      expect(prisma.subscription.updateMany).toHaveBeenCalledWith({
+        where: { tenantId, status: 'suspended' },
+        data: {
+          status: originalSubscriptionStatus,
+          version: { increment: 1 },
+        },
+      });
+      expect(prisma.subscription.updateMany.mock.calls[0][0].data).not.toHaveProperty('endAt');
+      const sql = (prisma.$queryRaw.mock.calls as [any][])
+        .map(([query]) => query.strings.join(' ')).join(' ');
+      expect(sql).toContain('FOR UPDATE');
+      expect(sql).toContain("purge_after > (clock_timestamp() AT TIME ZONE 'UTC')");
+      expect(JSON.stringify(prisma.platformAuditLog.create.mock.calls)).not.toContain('manager@example.local');
+    },
+  );
+
+  it('rejects expired, repeated, and inconsistent restore requests', async () => {
+    process.env.APP_ENV = 'production';
+    mockRestoreQueries({ expired: true });
+    const agent = request.agent(app.getHttpServer());
+    await agent.post('/api/platform/auth/login')
+      .send({ email: 'root@example.local', password }).expect(201);
+    const endpoint = `/api/platform/tenants/${tenantCode}/restore`;
+    const expired = await agent.post(endpoint).send({}).expect(409);
+    expect(expired.body.code).toBe('PLATFORM_TENANT_RESTORE_EXPIRED');
+    expect(prisma.subscription.updateMany).not.toHaveBeenCalled();
+
+    mockRestoreQueries({ tenantStatus: 'active' });
+    const repeated = await agent.post(endpoint).send({}).expect(409);
+    expect(repeated.body.code).toBe('PLATFORM_TENANT_NOT_PENDING_DELETE');
+
+    mockRestoreQueries({ subscriptionMismatch: true });
+    const inconsistent = await agent.post(endpoint).send({}).expect(409);
+    expect(inconsistent.body.code).toBe('PLATFORM_TENANT_RESTORE_STATE_INVALID');
+  });
+
+  it('requires platform identity and Production for restoration', async () => {
+    process.env.APP_ENV = 'production';
+    mockRestoreQueries();
+    const endpoint = `/api/platform/tenants/${tenantCode}/restore`;
+    const tenantJwt = new JwtService({ secret: process.env.JWT_SECRET });
+    await request(app.getHttpServer()).post(endpoint)
+      .set('Authorization', `Bearer ${tenantJwt.sign({ sub: 'user-1', tenant_id: tenantId })}`)
+      .send({}).expect(401);
+    const agent = request.agent(app.getHttpServer());
+    await agent.post('/api/platform/auth/login')
+      .send({ email: 'root@example.local', password }).expect(201);
+    await agent.post(endpoint).send({ environment: 'production' }).expect(400);
+    await agent.post(endpoint).send([]).expect(400);
+    prisma.tenant.findUnique.mockImplementation(async ({ where }: any) =>
+      where.tenantCode === 'UNKNOWN' ? null : tenantRow,
+    );
+    await agent.post('/api/platform/tenants/UNKNOWN/restore').send({}).expect(404);
+
+    mockRestoreQueries({ sessionInvalid: true });
+    await agent.post(endpoint).send({}).expect(403);
+    expect(prisma.subscription.updateMany).not.toHaveBeenCalled();
+    storedSession = { ...storedSession, revokedAt: new Date() };
+    await agent.post(endpoint).send({}).expect(401);
+    storedSession = { ...storedSession, revokedAt: null, expiresAt: new Date(Date.now() + 60_000) };
+    sessionAdminStatus = 'inactive';
+    await agent.post(endpoint).send({}).expect(401);
+    sessionAdminStatus = 'active';
+    process.env.APP_ENV = 'staging';
+    mockRestoreQueries();
+    await agent.post(endpoint).send({}).expect(503);
+    expect(prisma.subscription.updateMany).not.toHaveBeenCalled();
+  });
+
   it('deletes only after platform authentication and password confirmation', async () => {
     process.env.APP_ENV = 'production';
     mockDeletionQueries();

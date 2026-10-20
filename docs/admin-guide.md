@@ -23,6 +23,7 @@ ADR-006/ADR-013 已 Accepted；运行时已由 #110–#112 在本地实现。pla
   通过批准的安全渠道交付，并在交付后删除；首次登录仍强制改密
 - 暂停/恢复、subscription 和额度变更前核对 tenant name + tenant_code、影响摘要和 version，
   并完成二次确认
+- Production 租户删除进入一日历年恢复期后，平台管理员可在 `purge_after` 之前使用独立恢复 API 恢复删除前的 tenant 和订阅状态。恰好到期即不可恢复；Staging 无恢复入口。恢复不续订、不恢复人员/地点自身的待删除状态，也不重新发送历史邮件；过期订阅仍禁止扫码和发信。平台 UI 恢复入口由 #165 实现
 - platform_admin 只能查看 tenant/subscription/额度/脱敏 manager 摘要，不读取人员、扫码、
   邮件正文、收件邮箱、租户审计或 impersonate 租户用户
 - 平台控制台只读显示当前后端邮件提交模式：“模拟发信（mock）”“真实发信（OCI）”或请求失败时的“状态未知”；这不是单封邮件的最终投递状态。租户管理员和 operator 界面不显示此项，也不能通过租户接口读取

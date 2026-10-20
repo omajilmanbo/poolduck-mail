@@ -54,6 +54,8 @@
   于 `backend/` 执行 `npm run test:tenant-lifecycle-migration`；脚本仅创建并删除随机命名的合成测试数据库。
 - #160 平台删除事务：在相同本地环境下，于 `backend/` 执行 `npm run test:platform-delete-transaction`；
   脚本只在随机命名的临时数据库中验证并发重放、订阅更新竞态与失败回滚，完成后删除该数据库。
+- #161 平台恢复事务：在相同本地环境下，于 `backend/` 执行 `npm run test:platform-restore-transaction`；
+  脚本只在随机命名的临时数据库中验证恢复期限、并发、独立业务状态与失败回滚，完成后删除该数据库。
 - Frontend：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`
 - 关键 E2E：准备合成 seed 并启动前后端后，在 `frontend/` 执行 `npm run test:e2e`
 

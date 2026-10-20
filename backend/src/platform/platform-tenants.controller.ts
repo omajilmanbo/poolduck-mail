@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -77,5 +78,22 @@ export class PlatformTenantsController {
     @Body() dto: DeletePlatformTenantDto,
   ) {
     return this.tenants.deleteTenant(admin, tenantCode, dto, requestId);
+  }
+
+  @Post(':tenantCode/restore')
+  restoreTenant(
+    @CurrentPlatformAdmin() admin: AuthenticatedPlatformAdmin,
+    @Param('tenantCode') tenantCode: string,
+    @Headers('x-request-id') requestId: string | undefined,
+    @Body() body: unknown,
+  ) {
+    if (body !== undefined && body !== null &&
+      (typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 0)) {
+      throw new BadRequestException({
+        code: 'PLATFORM_RESTORE_BODY_NOT_ALLOWED',
+        message: '恢复请求不接受请求体字段',
+      });
+    }
+    return this.tenants.restoreTenant(admin, tenantCode, requestId);
   }
 }

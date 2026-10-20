@@ -392,7 +392,7 @@ tenant 查询。响应只包含 tenant/subscription/额度/脱敏 manager 摘要
 
 普通暂停通过 subscription PATCH 写入 `suspended`；非删除中租户可通过同一 PATCH 显式写入
 `trial|active`、有效 `start_at`/`end_at` 与当前 `version`。`pending_delete` / `purged`
-租户的普通订阅更新返回 `PLATFORM_TENANT_PENDING_DELETE`，不能绕过删除流程重新激活；恢复由 #161 独立实现。
+租户的普通订阅更新返回 `PLATFORM_TENANT_PENDING_DELETE`，不能绕过删除流程重新激活；待删除租户必须使用下述恢复接口。
 
 ### POST `/api/platform/tenants/{tenant_code}/delete`
 
@@ -404,6 +404,15 @@ tenant 查询。响应只包含 tenant/subscription/额度/脱敏 manager 摘要
 - 错误密码返回 `PLATFORM_DELETE_PASSWORD_INVALID`，请求期间失效的 Session 返回 `PLATFORM_DELETE_SESSION_INVALID`；未知 tenant 返回 `PLATFORM_TENANT_NOT_FOUND`，已终结 tenant 返回 `PLATFORM_TENANT_PENDING_DELETE`
 - `environment`、保留期及任何其他额外请求字段均拒绝；删除期间的登录、Session 和既有读取继续遵循暂停订阅语义，新扫码及等待/重试邮件由现有 `suspended` 门禁阻断
 - 审计只记录内部 tenant/admin ID、合法 request ID、环境、结果和原因码，不记录密码或业务 PII
+
+### POST `/api/platform/tenants/{tenant_code}/restore`
+
+- 仅 active `platform_admin` 且当前 Session 有效；仅 `APP_ENV=production` 开放，不接收客户端指定的环境、期限或恢复状态
+- 目标必须为 `pending_delete`；服务器在持有目标 tenant 行锁的事务中，以数据库 `clock_timestamp() < purge_after` 为条件恢复删除前 tenant/subscription 状态，并清空四项生命周期字段。恰好到期及之后返回 `409 PLATFORM_TENANT_RESTORE_EXPIRED`，即使到期清理尚未运行
+- 成功返回与 `GET /api/platform/tenants/{tenant_code}` 相同的最小平台摘要；恢复仅成功一次，重复请求返回 `409 PLATFORM_TENANT_NOT_PENDING_DELETE`
+- Staging 或未知环境返回 `PLATFORM_TENANT_RESTORE_ENV_UNAVAILABLE`；订阅状态与快照不一致返回 `PLATFORM_TENANT_RESTORE_STATE_INVALID`，整笔事务回滚
+- 不延长订阅 `end_at`，既有 Session 继续遵循原认证语义；已过期的 `trial`/`active` 仍由 ADR-003 到期门禁阻止扫码和发信。不修改人员/地点的独立删除状态，不重新排队或重发历史邮件
+- 进入恢复服务后的成功与业务拒绝使用内部 tenant/admin ID、合法 request ID、环境、结果和原因码记录脱敏平台审计；认证守卫与请求体验证在服务调用前拒绝
 
 ### PATCH `/api/platform/tenants/{tenant_code}/location-limit`
 

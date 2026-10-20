@@ -22,7 +22,8 @@
 `status` 为 `pending_delete` / `purged`，且 `purge_after = deleted_at + interval '1 year'`。
 PostgreSQL 的日历年计算将 2024-02-29 12:00 映射为 2025-02-28 12:00（数据库时间）。
 到期扫描索引为 `(purge_after, status)`。#160 的 Production 删除事务写入生命周期与原状态快照，
-同时将订阅改为 `suspended`；Staging 删除、Production 恢复和到期清理由后续 Issue 实现。
+同时将订阅改为 `suspended`。#161 恢复事务仅在数据库时间早于 `purge_after` 时清空四项生命周期字段，
+恢复原 tenant/subscription 状态并递增版本；Staging 删除和 Production 到期清理由后续 Issue 实现。
 
 ## 2. users
 

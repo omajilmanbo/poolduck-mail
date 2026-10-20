@@ -311,7 +311,7 @@ export class PlatformTenantsService {
           WHERE s.id = ${admin.session_id}::uuid
             AND s.platform_admin_id = ${admin.platform_admin_id}::uuid
             AND s.revoked_at IS NULL
-            AND s.expires_at > clock_timestamp()
+            AND s.expires_at > (clock_timestamp() AT TIME ZONE 'UTC')
             AND s.identity_version_snapshot = ${admin.identity_version}
             AND a.identity_version = ${admin.identity_version}
             AND a.status = 'active'
@@ -410,6 +410,140 @@ export class PlatformTenantsService {
         targetTenantId,
         requestId: safeRequestId,
         action: 'platform.tenant.delete',
+        resourceType: 'tenant',
+        resourceId: targetTenantId ?? 'unknown',
+        result: 'failure',
+        metadata: { environment, reason: cause },
+      });
+      throw error;
+    }
+  }
+
+  async restoreTenant(
+    admin: AuthenticatedPlatformAdmin,
+    tenantCode: string,
+    requestId?: string,
+  ) {
+    const environment = process.env.APP_ENV ?? 'unknown';
+    const safeRequestId = requestId && /^[A-Za-z0-9_-]{1,128}$/.test(requestId)
+      ? requestId
+      : undefined;
+    let targetTenantId: string | undefined;
+    try {
+      const target = await this.findTenantIdentity(tenantCode);
+      targetTenantId = target.id;
+      const restored = await this.prisma.$transaction(async (tx) => {
+        const identity = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+          SELECT s.id
+          FROM platform_sessions s
+          JOIN platform_admins a ON a.id = s.platform_admin_id
+          WHERE s.id = ${admin.session_id}::uuid
+            AND s.platform_admin_id = ${admin.platform_admin_id}::uuid
+            AND s.revoked_at IS NULL
+            AND s.expires_at > (clock_timestamp() AT TIME ZONE 'UTC')
+            AND s.identity_version_snapshot = ${admin.identity_version}
+            AND a.identity_version = ${admin.identity_version}
+            AND a.status = 'active'
+          FOR UPDATE OF s, a
+        `);
+        if (!identity[0]) {
+          throw new ForbiddenException({
+            code: 'PLATFORM_RESTORE_SESSION_INVALID',
+            message: '平台会话已失效',
+          });
+        }
+        if (environment !== 'production') {
+          throw new ServiceUnavailableException({
+            code: 'PLATFORM_TENANT_RESTORE_ENV_UNAVAILABLE',
+            message: '当前环境不支持租户恢复',
+          });
+        }
+        const locked = await tx.$queryRaw<{
+          status: string;
+          deleted_from_status: string | null;
+          deleted_from_subscription_status: string | null;
+        }[]>(Prisma.sql`
+          SELECT status, deleted_from_status, deleted_from_subscription_status
+          FROM tenants WHERE id = ${target.id}::uuid FOR UPDATE
+        `);
+        const tenant = locked[0];
+        if (!tenant) throw this.notFound();
+        if (tenant.status !== 'pending_delete') {
+          throw new ConflictException({
+            code: 'PLATFORM_TENANT_NOT_PENDING_DELETE',
+            message: '租户不处于可恢复的删除状态',
+          });
+        }
+        if (
+          !tenant.deleted_from_status ||
+          !tenant.deleted_from_subscription_status ||
+          ['pending_delete', 'purged'].includes(tenant.deleted_from_status)
+        ) {
+          throw new ConflictException({
+            code: 'PLATFORM_TENANT_RESTORE_STATE_INVALID',
+            message: '删除前状态记录无效，不能恢复',
+          });
+        }
+        const updated = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+          UPDATE tenants
+          SET status = deleted_from_status,
+              deleted_at = NULL,
+              purge_after = NULL,
+              deleted_from_status = NULL,
+              deleted_from_subscription_status = NULL,
+              updated_at = clock_timestamp() AT TIME ZONE 'UTC',
+              platform_version = platform_version + 1
+          WHERE id = ${target.id}::uuid
+            AND status = 'pending_delete'
+            AND purge_after > (clock_timestamp() AT TIME ZONE 'UTC')
+          RETURNING id
+        `);
+        if (updated.length !== 1) {
+          throw new ConflictException({
+            code: 'PLATFORM_TENANT_RESTORE_EXPIRED',
+            message: '租户恢复期限已过',
+          });
+        }
+        const subscription = await tx.subscription.updateMany({
+          where: { tenantId: target.id, status: 'suspended' },
+          data: {
+            status: tenant.deleted_from_subscription_status,
+            version: { increment: 1 },
+          },
+        });
+        if (subscription.count !== 1) {
+          throw new ConflictException({
+            code: 'PLATFORM_TENANT_RESTORE_STATE_INVALID',
+            message: '订阅状态不一致，不能恢复',
+          });
+        }
+        const result = await tx.tenant.findUnique({
+          where: { id: target.id },
+          select: this.tenantSelect(),
+        });
+        if (!result) throw this.notFound();
+        return this.presentTenant(result);
+      });
+      await this.audit.record({
+        platformAdminId: admin.platform_admin_id,
+        targetTenantId,
+        requestId: safeRequestId,
+        action: 'platform.tenant.restore',
+        resourceType: 'tenant',
+        resourceId: targetTenantId,
+        result: 'success',
+        metadata: { environment, reason: 'RESTORED' },
+      });
+      return restored;
+    } catch (error) {
+      const cause = error instanceof HttpException
+        ? (error.getResponse() as { code?: string }).code ?? 'REQUEST_REJECTED'
+        : 'TRANSACTION_FAILED';
+      await this.audit.record({
+        platformAdminId: admin.platform_admin_id,
+        targetTenantId,
+        requestId: safeRequestId,
+        action: 'platform.tenant.restore',
         resourceType: 'tenant',
         resourceId: targetTenantId ?? 'unknown',
         result: 'failure',
