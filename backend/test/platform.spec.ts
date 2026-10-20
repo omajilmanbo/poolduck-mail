@@ -540,6 +540,22 @@ describe('Platform control plane', () => {
     expect(response.headers['cache-control']).toBe('no-store');
   });
 
+  it('returns the trusted deletion environment only to platform admins', async () => {
+    await request(app.getHttpServer()).get('/api/platform/auth/environment').expect(401);
+    const agent = request.agent(app.getHttpServer());
+    await agent.post('/api/platform/auth/login')
+      .send({ email: 'root@example.local', password }).expect(201);
+    process.env.APP_ENV = 'production';
+    const production = await agent.get('/api/platform/auth/environment').expect(200);
+    expect(production.body).toEqual({ environment: 'production', deletion_enabled: true });
+    process.env.APP_ENV = 'staging';
+    process.env.STAGING_TENANT_DELETE_ENABLED = 'false';
+    const staging = await agent.get('/api/platform/auth/environment').expect(200);
+    expect(staging.body).toEqual({ environment: 'staging', deletion_enabled: false });
+    expect(staging.headers['cache-control']).toBe('no-store');
+    delete process.env.STAGING_TENANT_DELETE_ENABLED;
+  });
+
   it('lists only minimal summaries and atomically creates an idempotent tenant', async () => {
     const agent = request.agent(app.getHttpServer());
     await agent

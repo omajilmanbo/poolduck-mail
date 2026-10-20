@@ -132,3 +132,147 @@ describe('platform mail mode', () => {
   });
 
 });
+
+const deletionTenant = {
+  tenant_code: '10PDTEST01', name: 'Synthetic Tenant', status: 'active',
+  created_at: '2026-01-01T00:00:00.000Z', platform_version: 1,
+  location_limit: 1, location_count: 0,
+  subscription: { plan: 'manual', status: 'trial', start_at: '2026-01-01T00:00:00.000Z',
+    end_at: '2027-01-01T00:00:00.000Z', version: 1 },
+  manager: { email_masked: 'm***r@example.local', status: 'active' },
+  recent_platform_operation: null,
+};
+
+function mockPlatformDeletion(environment: 'production' | 'staging',
+  tenant = deletionTenant, deleteResponse?: (password: string) => Promise<Response>) {
+  return vi.fn(async (url: string, init?: RequestInit) => {
+    const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), {
+      status, headers: { 'content-type': 'application/json' },
+    });
+    if (url.endsWith('/api/platform/auth/me')) return json({ admin: { platform_admin_id: 'admin-1', email_masked: 'a***n@example.local' } });
+    if (url.endsWith('/api/platform/auth/environment')) return json({ environment, deletion_enabled: true });
+    if (url.endsWith('/api/platform/auth/mail-mode')) return json({ mode: 'mock' });
+    if (url.endsWith('/api/platform/tenants')) return json([tenant]);
+    if (url.endsWith('/delete') && init?.method === 'POST') {
+      return deleteResponse
+        ? deleteResponse((JSON.parse(init.body as string) as { password: string }).password)
+        : json({ tenant_code: tenant.tenant_code, status: 'pending_delete',
+          deleted_at: '2026-10-20T00:00:00.000Z', purge_after: '2027-10-20T00:00:00.000Z' });
+    }
+    return json({});
+  });
+}
+
+describe('platform tenant deletion UI', () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('shows Production target and password confirmation without persisting it', async () => {
+    const fetchMock = mockPlatformDeletion('production');
+    vi.stubGlobal('fetch', fetchMock);
+    render(<PlatformPage />);
+    await waitFor(() => expect(screen.getByRole('button', { name: '删除租户' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '删除租户' }));
+    expect(screen.getByRole('dialog').textContent).toContain('Synthetic Tenant');
+    expect(screen.getByRole('dialog').textContent).toContain('10PDTEST01');
+    expect(screen.getByRole('dialog').textContent).toContain('Production');
+    const password = screen.getByLabelText('删除确认密码') as HTMLInputElement;
+    fireEvent.change(password, { target: { value: 'synthetic-secret' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+    await waitFor(() => expect(password.value).toBe(''));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/delete'))).toBe(true));
+    const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/delete'));
+    expect(JSON.parse((call?.[1] as RequestInit).body as string)).toEqual({ password: 'synthetic-secret' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(localStorage.length).toBe(0);
+  });
+
+  it('keeps a wrong-password result unsucceeded and clears the field', async () => {
+    vi.stubGlobal('fetch', mockPlatformDeletion('production', deletionTenant, async () =>
+      new Response(JSON.stringify({ code: 'PLATFORM_DELETE_PASSWORD_INVALID', message: 'Wrong password' }),
+        { status: 403, headers: { 'content-type': 'application/json' } })));
+    render(<PlatformPage />);
+    await waitFor(() => expect(screen.getByRole('button', { name: '删除租户' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '删除租户' }));
+    const password = screen.getByLabelText('删除确认密码') as HTMLInputElement;
+    fireEvent.change(password, { target: { value: 'wrong' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+    await waitFor(() => expect(password.value).toBe(''));
+    await waitFor(() => expect(screen.getByText('管理员密码错误，未执行删除。')).toBeTruthy());
+    expect(screen.queryByText(/已进入删除期/)).toBeNull();
+  });
+
+  it('shows Staging as irreversible and never offers restore', async () => {
+    vi.stubGlobal('fetch', mockPlatformDeletion('staging', {
+      ...deletionTenant, status: 'staging_deleting', subscription: { ...deletionTenant.subscription, status: 'suspended' },
+    }));
+    render(<PlatformPage />);
+    await waitFor(() => expect(screen.getByRole('button', { name: '重试清理' })).toBeTruthy());
+    expect(screen.queryByRole('button', { name: '恢复租户' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '重试清理' }));
+    expect(screen.getByRole('dialog').textContent).toContain('无法恢复');
+  });
+
+  it('sends one deletion request when confirm is clicked twice', async () => {
+    let finish: ((response: Response) => void) | undefined;
+    const pendingResponse = new Promise<Response>((resolve) => { finish = resolve; });
+    const fetchMock = mockPlatformDeletion('production', deletionTenant, () => pendingResponse);
+    vi.stubGlobal('fetch', fetchMock);
+    render(<PlatformPage />);
+    await waitFor(() => expect(screen.getByRole('button', { name: '删除租户' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '删除租户' }));
+    fireEvent.change(screen.getByLabelText('删除确认密码'), { target: { value: 'synthetic-secret' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/delete'))).toHaveLength(1);
+    finish?.(new Response(JSON.stringify({ tenant_code: deletionTenant.tenant_code,
+      status: 'pending_delete', purge_after: '2027-10-20T00:00:00.000Z' }),
+      { status: 200, headers: { 'content-type': 'application/json' } }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('offers Production restoration before the deadline', async () => {
+    const pendingTenant = { ...deletionTenant, status: 'pending_delete',
+      purge_after: '2099-01-01T00:00:00.000Z',
+      subscription: { ...deletionTenant.subscription, status: 'suspended' } };
+    const base = mockPlatformDeletion('production', pendingTenant);
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/restore')) return new Response(JSON.stringify(deletionTenant), {
+        status: 201, headers: { 'content-type': 'application/json' },
+      });
+      return base(url, init);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<PlatformPage />);
+    await waitFor(() => expect(screen.getByRole('button', { name: '恢复租户' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '恢复租户' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/restore'))).toBe(true));
+    await waitFor(() => expect(screen.getByText(/已恢复；订阅仍按原有效期判断/)).toBeTruthy());
+  });
+
+  it('hides expired Production restore and handles network uncertainty', async () => {
+    const expiredTenant = { ...deletionTenant, status: 'pending_delete',
+      purge_after: '2020-01-01T00:00:00.000Z',
+      subscription: { ...deletionTenant.subscription, status: 'suspended' } };
+    vi.stubGlobal('fetch', mockPlatformDeletion('production', expiredTenant));
+    render(<PlatformPage />);
+    await waitFor(() => expect(screen.getByText(/期限已到，不可恢复/)).toBeTruthy());
+    expect(screen.queryByRole('button', { name: '恢复租户' })).toBeNull();
+    cleanup();
+    const fetchMock = mockPlatformDeletion('staging', deletionTenant, async () => { throw new TypeError('offline'); });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<PlatformPage />);
+    await waitFor(() => expect(screen.getByRole('button', { name: '删除租户' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '删除租户' }));
+    const password = screen.getByLabelText('删除确认密码') as HTMLInputElement;
+    fireEvent.change(password, { target: { value: 'synthetic-secret' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+    await waitFor(() => expect(screen.getByText(/请求结果未知/)).toBeTruthy());
+    expect(password.value).toBe('');
+    expect(screen.queryByText(/在线数据已删除/)).toBeNull();
+  });
+});

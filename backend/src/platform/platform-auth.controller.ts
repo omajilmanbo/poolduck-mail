@@ -82,6 +82,19 @@ export class PlatformAuthController {
     return { mode: this.mailProviderConfig.kind };
   }
 
+  @Get('environment')
+  @UseGuards(PlatformAuthGuard)
+  @Header('Cache-Control', 'no-store')
+  environment() {
+    const environment = process.env.APP_ENV;
+    return {
+      environment: environment === 'production' || environment === 'staging'
+        ? environment : 'unavailable',
+      deletion_enabled: environment === 'production' ||
+        (environment === 'staging' && process.env.STAGING_TENANT_DELETE_ENABLED === 'true'),
+    };
+  }
+
   private setCookies(
     response: HttpResponse,
     accessToken: string,

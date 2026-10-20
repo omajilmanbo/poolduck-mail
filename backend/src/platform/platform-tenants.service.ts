@@ -240,7 +240,7 @@ export class PlatformTenantsService {
         Prisma.sql`SELECT id, status FROM tenants WHERE id = ${tenant.id}::uuid FOR UPDATE`,
       );
       if (!locked[0]) throw this.notFound();
-      if (locked[0].status === 'pending_delete' || locked[0].status === 'purged') {
+      if (['pending_delete', 'purged', 'staging_deleting'].includes(locked[0].status)) {
         throw this.deletionConflict();
       }
       const subscription = await tx.subscription.findUnique({
