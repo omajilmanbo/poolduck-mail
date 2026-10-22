@@ -353,6 +353,7 @@ describe('Tenant operator lifecycle API', () => {
       email: `${role}@example.local`,
       role,
       status: 'active',
+      tenant: { tenantCode: '10CA000001', status: 'active' },
     };
   }
 

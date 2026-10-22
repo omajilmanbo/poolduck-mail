@@ -128,6 +128,10 @@ describe('mail job retry policy', () => {
       where: expect.objectContaining({ tenantId: 'tenant-1' }),
       data: expect.objectContaining({ opcRequestId: 'request-synthetic', errorCode }),
     });
+    if (disposition !== 'transient') {
+      expect(prisma.mailDeliveryAttempt.update.mock.calls.at(-1)?.[0].data)
+        .toHaveProperty('providerCallClosedAt', expect.any(Date));
+    }
     expect(JSON.stringify(prisma.mailJob.update.mock.calls)).not.toContain('recipient@example.com');
   });
 
@@ -143,6 +147,10 @@ describe('mail job retry policy', () => {
     expect(prisma.mailJob.update).toHaveBeenCalledWith({
       where: { id: 'job-1', tenantId: 'tenant-1' },
       data: expect.objectContaining({ status: 'delivery_unknown', errorMessage: 'PROVIDER_OUTCOME_UNKNOWN' }),
+    });
+    expect(prisma.mailDeliveryAttempt.update).toHaveBeenCalledWith({
+      where: expect.objectContaining({ tenantId: 'tenant-1' }),
+      data: expect.objectContaining({ status: 'delivery_unknown', providerCallClosedAt: expect.any(Date) }),
     });
   });
 
@@ -267,6 +275,7 @@ describe('mail job retry policy', () => {
         errorCode: 'PROVIDER_OUTCOME_UNKNOWN',
       },
     });
+    expect(prisma.mailDeliveryAttempt.update.mock.calls.at(-1)?.[0].data).not.toHaveProperty('providerCallClosedAt');
     expect(provider.send).not.toHaveBeenCalled();
   });
 

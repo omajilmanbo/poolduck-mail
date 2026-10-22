@@ -189,7 +189,7 @@ ADR-017 当前契约：
 - `POST /api/locations/{location_id}/delete`：仅 `tenant_manager`，安排 14 天后终结删除；立即终止 queued 邮件
 - `POST /api/locations/{location_id}/restore`：仅 `tenant_manager`，期限内恢复删除前状态；到期返回 `DELETION_RESTORE_EXPIRED`
 - DELETE 为软停用；停用后拒绝新扫描与人员映射写入，并把该地点 queued 邮件安全终止为 failed/`LOCATION_INACTIVE`
-- 终结清理由幂等后台任务按数据库时间执行：当前 PII 被匿名化、地点 assignments 被撤销，历史快照不删除
+- 终结清理由幂等后台任务按数据库时间执行：当前 PII 被匿名化、地点 assignments 被撤销；既有历史快照不因地点终结而改写，仍按 ADR-024 的正常一年期限独立销毁
 - location ID 冲突最多重试 5 次，耗尽返回 `LOCATION_CODE_GENERATION_EXHAUSTED`；不存在、跨 tenant 或 operator 未授权统一返回 `LOCATION_NOT_FOUND`
 - 错误：`location_id` 非法或不属于当前 tenant 时返回 `LOCATION_NOT_FOUND`
 
@@ -367,6 +367,13 @@ tenant 查询。响应只包含 tenant/subscription/额度/脱敏 manager 摘要
 - 说明：查询 tenant name、`tenant_code`、subscription、`location_limit`/当前计数、
   脱敏首个 tenant_manager 和平台版本
 - 权限：platform_admin
+- 列表摘要包含 `deleted_at`、`purge_after`（未删除时均为 `null`）
+- `recent_platform_operation` 另返回平台审计的 `action`、`result`、时间与审计 ID；平台控制台仅用 Staging 删除开始/失败审计判断清理提示，不返回租户业务审计或敏感元数据
+
+### GET `/api/platform/auth/environment`
+
+- 仅有效 `platform_admin` Session 可读取；响应 `Cache-Control: no-store`
+- 返回 `{ environment: "production"|"staging"|"unavailable", deletion_enabled: boolean }`。Production 删除入口可用；Staging 仅在 `STAGING_TENANT_DELETE_ENABLED=true` 时可用；其他环境不可用。环境值由服务器决定，不接受客户端覆盖
 
 ### POST `/api/platform/tenants`
 
@@ -382,14 +389,47 @@ tenant 查询。响应只包含 tenant/subscription/额度/脱敏 manager 摘要
 ### GET `/api/platform/tenants/{tenant_code}`
 
 - 返回 ADR-013 最小 tenant 摘要和乐观并发 `version`
+- 摘要还包含 `deleted_at`、`purge_after`（未删除时均为 `null`）；不返回删除前状态快照
+
+### GET `/api/platform/audit-logs`
+
+- 仅独立的 active `platform_admin` Session 可读；租户 token、失效平台 Session 和普通租户身份均拒绝
+- 可选筛选：`created_from`、`created_to`（ISO 时间，闭区间）、`platform_admin_id`（内部 UUID）、`action`（精确值）、`result`（`success|failure|denied`）、`target_tenant_id`（内部 UUID）；时间范围倒置返回 `INVALID_AUDIT_RANGE`
+- `limit` 默认 25、最大 100；按 `created_at DESC, id DESC` 稳定分页，响应为 `{ items, next_cursor }`。游标绑定筛选条件；无效或混用筛选条件返回 `INVALID_CURSOR`
+- 每行仅含 `audit_id`、管理员内部 ID、目标租户内部 ID 与可用的平台租户摘要、action、result、资源类型/安全 ID、经白名单复核的元数据及创建时间。Staging 租户已清理时摘要为 `null`，仍可显示安全清理结果。不返回邮箱、邮件正文、人员、扫码、租户 `audit_logs`、token 或任意原始元数据
+- 每次成功查询写一条最小 `platform.audit.query` 审计，仅记录管理员内部 ID 和返回数量；审计写入失败时查询失败，不提供导出或修改接口
 
 ### PATCH `/api/platform/tenants/{tenant_code}/subscription`
 
 - 入参：`status`, `start_at`, `end_at`, `version`
 - 支持 `trial|active|expired|suspended`；高影响变更记录旧/新状态和非 PII 平台审计
 
-暂停通过 subscription PATCH 写入 `suspended`；恢复通过同一 PATCH 显式写入 `trial|active`、
-有效 `start_at`/`end_at` 与当前 `version`。不新增含义重叠的 tenant 停用状态，也不删除历史数据。
+普通暂停通过 subscription PATCH 写入 `suspended`；非删除中租户可通过同一 PATCH 显式写入
+`trial|active`、有效 `start_at`/`end_at` 与当前 `version`。`pending_delete` / `purged` / `staging_deleting`
+租户的普通订阅更新返回 `PLATFORM_TENANT_PENDING_DELETE`，不能绕过删除流程重新激活；待删除租户必须使用下述恢复接口。
+
+### POST `/api/platform/tenants/{tenant_code}/delete`
+
+- 仅 active `platform_admin` 且当前 Session 有效；请求体仅 `{ "password": "当前管理员密码" }`，服务端在同一次请求中重新验密
+- `APP_ENV=production`：以数据库时间原子设置 tenant `status=pending_delete`、`deleted_at`、`purge_after=deleted_at + interval '1 year'` 及删除前 tenant/订阅状态快照，同时将订阅改为 `suspended`
+- 目标 `subscription.status=active` 时返回 `409 PLATFORM_TENANT_ACTIVE_SUBSCRIPTION`，不修改 tenant 或订阅；`trial`、`expired`、`suspended` 可继续删除。检查与删除写入位于同一租户锁定事务中
+- Production 返回 `{ tenant_code, status: "pending_delete", deleted_at, purge_after, idempotency_replayed }`；重复删除不重置期限或重复修改订阅
+- Production 待删除窗口内，现存扫码/邮件家族与租户业务审计暂停日常一年到期清理；到期终结时销毁在线记录，仅保留基本对象非 PII 墓碑。平台审计按自身一年期限处理，未结束的删除流程关联记录暂缓清理。数据库备份生命周期另行决定
+- `APP_ENV=staging` 且 `STAGING_TENANT_DELETE_ENABLED=true`：先持久化 `staging_deleting` 和订阅 `suspended`，再事务性删除目标当前对象及全部历史。成功返回 `{ tenant_code, status: "deleted", deleted_at: null, purge_after: null, idempotency_replayed }`；相同租户重复请求仍须重新验密后安全重放。失败时保留阻断状态供重新验密重试；无恢复接口
+- Staging 未启用开关或其他环境返回 `PLATFORM_TENANT_DELETE_ENV_UNAVAILABLE`；该接口不接受客户端选择环境
+- 错误密码返回 `PLATFORM_DELETE_PASSWORD_INVALID`，请求期间失效的 Session 返回 `PLATFORM_DELETE_SESSION_INVALID`；未知 tenant 返回 `PLATFORM_TENANT_NOT_FOUND`，已终结 tenant 返回 `PLATFORM_TENANT_PENDING_DELETE`
+- `environment`、保留期及任何其他额外请求字段均拒绝；Production 删除期间的登录、Session 和既有读取继续遵循暂停订阅语义，新扫码及等待/重试邮件由现有 `suspended` 门禁阻断。Staging `staging_deleting` 拒绝租户认证及当前对象写入
+- 审计只记录内部 tenant/admin ID、合法 request ID、环境、结果和原因码，不记录密码或业务 PII
+
+### POST `/api/platform/tenants/{tenant_code}/restore`
+
+- 仅 active `platform_admin` 且当前 Session 有效；仅 `APP_ENV=production` 开放，不接收客户端指定的环境、期限或恢复状态
+- 目标必须为 `pending_delete`；服务器在持有目标 tenant 行锁的事务中，以数据库 `clock_timestamp() < purge_after` 为条件恢复删除前 tenant/subscription 状态，并清空四项生命周期字段。恰好到期及之后返回 `409 PLATFORM_TENANT_RESTORE_EXPIRED`，即使到期清理尚未运行
+- 成功返回与 `GET /api/platform/tenants/{tenant_code}` 相同的最小平台摘要；恢复仅成功一次，重复请求返回 `409 PLATFORM_TENANT_NOT_PENDING_DELETE`
+- Staging 或未知环境返回 `PLATFORM_TENANT_RESTORE_ENV_UNAVAILABLE`；订阅状态与快照不一致返回 `PLATFORM_TENANT_RESTORE_STATE_INVALID`，整笔事务回滚
+- 不延长订阅 `end_at`，既有 Session 继续遵循原认证语义；已过期的 `trial`/`active` 仍由 ADR-003 到期门禁阻止扫码和发信。不修改人员/地点的独立删除状态，不重新排队或重发历史邮件
+- 恢复立即解除记录清理冻结；创建时间超过正常一年期限的记录可被下一轮清理删除，无额外导出宽限期
+- 进入恢复服务后的成功与业务拒绝使用内部 tenant/admin ID、合法 request ID、环境、结果和原因码记录脱敏平台审计；认证守卫与请求体验证在服务调用前拒绝
 
 ### PATCH `/api/platform/tenants/{tenant_code}/location-limit`
 

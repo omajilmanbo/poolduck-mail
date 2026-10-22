@@ -6,6 +6,8 @@
 
 ## Context
 
+> 后续决策：Accepted ADR-024 局部取代本 ADR 中 Production 租户终结后继续保留扫码、邮件、回执及审计历史的规则；一年恢复期、当前对象非 PII 墓碑与 Staging 立即清理规则不变。历史销毁尚未实施。
+
 用户要求在平台控制台删除整个 tenant：删除前重新输入当前 platform_admin 密码；Production 保留数据一年且可恢复；Staging 立即删除，不提供恢复。现行 Accepted ADR-013 第 7 节明确 MVP 不提供 tenant 物理删除。ADR-006 限定 platform_admin 不读取租户业务明细；ADR-003、ADR-017 限定租户门禁、邮件领取与不可变发送事实；ADR-011 的人员/地点 14 天清理保留不可变业务历史。整租户清理必须明确与这些规则的关系，不能直接为 tenant 表增加级联删除。
 
 当前数据库中 tenant 与用户、地点、人员、扫码、邮件任务、发送尝试、Session、审计、平台开通幂等记录等存在 Restrict/SetNull 外键。仅删除 `tenants` 主行既不能实现整租户删除，也可能因外键失败。Production 恢复还涉及订阅到期、已领取或结果未知的邮件和跨 tenant 隔离。数据库备份生命周期尚未设计，本 ADR 暂不规定备份中的数据如何保留或清除；因此这里的“删除”仅指在线业务数据库中的数据。
@@ -24,6 +26,8 @@
 6. **历史和回执。** 已提交的 provider 调用不能撤回；`sent` 与 `delivery_unknown` 不得改回待发送。Production 到期后沿用 ADR-011 的历史规则：`scan_events`、`mail_jobs`、provider 回执、上下文快照与 `audit_logs` 保持不可变，内部 UUID 关联指向非 PII 墓碑。历史快照可能仍含当时固化的名称、邮箱或邮件内容；“非 PII 墓碑”只描述当前对象的清理结果，不表示历史记录已去标识化。历史记录不得使已终结清理的 tenant 重新可用；平台管理员仍不得读取租户业务明细。
 
 **2026-10-20 后续人工修订：** 删除后的即时业务门禁改为复用 subscription `suspended` 语义；不另行封禁登录/Session 或新增邮件终止机制。原 #158、#159 不再单独实施。删除 API 必须在同一事务内保存原订阅状态并设为 `suspended`，恢复 API 按本节第 3 点处理。
+
+**2026-10-20 后续人工补充：** Production 与 Staging 均不可删除 `subscription.status=active` 的租户。删除 API 在锁定目标租户后读取当前订阅状态，若为 `active` 则拒绝且不写入生命周期字段或更改订阅；此限制不把 `tenant.status=active` 作为拒绝条件。`trial`、`expired`、`suspended` 仍按各环境的删除流程处理；#164 的 Staging 实现也须遵守此门禁。
 
 **范围说明：** Production 的一年期限结束后，当前对象改为非 PII 墓碑，不删除不可变业务历史；这与 ADR-011 的人员/地点终结清理语义一致。数据库备份生命周期由后续独立决策处理；Staging 不考虑备份及数据保留。
 

@@ -5,11 +5,15 @@ import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma.module';
 import { MailJobsModule } from '../mail-jobs/mail-jobs.module';
 import { PlatformAuditService } from './platform-audit.service';
+import { PlatformAuditQueryController } from './platform-audit-query.controller';
+import { PlatformAuditQueryService } from './platform-audit-query.service';
 import { PlatformAuthController } from './platform-auth.controller';
 import { PlatformAuthGuard } from './platform-auth.guard';
 import { PlatformAuthService } from './platform-auth.service';
 import { PlatformTenantsController } from './platform-tenants.controller';
 import { PlatformTenantsService } from './platform-tenants.service';
+import { PlatformTenantPurgeService } from './platform-tenant-purge.service';
+import { PlatformTenantPurgeSchedulerService } from './platform-tenant-purge-scheduler.service';
 
 @Module({
   imports: [
@@ -25,13 +29,16 @@ import { PlatformTenantsService } from './platform-tenants.service';
       }),
     }),
   ],
-  controllers: [PlatformAuthController, PlatformTenantsController],
+  controllers: [PlatformAuthController, PlatformTenantsController, PlatformAuditQueryController],
   providers: [
     PlatformAuditService,
+    PlatformAuditQueryService,
     PlatformAuthService,
     PlatformAuthGuard,
     PlatformTenantsService,
+    PlatformTenantPurgeService,
+    PlatformTenantPurgeSchedulerService,
   ],
-  exports: [PlatformAuthGuard, PlatformAuthService],
+  exports: [PlatformAuthGuard, PlatformAuthService, PlatformTenantPurgeService],
 })
 export class PlatformModule {}

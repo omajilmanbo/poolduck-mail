@@ -379,7 +379,7 @@ export class MailJobsService {
         this.prisma.mailDeliveryAttempt.update({
           where: { id: attemptId, tenantId },
           data: {
-            status, completedAt, errorCode,
+            status, completedAt, providerCallClosedAt: completedAt, errorCode,
             providerMessageId: providerResult.providerMessageId,
             envelopeId: providerResult.envelopeId,
             opcRequestId: providerResult.opcRequestId,

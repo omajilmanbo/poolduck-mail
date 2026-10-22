@@ -6,6 +6,8 @@
 
 ## Context
 
+> 后续决策：Accepted ADR-024 局部取代本 ADR 所引用的历史永久保留规则，并新增平台操作审计只读查询边界；平台管理员仍不得读取租户业务明细。
+
 ADR-006 已接受不绑定 tenant 的 `platform_admin`，并明确它负责创建、暂停、恢复 tenant
 以及查看和修改订阅；同一 ADR 也明确平台身份存储、认证、初始化、撤销、平台 API 和后台 UI
 必须由后续 Issue 决定。当前运行时只有绑定 tenant 的 `tenant_manager` 与 `operator`，

@@ -95,3 +95,15 @@ worker 当前以安全聚合日志实现本地/CI 可验证出口：`mail_job.cl
 #142 的 OCI `OutboundAccepted`/`OutboundRelayed` 日志、`oci_emaildelivery` 指标、告警接收人、PII 权限与保留期、人工对账及测试步骤见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。用户已批准邮件原始日志保留 90 天及可能费用；用户已指定当前唯一 OCI 用户作为读取人和告警接收人；OCI API 已核验该用户为唯一 ACTIVE 管理员，保守停止规则已批准；两类 90 天日志、通知主题及三条原生告警已应用，订阅为 ACTIVE，指定运维收件人已确认收到合成通知。ADR-020 应用级告警链路已在 mock 模式以无 PII 合成认证失败指标触发并投递到指定邮箱；真实邮件事件仍未验收。本文件前述 Staging 30 天仅为应用日志建议。`sent` 只表示 provider accepted，`delivery_unknown` 不自动重发。
 
 应用级异常进入 OCI Monitoring 的方案见 Accepted [ADR-020](decisions/ADR-020-staging-mail-application-alerts.md)。Backend 每分钟在 Staging 显式启用后向 `poolduck_staging_mail` 发布 7 个聚合指标（unknown、认证、配额新增/连续、provider 连续失败、积压、心跳），固定部署级维度且不含 PII；Terraform 以专用 namespace 和 `METRIC_WRITE` 条件限制写入权限并定义 CRITICAL 告警。2026-10-11 已将 1 条 IAM、6 条告警应用到 OCI，并以 mock 模式部署 Backend，云端可查询到 7 类指标；无邮件的合成认证失败触发 `FIRING`，指定 Gmail 收件箱可查到告警通知。2026-10-14 收紧 IAM 后，从目标容器读取指标返回 404，仍须观察后续写入。事件型告警采用 5 分钟查询窗覆盖指标摄取延迟；真实邮件事件还须 #145 新窗口。
+
+## Production 租户终结清理信号（#163）
+
+启用后每分钟产生不含 PII 的 `tenant_purge_metrics` 结构化日志，字段为 `pending`、`oldestOverdueSeconds`、`purged`、`failed`、`skipped`。环境错误、扫描失败、事务失败与最老逾期超过 15 分钟产生 `tenant_purge_alert`；告警只含安全原因码和可选内部 tenant UUID。生产发布时须把此事件接入经批准的日志告警/值班路由并验证通知；本地实现只产生结构化事件，没有部署生产告警资源。Success 审计为 `platform.tenant.purged`，记录内部 ID 和清理计数；失败记录通用原因码，禁止输出原始数据库异常或客户明细。
+
+本地 #166 验收只检查结构化事件及测试数据库中的审计字段，不接入真实告警接收方。Production 放行前应以合成到期任务验证告警路由、值班收件与恢复通知；任何 `TENANT_TRANSACTION_FAILED`、持续积压或环境错误必须可追溯到内部 tenant UUID 和安全原因码，且不得把 PII 写入日志。
+
+## ADR-024 记录销毁信号（#171–#173）
+
+`RECORD_RETENTION_PROCESSOR_ENABLED` 默认关闭。启用后每轮记录 `record_retention_metrics`：扫码家族、业务审计、平台审计的删除计数与剩余积压、被阻断计数、不安全逾期家族数量、最老逾期秒数及失败数。`record_retention_alert` 只含安全原因码；未终态、有在途调用或 `delivery_unknown` 尚未确认调用关闭的逾期家族、数据库失败、审计写入失败、错误环境与逾期积压必须告警。平台执行审计 `platform.record_retention.run` 仅留汇总计数，不复制被销毁的快照、邮件地址或正文。Production 告警接收方与灰度发布仍须在 #176 独立核对。
+
+平台审计只读查询会记录最小 `platform.audit.query` 事件；查询写审计失败则 API 不返回记录。告警路由、发布前后无 PII 计数与停用步骤见 [ADR-024 发布执行卡](testing/adr024-release-acceptance.md)。

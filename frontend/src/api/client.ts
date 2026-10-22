@@ -172,6 +172,8 @@ export type PlatformTenantSummary = {
   tenant_code: string;
   name: string;
   status: string;
+  deleted_at?: string | null;
+  purge_after?: string | null;
   created_at: string;
   platform_version: number;
   location_limit: number;
@@ -186,9 +188,37 @@ export type PlatformTenantSummary = {
   manager: null | { email_masked: string | null; status: string };
   recent_platform_operation: null | {
     audit_id: string;
+    action: string;
     created_at: string;
     result: string;
   };
+};
+
+export type PlatformEnvironment = {
+  environment: 'production' | 'staging' | 'unavailable';
+  deletion_enabled: boolean;
+};
+
+export type PlatformAuditItem = {
+  audit_id: string;
+  platform_admin_id: string | null;
+  target_tenant_id: string | null;
+  target_tenant: null | { tenant_code: string; name: string; status: string };
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  result: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+export type PlatformAuditResponse = { items: PlatformAuditItem[]; next_cursor: string | null };
+
+export type PlatformTenantDeleteResult = {
+  tenant_code: string;
+  status: 'pending_delete' | 'deleted';
+  deleted_at: string | null;
+  purge_after: string | null;
+  idempotency_replayed: boolean;
 };
 
 export type CreatePlatformTenantInput = {
@@ -575,8 +605,14 @@ export function createPlatformApiClient(config: ApiClientConfig = {}) {
         '/api/platform/auth/mail-mode',
         { headers: { 'Cache-Control': 'no-cache' } },
       ),
+    getEnvironment: () =>
+      request<PlatformEnvironment>('/api/platform/auth/environment', {
+        headers: { 'Cache-Control': 'no-cache' },
+      }),
     getTenants: () =>
       request<PlatformTenantSummary[]>('/api/platform/tenants'),
+    getPlatformAudits: (params: URLSearchParams) =>
+      request<PlatformAuditResponse>(`/api/platform/audit-logs?${params.toString()}`),
     getTenant: (tenantCode: string) =>
       request<PlatformTenantSummary>(
         `/api/platform/tenants/${encodeURIComponent(tenantCode)}`,
@@ -622,6 +658,18 @@ export function createPlatformApiClient(config: ApiClientConfig = {}) {
           body: { location_limit: locationLimit, version },
           headers: { 'X-Request-Id': crypto.randomUUID() },
         },
+      ),
+    deleteTenant: (tenantCode: string, password: string) =>
+      request<PlatformTenantDeleteResult>(
+        `/api/platform/tenants/${encodeURIComponent(tenantCode)}/delete`,
+        { method: 'POST', body: { password },
+          headers: { 'X-Request-Id': crypto.randomUUID() } },
+      ),
+    restoreTenant: (tenantCode: string) =>
+      request<PlatformTenantSummary>(
+        `/api/platform/tenants/${encodeURIComponent(tenantCode)}/restore`,
+        { method: 'POST', body: {},
+          headers: { 'X-Request-Id': crypto.randomUUID() } },
       ),
   };
 }
