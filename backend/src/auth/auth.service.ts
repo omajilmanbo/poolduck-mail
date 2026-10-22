@@ -94,7 +94,7 @@ export class AuthService {
       where: tenantCode
         ? { tenantCode }
         : { id: dto.tenant_id as string },
-      select: { id: true, tenantCode: true },
+      select: { id: true, tenantCode: true, status: true },
     });
     const user = identity
       ? await this.prisma.user.findFirst({
@@ -123,6 +123,7 @@ export class AuthService {
     );
     if (
       !tenant ||
+      tenant.status === 'staging_deleting' ||
       !identity ||
       !user ||
       user.status !== 'active' ||
@@ -133,6 +134,8 @@ export class AuthService {
         rawIdentifier,
         !tenant
           ? 'TENANT_NOT_FOUND'
+          : tenant.status === 'staging_deleting'
+            ? 'TENANT_UNAVAILABLE'
           : !identity
             ? 'IDENTIFIER_INVALID'
             : !user
@@ -206,7 +209,7 @@ export class AuthService {
             role: true,
             status: true,
             mustChangePassword: true,
-            tenant: { select: { tenantCode: true } },
+            tenant: { select: { tenantCode: true, status: true } },
           },
         },
       },
@@ -215,6 +218,7 @@ export class AuthService {
       await this.audit.record({ tenantId: payload.tenant_id, actorUserId: payload.user_id, action: 'auth.refresh', resourceType: 'session', resourceId: payload.session_id ?? 'unknown', result: 'failure', metadata: { reason: 'REVOKED_OR_REPLAYED' } });
       throw this.invalidToken();
     }
+    if (session.user.tenant.status === 'staging_deleting') throw this.invalidToken();
     if (session.user.status !== 'active') {
       await this.revokeUserSessions(session.user.tenantId, session.user.id, 'USER_DISABLED');
       await this.audit.record({ tenantId: payload.tenant_id, actorUserId: payload.user_id, action: 'auth.refresh', resourceType: 'session', resourceId: session.id, result: 'denied', metadata: { reason: 'USER_DISABLED' } });
@@ -324,13 +328,15 @@ export class AuthService {
         role: true,
         status: true,
         mustChangePassword: true,
-        tenant: { select: { tenantCode: true } },
+        tenant: { select: { tenantCode: true, status: true } },
       },
     });
 
     if (!user) {
       throw this.invalidToken();
     }
+
+    if (user.tenant.status === 'staging_deleting') throw this.invalidToken();
 
     if (user.status !== 'active') {
       await this.revokeUserSessions(user.tenantId, user.id, 'USER_DISABLED');

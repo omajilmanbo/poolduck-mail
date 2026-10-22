@@ -26,7 +26,7 @@ describe('Audit API role and tenant boundary', () => {
 
   it('forbids operator and constrains tenant_manager query to its token tenant', async () => {
     prisma.user.findFirst.mockImplementation(({ where }: { where: { id: string; tenantId: string } }) =>
-      Promise.resolve({ id: where.id, tenantId: where.tenantId, email: 'user@example.local', role: where.id === 'tenant-manager-1' ? 'tenant_manager' : 'operator', status: 'active' }),
+      Promise.resolve({ id: where.id, tenantId: where.tenantId, email: 'user@example.local', role: where.id === 'tenant-manager-1' ? 'tenant_manager' : 'operator', status: 'active', tenant: { tenantCode: '10CA000001', status: 'active' } }),
     );
     await request(app.getHttpServer()).get('/api/audit-logs').set('Authorization', `Bearer ${token('operator-1', 'operator')}`).expect(403);
 

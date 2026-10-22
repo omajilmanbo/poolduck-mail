@@ -53,6 +53,7 @@ describe('Operator location assignment API', () => {
           email: 'manager@example.local',
           role: 'tenant_manager',
           status: 'active',
+          tenant: { tenantCode: '10CA000001', status: 'active' },
         });
       }
       if (
@@ -264,6 +265,7 @@ describe('Operator location assignment API', () => {
       email: 'operator@example.local',
       role: 'operator',
       status: 'active',
+      tenant: { tenantCode: '10CA000001', status: 'active' },
     });
     await request(app.getHttpServer())
       .put(`/api/users/${operatorId}/location-assignments`)

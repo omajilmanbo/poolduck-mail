@@ -108,7 +108,7 @@ describe('Auth API', () => {
     expect(response.body.user.tenant_id).toBeUndefined();
     expect(prisma.tenant.findUnique).toHaveBeenCalledWith({
       where: { tenantCode },
-      select: { id: true, tenantCode: true },
+      select: { id: true, tenantCode: true, status: true },
     });
     expect(prisma.user.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -192,7 +192,7 @@ describe('Auth API', () => {
     expect(response.body.user).toMatchObject({ tenant_code: tenantCode });
     expect(prisma.tenant.findUnique).toHaveBeenCalledWith({
       where: { id: tenantId },
-      select: { id: true, tenantCode: true },
+      select: { id: true, tenantCode: true, status: true },
     });
   });
 
@@ -445,7 +445,7 @@ describe('Auth API', () => {
       passwordHash: DUMMY_TEST_HASH,
       role: 'operator',
       status: 'active',
-      tenant: { tenantCode },
+      tenant: { tenantCode, status: 'active' },
       ...overrides,
     };
   }
@@ -459,7 +459,7 @@ describe('Auth API', () => {
       passwordHash: DUMMY_TEST_HASH,
       role: 'tenant_manager',
       status: 'active',
-      tenant: { tenantCode },
+      tenant: { tenantCode, status: 'active' },
       ...overrides,
     };
   }

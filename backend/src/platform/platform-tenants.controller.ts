@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -12,6 +13,7 @@ import { PlatformAuthGuard } from './platform-auth.guard';
 import { CurrentPlatformAdmin } from './platform-current-admin.decorator';
 import {
   CreatePlatformTenantDto,
+  DeletePlatformTenantDto,
   UpdateLocationLimitDto,
   UpdateSubscriptionDto,
 } from './platform.dto';
@@ -66,5 +68,32 @@ export class PlatformTenantsController {
     @Body() dto: UpdateLocationLimitDto,
   ) {
     return this.tenants.updateLocationLimit(admin, tenantCode, dto, requestId);
+  }
+
+  @Post(':tenantCode/delete')
+  deleteTenant(
+    @CurrentPlatformAdmin() admin: AuthenticatedPlatformAdmin,
+    @Param('tenantCode') tenantCode: string,
+    @Headers('x-request-id') requestId: string | undefined,
+    @Body() dto: DeletePlatformTenantDto,
+  ) {
+    return this.tenants.deleteTenant(admin, tenantCode, dto, requestId);
+  }
+
+  @Post(':tenantCode/restore')
+  restoreTenant(
+    @CurrentPlatformAdmin() admin: AuthenticatedPlatformAdmin,
+    @Param('tenantCode') tenantCode: string,
+    @Headers('x-request-id') requestId: string | undefined,
+    @Body() body: unknown,
+  ) {
+    if (body !== undefined && body !== null &&
+      (typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 0)) {
+      throw new BadRequestException({
+        code: 'PLATFORM_RESTORE_BODY_NOT_ALLOWED',
+        message: '恢复请求不接受请求体字段',
+      });
+    }
+    return this.tenants.restoreTenant(admin, tenantCode, requestId);
   }
 }

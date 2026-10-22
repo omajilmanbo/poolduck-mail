@@ -81,3 +81,9 @@ export class UpdateLocationLimitDto {
   @Min(1)
   version!: number;
 }
+
+export class DeletePlatformTenantDto {
+  @IsString()
+  @IsNotEmpty()
+  password!: string;
+}
