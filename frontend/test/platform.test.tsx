@@ -133,12 +133,16 @@ describe('platform mail mode', () => {
 
 });
 
+const deletionSubscription = {
+  plan: 'manual', status: 'trial', start_at: '2026-01-01T00:00:00.000Z',
+  end_at: '2027-01-01T00:00:00.000Z', version: 1,
+} satisfies NonNullable<PlatformTenantSummary['subscription']>;
+
 const deletionTenant: PlatformTenantSummary = {
   tenant_code: '10PDTEST01', name: 'Synthetic Tenant', status: 'active',
   created_at: '2026-01-01T00:00:00.000Z', platform_version: 1,
   location_limit: 1, location_count: 0,
-  subscription: { plan: 'manual', status: 'trial', start_at: '2026-01-01T00:00:00.000Z',
-    end_at: '2027-01-01T00:00:00.000Z', version: 1 },
+  subscription: deletionSubscription,
   manager: { email_masked: 'm***r@example.local', status: 'active' },
   recent_platform_operation: null,
 };
@@ -211,7 +215,7 @@ describe('platform tenant deletion UI', () => {
 
   it('shows Staging as irreversible and never offers restore', async () => {
     vi.stubGlobal('fetch', mockPlatformDeletion('staging', {
-      ...deletionTenant, status: 'staging_deleting', subscription: { ...deletionTenant.subscription, status: 'suspended' },
+      ...deletionTenant, status: 'staging_deleting', subscription: { ...deletionSubscription, status: 'suspended' },
     }));
     render(<PlatformPage />);
     await waitFor(() => expect(screen.getByRole('button', { name: '重试清理' })).toBeTruthy());
@@ -230,7 +234,7 @@ describe('platform tenant deletion UI', () => {
   ])('distinguishes staging cleanup: $label', async (operation) => {
     vi.stubGlobal('fetch', mockPlatformDeletion('staging', {
       ...deletionTenant, status: 'staging_deleting',
-      subscription: { ...deletionTenant.subscription, status: 'suspended' },
+      subscription: { ...deletionSubscription, status: 'suspended' },
       recent_platform_operation: { audit_id: 'synthetic-audit', ...operation },
     }));
     render(<PlatformPage />);
@@ -260,7 +264,7 @@ describe('platform tenant deletion UI', () => {
   it('offers Production restoration before the deadline', async () => {
     const pendingTenant = { ...deletionTenant, status: 'pending_delete',
       purge_after: '2099-01-01T00:00:00.000Z',
-      subscription: { ...deletionTenant.subscription, status: 'suspended' } };
+      subscription: { ...deletionSubscription, status: 'suspended' } };
     const base = mockPlatformDeletion('production', pendingTenant);
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith('/restore')) return new Response(JSON.stringify(deletionTenant), {
@@ -280,7 +284,7 @@ describe('platform tenant deletion UI', () => {
   it('hides expired Production restore and handles network uncertainty', async () => {
     const expiredTenant = { ...deletionTenant, status: 'pending_delete',
       purge_after: '2020-01-01T00:00:00.000Z',
-      subscription: { ...deletionTenant.subscription, status: 'suspended' } };
+      subscription: { ...deletionSubscription, status: 'suspended' } };
     vi.stubGlobal('fetch', mockPlatformDeletion('production', expiredTenant));
     render(<PlatformPage />);
     await waitFor(() => expect(screen.getByText(/期限已到，不可恢复/)).toBeTruthy());
