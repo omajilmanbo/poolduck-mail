@@ -307,6 +307,8 @@ export default function PlatformPage() {
           <h1 className="mt-1 text-2xl font-semibold">平台运营控制台</h1>
           <p className="mt-1 text-sm text-slate-400">{admin?.email_masked}</p>
         </div>
+        <div className="flex items-center gap-3">
+        <a href="/platform/audit" className="rounded-md border border-slate-600 px-3 py-2 text-sm hover:bg-slate-800">平台审计</a>
         <button
           onClick={() =>
             void api.logout().finally(() => window.location.replace('/platform/login'))
@@ -315,6 +317,7 @@ export default function PlatformPage() {
         >
           退出平台
         </button>
+        </div>
       </header>
 
       <section className="mt-5 rounded-lg border border-slate-700 bg-slate-900 p-4" aria-label="当前邮件发信模式">

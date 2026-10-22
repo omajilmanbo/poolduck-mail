@@ -41,6 +41,7 @@
     "test:tenant-deletion-rollback": "node scripts/tenant-deletion-rollback-test.mjs",
     "test:record-retention": "npm run build && node scripts/record-retention-transaction-test.mjs",
     "test:tenant-retention-large": "npm run build && node scripts/tenant-retention-large-test.mjs",
+    "retention:counts": "node scripts/record-retention-counts.mjs",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
   },

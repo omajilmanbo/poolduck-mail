@@ -63,6 +63,7 @@ describe('Platform control plane', () => {
       auditLog: { create: jest.fn().mockResolvedValue(undefined) },
       platformAuditLog: {
         create: jest.fn().mockResolvedValue({ id: 'audit-1' }),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       platformAdmin: {
         findUnique: jest.fn().mockResolvedValue({
@@ -529,6 +530,10 @@ describe('Platform control plane', () => {
       .set('Authorization', `Bearer ${tenantToken}`)
       .expect(401);
     await request(app.getHttpServer())
+      .get('/api/platform/audit-logs')
+      .set('Authorization', `Bearer ${tenantToken}`)
+      .expect(401);
+    await request(app.getHttpServer())
       .get('/api/platform/auth/mail-mode')
       .set('Authorization', `Bearer ${tenantToken}`)
       .expect(401);
@@ -681,5 +686,53 @@ describe('Platform control plane', () => {
       .expect(409);
     expect(response.body.code).toBe('LOCATION_LIMIT_REACHED');
     expect(prisma.location.create).not.toHaveBeenCalled();
+  });
+
+  it('guards platform audit access and rejects invalid filters or expired sessions', async () => {
+    await request(app.getHttpServer()).get('/api/platform/audit-logs').expect(401);
+    const agent = request.agent(app.getHttpServer());
+    await agent.post('/api/platform/auth/login').send({ email: 'root@example.local', password }).expect(201);
+    await agent.get('/api/platform/audit-logs?platform_admin_id=wrong').expect(400);
+    await agent.get('/api/platform/audit-logs?target_tenant_id=wrong').expect(400);
+    await agent.get('/api/platform/audit-logs?limit=101').expect(400);
+    await agent.get('/api/platform/audit-logs?cursor=invalid').expect(400);
+    await agent.get('/api/platform/audit-logs?created_from=2026-08-01T00:00:00.000Z&created_to=2026-07-01T00:00:00.000Z').expect(400);
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
+    sessionAdminStatus = 'inactive';
+    await agent.get('/api/platform/audit-logs').expect(401);
+  });
+
+  it('filters and paginates platform audit with a safe field allowlist', async () => {
+    const agent = request.agent(app.getHttpServer());
+    await agent.post('/api/platform/auth/login').send({ email: 'root@example.local', password }).expect(201);
+    const first = Array.from({ length: 26 }, (_, index) => ({
+      id: `b1000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      platformAdminId: adminId,
+      targetTenantId: index === 0 ? null : tenantId,
+      targetTenant: index === 0 ? null : { tenantCode, name: 'Synthetic person@example.local', status: 'active' },
+      action: index === 0 ? 'platform.tenant.staging_deleted' : 'platform.tenant.create',
+      resourceType: 'tenant', resourceId: tenantId, result: 'success',
+      metadataJson: { reason: 'DELETED', environment: 'staging', counts: { users: 2 },
+        email: 'person@example.local', arbitrary: 'private text', token: 'secret' },
+      createdAt: new Date(`2026-07-${String(30 - index).padStart(2, '0')}T00:00:00.000Z`),
+    }));
+    prisma.platformAuditLog.findMany.mockResolvedValueOnce(first).mockResolvedValueOnce([]);
+    const url = `/api/platform/audit-logs?limit=25&target_tenant_id=${tenantId}&result=success`;
+    const response = await agent.get(url).expect(200);
+    expect(response.body.items).toHaveLength(25);
+    expect(response.body.next_cursor).toBeTruthy();
+    expect(response.body.items[0].target_tenant).toBeNull();
+    expect(response.body.items[0].metadata).toEqual({ reason: 'DELETED', environment: 'staging', counts: { users: 2 } });
+    expect(JSON.stringify(response.body)).not.toContain('person@example.local');
+    expect(JSON.stringify(response.body)).not.toContain('private text');
+    expect(prisma.platformAuditLog.findMany.mock.calls[0][0]).toMatchObject({
+      where: { targetTenantId: tenantId, result: 'success' }, take: 26,
+    });
+    await agent.get(`${url}&cursor=${encodeURIComponent(response.body.next_cursor)}`).expect(200);
+    await agent.get(`/api/platform/audit-logs?cursor=${encodeURIComponent(response.body.next_cursor)}`).expect(400);
+    expect(prisma.platformAuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ action: 'platform.audit.query', platformAdminId: adminId }),
+    }));
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
   });
 });

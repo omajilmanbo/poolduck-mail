@@ -5,6 +5,8 @@ import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma.module';
 import { MailJobsModule } from '../mail-jobs/mail-jobs.module';
 import { PlatformAuditService } from './platform-audit.service';
+import { PlatformAuditQueryController } from './platform-audit-query.controller';
+import { PlatformAuditQueryService } from './platform-audit-query.service';
 import { PlatformAuthController } from './platform-auth.controller';
 import { PlatformAuthGuard } from './platform-auth.guard';
 import { PlatformAuthService } from './platform-auth.service';
@@ -27,9 +29,10 @@ import { PlatformTenantPurgeSchedulerService } from './platform-tenant-purge-sch
       }),
     }),
   ],
-  controllers: [PlatformAuthController, PlatformTenantsController],
+  controllers: [PlatformAuthController, PlatformTenantsController, PlatformAuditQueryController],
   providers: [
     PlatformAuditService,
+    PlatformAuditQueryService,
     PlatformAuthService,
     PlatformAuthGuard,
     PlatformTenantsService,

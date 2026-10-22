@@ -199,6 +199,20 @@ export type PlatformEnvironment = {
   deletion_enabled: boolean;
 };
 
+export type PlatformAuditItem = {
+  audit_id: string;
+  platform_admin_id: string | null;
+  target_tenant_id: string | null;
+  target_tenant: null | { tenant_code: string; name: string; status: string };
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  result: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+export type PlatformAuditResponse = { items: PlatformAuditItem[]; next_cursor: string | null };
+
 export type PlatformTenantDeleteResult = {
   tenant_code: string;
   status: 'pending_delete' | 'deleted';
@@ -597,6 +611,8 @@ export function createPlatformApiClient(config: ApiClientConfig = {}) {
       }),
     getTenants: () =>
       request<PlatformTenantSummary[]>('/api/platform/tenants'),
+    getPlatformAudits: (params: URLSearchParams) =>
+      request<PlatformAuditResponse>(`/api/platform/audit-logs?${params.toString()}`),
     getTenant: (tenantCode: string) =>
       request<PlatformTenantSummary>(
         `/api/platform/tenants/${encodeURIComponent(tenantCode)}`,

@@ -391,6 +391,14 @@ tenant 查询。响应只包含 tenant/subscription/额度/脱敏 manager 摘要
 - 返回 ADR-013 最小 tenant 摘要和乐观并发 `version`
 - 摘要还包含 `deleted_at`、`purge_after`（未删除时均为 `null`）；不返回删除前状态快照
 
+### GET `/api/platform/audit-logs`
+
+- 仅独立的 active `platform_admin` Session 可读；租户 token、失效平台 Session 和普通租户身份均拒绝
+- 可选筛选：`created_from`、`created_to`（ISO 时间，闭区间）、`platform_admin_id`（内部 UUID）、`action`（精确值）、`result`（`success|failure|denied`）、`target_tenant_id`（内部 UUID）；时间范围倒置返回 `INVALID_AUDIT_RANGE`
+- `limit` 默认 25、最大 100；按 `created_at DESC, id DESC` 稳定分页，响应为 `{ items, next_cursor }`。游标绑定筛选条件；无效或混用筛选条件返回 `INVALID_CURSOR`
+- 每行仅含 `audit_id`、管理员内部 ID、目标租户内部 ID 与可用的平台租户摘要、action、result、资源类型/安全 ID、经白名单复核的元数据及创建时间。Staging 租户已清理时摘要为 `null`，仍可显示安全清理结果。不返回邮箱、邮件正文、人员、扫码、租户 `audit_logs`、token 或任意原始元数据
+- 每次成功查询写一条最小 `platform.audit.query` 审计，仅记录管理员内部 ID 和返回数量；审计写入失败时查询失败，不提供导出或修改接口
+
 ### PATCH `/api/platform/tenants/{tenant_code}/subscription`
 
 - 入参：`status`, `start_at`, `end_at`, `version`

@@ -105,3 +105,5 @@ worker 当前以安全聚合日志实现本地/CI 可验证出口：`mail_job.cl
 ## ADR-024 记录销毁信号（#171–#173）
 
 `RECORD_RETENTION_PROCESSOR_ENABLED` 默认关闭。启用后每轮记录 `record_retention_metrics`：扫码家族、业务审计、平台审计的删除计数与剩余积压、被阻断计数、不安全逾期家族数量、最老逾期秒数及失败数。`record_retention_alert` 只含安全原因码；未终态、有在途调用或 `delivery_unknown` 尚未确认调用关闭的逾期家族、数据库失败、审计写入失败、错误环境与逾期积压必须告警。平台执行审计 `platform.record_retention.run` 仅留汇总计数，不复制被销毁的快照、邮件地址或正文。Production 告警接收方与灰度发布仍须在 #176 独立核对。
+
+平台审计只读查询会记录最小 `platform.audit.query` 事件；查询写审计失败则 API 不返回记录。告警路由、发布前后无 PII 计数与停用步骤见 [ADR-024 发布执行卡](testing/adr024-release-acceptance.md)。

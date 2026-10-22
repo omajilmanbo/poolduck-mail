@@ -98,7 +98,7 @@ Local/CI/Staging 合成验证，Production 会拒绝执行。
 - Backend 默认每分钟按数据库时间扫描一批到期的人员/地点删除任务。仅在受控维护窗口可设置
   `DELETION_PURGE_PROCESSOR_ENABLED=false` 暂停清理；恢复服务时必须移除该设置，任务会幂等补跑。
 - Production 租户终结清理独立于人员/地点任务。#163 实现默认关闭；仅经人工审核 #162 事务、迁移、告警与回滚步骤后，在可信 `APP_ENV=production` 显式设置 `TENANT_PURGE_PROCESSOR_ENABLED=true`。每轮最多处理 20 个到期租户；多实例通过 tenant 行锁避免重复完成。Staging 或未知环境即使设置开关也拒绝启动。关闭开关并重启仅暂停任务，不能重新开放已到期租户恢复或扫码/发信。
-- ADR-024 的日常记录清理独立开关 `RECORD_RETENTION_PROCESSOR_ENABLED=true`，默认关闭且只在可信 `APP_ENV=production` 启动。先部署 `20261022000000_record_retention_scan_indexes`，盘点一年以上的扫码/邮件与两类审计行数，核对无 PII 指标、告警接收方及备份边界，再人工审核分批启用。每轮各取最多 100 个安全候选；未终态或存在未完成发送尝试的家族跳过并告警。待删除租户冻结至恢复或到期终结；恢复后超期记录进入下一轮。停用开关并重启可暂停日常清理，但不能恢复已销毁的行。Production 租户终结开关也须按 ADR-024 新历史销毁语义重新审核；Staging 路径不变。
+- ADR-024 的日常记录清理独立开关 `RECORD_RETENTION_PROCESSOR_ENABLED=true`，默认关闭且只在可信 `APP_ENV=production` 启动。先部署 `20261022000000_record_retention_scan_indexes`，盘点一年以上的扫码/邮件与两类审计行数，核对无 PII 指标、告警接收方及备份边界，再人工审核分批启用。`RECORD_RETENTION_BATCH_SIZE` 可按 1、10、100 阶段调节每类记录的每轮上限；当前按全局到期顺序选取，不能限定单一 tenant。未终态、未完成或未知投递但调用尚未确认关闭的家族跳过并告警。待删除租户冻结至恢复或到期终结；恢复后超期记录进入下一轮。停用开关并重启可暂停日常清理，但不能恢复已销毁的行。Production 租户终结开关也须按 ADR-024 新历史销毁语义重新审核；Staging 路径不变。
 - #164 的 Staging 立即物理清理默认关闭；在已核对 `APP_ENV=staging`、专用数据、迁移和补偿 Runbook 后，可在主机 `.env` 显式设置 `STAGING_TENANT_DELETE_ENABLED=true` 并重建 Backend。Compose 将此值传入 Backend；平台控制台通过受保护环境接口显示删除入口。Production/未知环境不会进入该清理事务。删除故障时 `staging_deleting` 与 `suspended` 持续阻断访问和新业务；不能手改状态伪造成功，需在同一环境重新验密重试并核对无残留。成功后立即物理清除在线关联数据，没有一年期限，也无法恢复。2026-10-20 用户已批准在 Staging 开放此入口，仍禁止用真实客户数据验证。
 - Staging 大租户清理依赖 `20261020030000_index_tenant_staging_purge_foreign_keys` 中的子表外键索引。单条清理 SQL 另设 110 秒数据库超时，失败会回滚且保留 `staging_deleting` 供重试。若旧版清理事务长时间停在 `scan_events` 等父表删除，先结束旧版请求并确认事务回滚，再应用索引迁移、重启 Backend，最后由管理员在平台弹窗重新验密重试；不可直接修改租户状态或绕过密码接口。
 - MVP 邮件 provider 默认保持 `MAIL_PROVIDER=mock`，不会接入真实邮件服务。
@@ -516,3 +516,4 @@ Safety rules:
   使用数据库时间；应用回滚时保留新增列，避免丢失尚在 14 天恢复期内的生命周期状态。
 - `20261020000000_add_tenant_deletion_lifecycle` 只扩展租户表，不启动租户删除功能；其后两次迁移分别保护 Production 墓碑和 Staging 清理中当前对象写入。先迁移再部署应用，确认现有租户状态、订阅和历史未改变；Production 清理调度及 Staging 物理删除开关默认关闭，启用前须完成 #166 验收、告警接收方及人工审核。
 - 应用回滚时保留三次迁移及 `suspended` 门禁。若确需移除数据库变更，先停写并确认没有 `staging_deleting`、`pending_delete`、`purged` 记录，按 200 → 100 → 000 的逆序执行 `backend/prisma/rollback/` 中对应脚本。守卫拒绝回滚时不得手改删除状态或用旧版本重新开放业务；参照 `docs/operation.md` 的故障流程。
+- ADR-024 一年记录销毁按 [合成验收与发布执行卡](testing/adr024-release-acceptance.md) 操作。`20261022000000_record_retention_scan_indexes` 仅扩展索引和调用关闭证明列；迁移不删历史。清理器默认关闭，Production 启用须另行发布审核；先用 `npm --prefix backend run retention:counts` 记录无 PII 的租户/类型计数，再分批观察积压、失败与告警。备份生命周期另议。

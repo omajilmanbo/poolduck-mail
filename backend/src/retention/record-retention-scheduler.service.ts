@@ -5,7 +5,7 @@ import { PlatformAuditService } from '../platform/platform-audit.service';
 import { RecordRetentionService, RetentionOutcome } from './record-retention.service';
 
 const INTERVAL_MS = 60_000;
-const BATCH_SIZE = 100;
+const DEFAULT_BATCH_SIZE = 100;
 
 export type RetentionRun = {
   scanFamilies: number;
@@ -25,6 +25,7 @@ export class RecordRetentionSchedulerService implements OnModuleInit, OnModuleDe
   private readonly logger = new Logger(RecordRetentionSchedulerService.name);
   private timer?: ReturnType<typeof setInterval>;
   private running = false;
+  private batchSize = DEFAULT_BATCH_SIZE;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -39,6 +40,12 @@ export class RecordRetentionSchedulerService implements OnModuleInit, OnModuleDe
       return;
     }
     if (process.env.NODE_ENV === 'test') return;
+    const configured = Number(process.env.RECORD_RETENTION_BATCH_SIZE ?? DEFAULT_BATCH_SIZE);
+    if (!Number.isInteger(configured) || configured < 1 || configured > DEFAULT_BATCH_SIZE) {
+      this.alert('INVALID_BATCH_SIZE');
+      return;
+    }
+    this.batchSize = configured;
     void this.runOnce().catch(() => this.alert('RUN_FAILED'));
     this.timer = setInterval(() => {
       void this.runOnce().catch(() => this.alert('RUN_FAILED'));
@@ -60,17 +67,17 @@ export class RecordRetentionSchedulerService implements OnModuleInit, OnModuleDe
       blocked: 0, unsafeDueFamilies: 0, scanBacklog: 0, businessAuditBacklog: 0,
       platformAuditBacklog: 0, oldestOverdueSeconds: 0, failed: 0 };
     try {
-      const scans = await this.retention.dueScanFamilies(BATCH_SIZE);
+      const scans = await this.retention.dueScanFamilies(this.batchSize);
       for (const scan of scans) {
         try { this.count(summary, 'scanFamilies', await this.retention.purgeScanFamily(scan.tenantId, scan.id)); }
         catch { summary.failed += 1; this.alert('SCAN_FAMILY_FAILED'); break; }
       }
-      const audits = await this.retention.dueBusinessAudits(BATCH_SIZE);
+      const audits = await this.retention.dueBusinessAudits(this.batchSize);
       for (const row of audits) {
         try { this.count(summary, 'businessAudits', await this.retention.purgeBusinessAudit(row.id, row.tenantId)); }
         catch { summary.failed += 1; this.alert('BUSINESS_AUDIT_FAILED'); break; }
       }
-      const platformAudits = await this.retention.duePlatformAudits(BATCH_SIZE);
+      const platformAudits = await this.retention.duePlatformAudits(this.batchSize);
       for (const row of platformAudits) {
         try { this.count(summary, 'platformAudits', await this.retention.purgePlatformAudit(row.id, row.tenantId)); }
         catch { summary.failed += 1; this.alert('PLATFORM_AUDIT_FAILED'); break; }

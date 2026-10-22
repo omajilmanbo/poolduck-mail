@@ -84,6 +84,6 @@ Production 到期失败时保留 `pending_delete` 与 `suspended`；查 `tenant_
 
 ## 8. ADR-024 一年记录销毁（#170–#173）
 
-`RECORD_RETENTION_PROCESSOR_ENABLED` 默认关闭；Production 启用前须先应用 `20261022000000_record_retention_scan_indexes`，按 tenant/月份盘点到期行数，核对合成数据测试、告警路由和备份边界。每分钟分别选取最多 100 个扫码家族、租户审计和平台审计候选；清理先锁 tenant 并复核数据库到期时间。`pending_delete` 的既存扫码家族与业务审计冻结，关联平台审计延至删除流程结束；恢复后超期记录可在下一轮清理。未终态邮件或未完成发送尝试不得强制清理。`delivery_unknown` 的尝试若没有 `provider_call_closed_at`，即使 `completed_at` 已被陈旧认领恢复流程填写，也必须保留并报警。人工核实原调用已结束后才可在受控维护中记录关闭时间；不得修改邮件业务状态、自动重发或为清理而调用 provider。核对 `record_retention_alert` 安全原因码。
+`RECORD_RETENTION_PROCESSOR_ENABLED` 默认关闭；Production 启用前须先应用 `20261022000000_record_retention_scan_indexes`，按 tenant/月份盘点到期行数，核对合成数据测试、告警路由和备份边界。`RECORD_RETENTION_BATCH_SIZE` 可设 1–100；每分钟分别选取最多该数量的扫码家族、租户审计和平台审计候选，按全局到期顺序处理。清理先锁 tenant 并复核数据库到期时间。`pending_delete` 的既存扫码家族与业务审计冻结，关联平台审计延至删除流程结束；恢复后超期记录可在下一轮清理。未终态邮件或未完成发送尝试不得强制清理。`delivery_unknown` 的尝试若没有 `provider_call_closed_at`，即使 `completed_at` 已被陈旧认领恢复流程填写，也必须保留并报警。人工核实原调用已结束后才可在受控维护中记录关闭时间；不得修改邮件业务状态、自动重发或为清理而调用 provider。核对 `record_retention_alert` 安全原因码。
 
 出现清理失败、外键/计数异常或积压时将开关设为 `false` 并重启 Backend，确认无事务在途，再依据内部 ID 核对状态和迁移。Production 租户终结清理也须确认无 `processing`、未完成尝试或尚未确认关闭的 `delivery_unknown` 调用，才可销毁全部在线记录并写墓碑；失败则保持 `pending_delete` 和不可恢复门禁，修复后重试。索引回滚需停清理器并在数据库会话中显式设置 `app.allow_record_retention_index_rollback=true`；已销毁行无法靠回滚恢复。不得宣称备份副本已经清除。
