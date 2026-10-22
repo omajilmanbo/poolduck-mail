@@ -32,16 +32,16 @@ try {
   const { PlatformTenantPurgeService } = await import('../dist/platform/platform-tenant-purge.service.js');
   const db = new PrismaService();
   try {
-    const target = await db.tenant.create({ data: { tenantCode: '10PDLRG001', name: 'Synthetic Target',
+    const target = await db.tenant.create({ data: { tenantCode: '10PDRRG001', name: 'Synthetic Target',
       locationLimit: 1, subscription: { create: { plan: 'manual', status: 'suspended',
         startAt: new Date('2024-01-01T00:00:00Z'), endAt: new Date('2025-01-01T00:00:00Z') } } } });
-    const other = await db.tenant.create({ data: { tenantCode: '10PDLRG002', name: 'Synthetic Other',
+    const other = await db.tenant.create({ data: { tenantCode: '10PDRRG002', name: 'Synthetic Other',
       locationLimit: 1, subscription: { create: { plan: 'manual', status: 'trial',
         startAt: new Date('2024-01-01T00:00:00Z'), endAt: new Date('2030-01-01T00:00:00Z') } } } });
     const location = await db.location.create({ data: { tenantId: target.id,
-      locationCode: '10PDLR01', name: 'Synthetic Location' } });
+      locationCode: '10PDRR01', name: 'Synthetic Location' } });
     const person = await db.personMapping.create({ data: { tenantId: target.id, locationId: location.id,
-      personCode: '01K0LRG00001', scanCode: 'E01K0LRG00001', personName: 'Synthetic Person',
+      personCode: '01K0RRG00001', scanCode: 'E01K0RRG00001', personName: 'Synthetic Person',
       email: 'person@example.local' } });
     const sql = new Client({ connectionString: url.toString() });
     await sql.connect();
@@ -61,7 +61,7 @@ try {
           tenant_name_snapshot, location_name_snapshot, person_name_snapshot,
           person_code_snapshot, to_email, subject, body, template_key, status, updated_at)
         SELECT ${mailId}, $1::uuid, $2::uuid, $3::uuid, ${scanId},
-          'Synthetic Target', 'Synthetic Location', 'Synthetic Person', '01K0LRG00001',
+          'Synthetic Target', 'Synthetic Location', 'Synthetic Person', '01K0RRG00001',
           'person@example.local', 'Synthetic', 'Synthetic body', 'synthetic', 'sent', CURRENT_TIMESTAMP
         FROM generate_series(1, ${families}) g`, [target.id, location.id, person.id]);
       await sql.query(`INSERT INTO mail_delivery_attempts
