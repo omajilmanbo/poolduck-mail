@@ -133,10 +133,11 @@ export class RecordRetentionSchedulerService implements OnModuleInit, OnModuleDe
       if (summary.oldestOverdueSeconds > 900) this.alert('BACKLOG_OVERDUE');
       this.logger.log(JSON.stringify({ event: 'record_retention_metrics', ...summary }));
       if (summary.scanFamilies + summary.businessAudits + summary.platformAudits > 0 || summary.failed > 0) {
-        await this.audit.record({ action: 'platform.record_retention.run', resourceType: 'retention',
+        const recorded = await this.audit.record({ action: 'platform.record_retention.run', resourceType: 'retention',
           resourceId: 'production', result: summary.failed > 0 ? 'failure' : 'success',
           metadata: { counts: summary },
         });
+        if (!recorded) this.alert('AUDIT_WRITE_FAILED');
       }
       return summary;
     } finally {
