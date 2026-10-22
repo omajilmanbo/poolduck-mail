@@ -84,7 +84,7 @@ try {
       attempt: await db.mailDeliveryAttempt.findFirstOrThrow({ where: { mailJobId: mail.id } }),
       audit: await db.auditLog.findFirstOrThrow({ where: { tenantId: tenant.id } }),
     });
-    const beforeHistory = await historical();
+    let beforeHistory = await historical();
 
     // Deadline not reached: no current or historical mutations.
     await db.$executeRaw`UPDATE tenants SET status = 'pending_delete',
@@ -95,6 +95,7 @@ try {
     await db.subscription.update({ where: { tenantId: tenant.id }, data: { status: 'suspended' } });
     assert.equal((await service.purgeDueTenant(tenant.id)).outcome, 'not_due');
     assert.equal((await db.user.findUniqueOrThrow({ where: { id: manager.id } })).email, 'manager@example.local');
+    assert.deepEqual(await historical(), beforeHistory);
 
     await db.$executeRaw`UPDATE tenants SET deleted_at = (clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 year' - INTERVAL '1 second',
       purge_after = (clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 second' WHERE id = ${tenant.id}::uuid`;
@@ -105,6 +106,7 @@ try {
     await assert.rejects(service.purgeDueTenant(tenant.id), /TENANT_PURGE_MAIL_IN_FLIGHT/);
     await db.mailDeliveryAttempt.updateMany({ where: { mailJobId: mail.id },
       data: { providerCallClosedAt: new Date() } });
+    beforeHistory = await historical();
     await db.$executeRaw`CREATE FUNCTION reject_synthetic_purge() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN IF NEW.status = 'purged' THEN RAISE EXCEPTION 'synthetic rollback'; END IF; RETURN NEW; END $$`;
     await db.$executeRaw`CREATE TRIGGER reject_synthetic_purge BEFORE UPDATE ON tenants
