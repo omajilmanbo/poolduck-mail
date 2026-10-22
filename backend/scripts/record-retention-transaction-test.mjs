@@ -85,7 +85,12 @@ try {
       toEmail: person.email, subject: 'Synthetic', body: 'Synthetic body',
       templateKey: 'synthetic', status: 'waiting' } });
     for (const status of ['waiting', 'queued', 'processing']) {
-      await db.mailJob.update({ where: { id: waitingMail.id }, data: { status } });
+      const data = status === 'queued'
+        ? { status, scheduledAt: new Date(), sendNotBefore: null }
+        : status === 'processing'
+          ? { status, scheduledAt: null, claimedAt: new Date(), claimAttemptId: randomUUID() }
+          : { status };
+      await db.mailJob.update({ where: { id: waitingMail.id }, data });
       assert.equal(await retention.purgeScanFamily(tenant.id, waitingScan.id), 'blocked');
     }
 
