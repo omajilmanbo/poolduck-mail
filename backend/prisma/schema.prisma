@@ -269,6 +269,7 @@ model MailDeliveryAttempt {
   status            String    @default("claimed") @db.VarChar(32)
   claimedAt         DateTime  @default(now()) @map("claimed_at")
   providerInvokedAt DateTime? @map("provider_invoked_at")
+  providerCallClosedAt DateTime? @map("provider_call_closed_at")
   completedAt       DateTime? @map("completed_at")
   providerMessageId String?   @map("provider_message_id") @db.VarChar(255)
   rfcMessageId      String?   @map("rfc_message_id") @db.VarChar(512)

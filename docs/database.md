@@ -47,7 +47,7 @@ PostgreSQL 的日历年计算将 2024-02-29 12:00 映射为 2025-02-28 12:00（�
 
 ### ADR-024 一年记录保留与外键矩阵（#170–#173）
 
-Production 正常到期使用数据库时间：`scan_events.created_at + interval '1 year'` 决定整个扫码家族的期限；`audit_logs.created_at` 与 `platform_audit_logs.created_at` 各自加一个日历年。2024-02-29 到 2025-02-28 的边界由 PostgreSQL 计算，不按固定 365 天。按 `(到期表达式, id)` 稳定扫描，每次最多 500 行；默认不开启清理器。待删除租户的现存扫码家族和业务审计冻结；相关平台审计在删除流程未结束时冻结。恢复后立即解除冻结，超期行重新成为候选。
+Production 正常到期使用数据库时间：`scan_events.created_at + interval '1 year'` 决定整个扫码家族的期限；`audit_logs.created_at` 与 `platform_audit_logs.created_at` 各自加一个日历年。2024-02-29 到 2025-02-28 的边界由 PostgreSQL 计算，不按固定 365 天。按 `(到期表达式, id)` 稳定扫描，每次最多 500 行；默认不开启清理器。待删除租户的现存扫码家族和业务审计冻结；相关平台审计在删除流程未结束时冻结。恢复后立即解除冻结，超期行重新成为候选。`delivery_unknown` 仍属终态，但只有相应尝试的 `provider_call_closed_at` 已确认且全部尝试均完成时才可销毁；陈旧认领恢复不会自动写该字段。已有未知结果不自动回填，待人工确认调用已结束。
 
 | 父表 | 子表与 FK | 日常删除顺序 | 租户终结顺序 |
 | --- | --- | --- | --- |
@@ -56,7 +56,7 @@ Production 正常到期使用数据库时间：`scan_events.created_at + interva
 | `mail_jobs` | `mail_delivery_attempts.mail_job_id` Restrict；`scan_request_idempotency.mail_job_id` Cascade | 已确认终态且尝试均完成后，幂等 → 尝试 → 邮件 | 确认无在途调用后，幂等 → 尝试 → 邮件 |
 | `audit_logs` / `platform_audit_logs` | 可空 actor/tenant 关联；没有记录子表 | 各行按自身创建时间清理；锁 tenant 复核冻结 | 业务审计删除；平台审计依自身期限留存 |
 
-`20261022000000_record_retention_scan_indexes` 仅增加 `scan_events` 的 `(tenant_id, created_at + interval '1 year', id)` 与 `(created_at + interval '1 year', id)`，以及两类审计各自的 `(created_at + interval '1 year', id)` PostgreSQL 表达式索引，不修改任何历史行。Prisma schema 不能表达这些索引，SQL migration 是权威来源。回滚仅删除这些索引，须先停用清理器并显式设置数据库会话 `app.allow_record_retention_index_rollback=true`；回滚不能恢复已销毁记录。
+`20261022000000_record_retention_scan_indexes` 增加 `mail_delivery_attempts.provider_call_closed_at` 可空列、`scan_events` 的 `(tenant_id, created_at + interval '1 year', id)` 与 `(created_at + interval '1 year', id)`，以及两类审计各自的 `(created_at + interval '1 year', id)` PostgreSQL 表达式索引，不修改任何历史行。Prisma schema 不能表达这些索引，SQL migration 是权威来源。受控回滚仅删除索引，保留调用关闭证据列；须先停用清理器并显式设置数据库会话 `app.allow_record_retention_index_rollback=true`。回滚不能恢复已销毁记录。
 
 ### ADR-023 Staging 物理清理矩阵（#164）
 

@@ -102,6 +102,9 @@ try {
     await assert.rejects(service.purgeDueTenant(tenant.id), /TENANT_PURGE_MAIL_IN_FLIGHT/);
     assert.equal((await db.tenant.findUniqueOrThrow({ where: { id: tenant.id } })).status, 'pending_delete');
     await db.mailDeliveryAttempt.updateMany({ where: { mailJobId: mail.id }, data: { completedAt: new Date() } });
+    await assert.rejects(service.purgeDueTenant(tenant.id), /TENANT_PURGE_MAIL_IN_FLIGHT/);
+    await db.mailDeliveryAttempt.updateMany({ where: { mailJobId: mail.id },
+      data: { providerCallClosedAt: new Date() } });
     await db.$executeRaw`CREATE FUNCTION reject_synthetic_purge() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN IF NEW.status = 'purged' THEN RAISE EXCEPTION 'synthetic rollback'; END IF; RETURN NEW; END $$`;
     await db.$executeRaw`CREATE TRIGGER reject_synthetic_purge BEFORE UPDATE ON tenants

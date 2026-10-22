@@ -46,9 +46,16 @@ export class PlatformTenantPurgeService {
         const unsafeMail = await tx.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
           SELECT count(*) AS count FROM mail_jobs j
           WHERE j.tenant_id = ${tenantId}::uuid
-            AND (j.status = 'processing' OR EXISTS (
+            AND (j.status = 'processing'
+              OR (j.status = 'delivery_unknown' AND NOT EXISTS (
+                SELECT 1 FROM mail_delivery_attempts closed
+                WHERE closed.mail_job_id = j.id AND closed.status = 'delivery_unknown'
+                  AND closed.provider_call_closed_at IS NOT NULL))
+              OR EXISTS (
               SELECT 1 FROM mail_delivery_attempts a
-              WHERE a.mail_job_id = j.id AND a.completed_at IS NULL))
+              WHERE a.mail_job_id = j.id
+                AND (a.completed_at IS NULL
+                  OR (a.status = 'delivery_unknown' AND a.provider_call_closed_at IS NULL))))
         `);
         if (unsafeMail[0].count !== 0n) throw new Error('TENANT_PURGE_MAIL_IN_FLIGHT');
 

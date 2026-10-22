@@ -93,6 +93,7 @@ try {
     assert.equal(await retention.purgeScanFamily(tenant.id, scan.id), 'blocked');
     await db.mailDeliveryAttempt.update({ where: { id: attempt.id },
       data: { status: 'delivery_unknown', completedAt: new Date() } });
+    assert.equal(await retention.purgeScanFamily(tenant.id, scan.id), 'blocked');
     await db.$executeRaw`UPDATE tenants SET status = 'pending_delete',
       deleted_at = clock_timestamp() AT TIME ZONE 'UTC',
       purge_after = (clock_timestamp() AT TIME ZONE 'UTC') + INTERVAL '1 year',
@@ -110,6 +111,10 @@ try {
     assert.equal((await retention.dueScanFamilies()).some((row) => row.id === waitingScan.id), false);
     assert.equal(await retention.purgeScanFamily(other.id, scan.id), 'not_due');
     assert.equal(await db.scanEvent.count({ where: { id: scan.id } }), 1);
+    // Reconciliation records call closure without rewriting the delivery fact.
+    await db.mailDeliveryAttempt.update({ where: { id: attempt.id },
+      data: { providerCallClosedAt: new Date() } });
+    assert.equal((await retention.dueScanFamilies()).some((row) => row.id === scan.id), true);
 
     await db.$executeRaw`CREATE FUNCTION reject_retention_scan() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN RAISE EXCEPTION 'synthetic rollback'; END $$`;

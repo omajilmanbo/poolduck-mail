@@ -84,9 +84,14 @@ export class RecordRetentionSchedulerService implements OnModuleInit, OnModuleDe
             AND (j.tenant_id <> s.tenant_id
               OR j.status NOT IN ('sent', 'failed', 'canceled', 'delivery_unknown')
               OR (j.status = 'failed' AND j.scheduled_at IS NOT NULL)
+              OR (j.status = 'delivery_unknown' AND NOT EXISTS (
+                SELECT 1 FROM mail_delivery_attempts closed
+                WHERE closed.mail_job_id = j.id AND closed.status = 'delivery_unknown'
+                  AND closed.provider_call_closed_at IS NOT NULL))
               OR EXISTS (SELECT 1 FROM mail_delivery_attempts a
                 WHERE a.mail_job_id = j.id
-                  AND (a.tenant_id <> s.tenant_id OR a.completed_at IS NULL))))
+                  AND (a.tenant_id <> s.tenant_id OR a.completed_at IS NULL
+                    OR (a.status = 'delivery_unknown' AND a.provider_call_closed_at IS NULL)))))
           OR EXISTS (SELECT 1 FROM scan_request_idempotency i
             WHERE (i.scan_event_id = s.id OR i.mail_job_id IN
               (SELECT id FROM mail_jobs WHERE scan_event_id = s.id))

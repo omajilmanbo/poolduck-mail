@@ -10,3 +10,5 @@ DROP INDEX IF EXISTS "platform_audit_logs_due_at_id_idx";
 DROP INDEX IF EXISTS "audit_logs_due_at_id_idx";
 DROP INDEX IF EXISTS "scan_events_due_at_id_idx";
 DROP INDEX IF EXISTS "scan_events_tenant_id_due_at_id_idx";
+-- Keep provider_call_closed_at: dropping it would lose the safety evidence
+-- needed when an unknown provider call is reconciled later.
