@@ -476,7 +476,7 @@ export default function PlatformPage() {
             <p className="mt-1 text-sm">服务端环境：{environmentLabel}</p>
             <p className="mt-3 text-sm text-amber-200">
               {environment?.environment === 'production'
-                ? '删除后立即暂停新扫码和发信，按日历年保留一年，可在截止前恢复；到期清理当前资料，历史快照仍可能含原信息。'
+                ? '删除后立即暂停新扫码和发信。现存记录在一年恢复期内冻结日常到期清理；截止前可恢复，恢复后超期记录立即重新进入清理队列。到期后销毁在线扫码、邮件和租户审计记录，并仅保留基本数据的非 PII 墓碑。'
                 : 'Staging 会立即清理全部在线租户数据和历史，无法恢复。清理失败时保持不可访问，可重新验密重试。'}
             </p>
             <label className="mt-4 block text-sm">当前平台管理员密码

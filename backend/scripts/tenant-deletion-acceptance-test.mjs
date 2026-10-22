@@ -120,10 +120,11 @@ try {
     await db.$executeRaw`UPDATE tenants SET deleted_at = (clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 year' - INTERVAL '1 second',
       purge_after = (clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 second' WHERE id = ${tenant.id}::uuid`;
     await platform.post(`/api/platform/tenants/${tenant.tenantCode}/restore`).send({}).expect(409);
-    const beforePurge = await historical();
     const purge = app.get(PlatformTenantPurgeService);
     assert.equal((await purge.purgeDueTenant(tenant.id)).outcome, 'purged');
-    assert.deepEqual(await historical(), beforePurge);
+    assert.equal(await db.scanEvent.count({ where: { tenantId: tenant.id } }), 0);
+    assert.equal(await db.mailJob.count({ where: { tenantId: tenant.id } }), 0);
+    assert.equal(await db.mailDeliveryAttempt.count({ where: { tenantId: tenant.id } }), 0);
     await tenantAgent.get('/api/auth/me').expect(401);
     await tenantAgent.post('/api/auth/login')
       .send({ tenant_code: tenant.tenantCode, identifier: manager.email, password: managerPassword }).expect(401);

@@ -13,6 +13,7 @@ import { AuditApiModule } from './audit/audit-api.module';
 import { UsersModule } from './users/users.module';
 import { LocationAccessModule } from './location-access/location-access.module';
 import { PlatformModule } from './platform/platform.module';
+import { RecordRetentionModule } from './retention/record-retention.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { PlatformModule } from './platform/platform.module';
     ScanEventsModule,
     UsersModule,
     PlatformModule,
+    RecordRetentionModule,
   ],
   controllers: [AppController],
   providers: [

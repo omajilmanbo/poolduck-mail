@@ -39,6 +39,8 @@
     "test:staging-tenant-deletion": "npm run build && node scripts/staging-tenant-deletion-test.mjs",
     "test:tenant-deletion-acceptance": "npm run build && node scripts/tenant-deletion-acceptance-test.mjs",
     "test:tenant-deletion-rollback": "node scripts/tenant-deletion-rollback-test.mjs",
+    "test:record-retention": "npm run build && node scripts/record-retention-transaction-test.mjs",
+    "test:tenant-retention-large": "npm run build && node scripts/tenant-retention-large-test.mjs",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
   },

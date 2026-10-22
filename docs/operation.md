@@ -81,3 +81,9 @@ Staging 仅在 `APP_ENV=staging` 且 `STAGING_TENANT_DELETE_ENABLED=true` 时允
 控制台“删除中”来自最近 10 分钟的开始审计，“删除失败”来自明确的失败审计；超过该窗口或缺少对应审计则显示“删除结果未确认”。这些是操作状态提示，不替代数据库残留核对。清理重试重新验密后写入新的开始审计，避免继续显示上一次失败。
 
 Production 到期失败时保留 `pending_delete` 与 `suspended`；查 `tenant_purge_alert` 原因码、待处理量和数据库锁/错误聚合，修复后由调度器重试。恢复只允许数据库时间严格早于 `purge_after`；到期即使清理还没运行也拒绝。暂停调度或回滚应用时保留 schema 与写入门禁。对于历史邮件的 `delivery_unknown`，仅人工对账，不重置发送状态。日志、工单和验收记录不得含管理员密码、租户名称、邮箱、邮件正文或原始 SQL 错误。
+
+## 8. ADR-024 一年记录销毁（#170–#173）
+
+`RECORD_RETENTION_PROCESSOR_ENABLED` 默认关闭；Production 启用前须先应用 `20261022000000_record_retention_scan_indexes`，按 tenant/月份盘点到期行数，核对合成数据测试、告警路由和备份边界。每分钟分别选取最多 100 个扫码家族、租户审计和平台审计候选；清理先锁 tenant 并复核数据库到期时间。`pending_delete` 的既存扫码家族与业务审计冻结，关联平台审计延至删除流程结束；恢复后超期记录可在下一轮清理。未终态邮件或未完成发送尝试不得强制清理；核对 `record_retention_alert` 安全原因码，不修改邮件状态或调用 provider。
+
+出现清理失败、外键/计数异常或积压时将开关设为 `false` 并重启 Backend，确认无事务在途，再依据内部 ID 核对状态和迁移。Production 租户终结清理也须确认无 `processing` 或未完成尝试，才可销毁全部在线记录并写墓碑；失败则保持 `pending_delete` 和不可恢复门禁，修复后重试。索引回滚需停清理器并在数据库会话中显式设置 `app.allow_record_retention_index_rollback=true`；已销毁行无法靠回滚恢复。不得宣称备份副本已经清除。

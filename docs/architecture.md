@@ -127,13 +127,14 @@ OCI 真实邮件链路按边界拆为两张主题图：
 - 审计日志保留 tenant、actor、resource、result 与脱敏元数据；禁止密码、JWT、完整邮箱、邮件正文和 provider secret
 - ADR-023 已 Accepted，规定平台管理员整租户删除的后续实现边界：Production 删除时将 subscription
   原子置为 `suspended`，沿用现有新扫码与邮件发送门禁；登录、Session 与既有读取维持暂停订阅语义。
-  一日历年内可恢复，到期将当前对象清理为非 PII 墓碑并保留 ADR-011 要求的不可变历史；
+  一日历年内可恢复，到期将当前对象清理为非 PII 墓碑；已接受的 ADR-024 将原有历史永久保留规则
+  改为记录型数据一年正常期限、删除恢复期冻结、到期销毁。清理代码默认关闭，尚未在 Production 启用；
   Staging 立即受控清理且不提供恢复。数据库备份生命周期另行决策。
 - #157 引入 tenant 的可空生命周期字段、删除前状态快照、日历年约束与到期扫描索引；
   #160 的 Production 删除事务锁定 tenant，写入生命周期并暂停订阅，普通订阅更新使用同一锁防止重新激活。
   删除前在同一锁定事务中拒绝 `subscription.status=active` 的租户；这里不按 tenant 主表的 `active` 状态判断。
   #161 在同一租户锁定事务中按数据库时间严格检查恢复期限，原子恢复删除前状态并清空生命周期字段。
-  Staging 删除与 Production 到期清理仍由后续 Issue 实现。
+  Staging 删除与 Production 到期清理已实现；Production 清理开关须另行审核后启用。
 
 ## 8. 订阅模型
 
@@ -242,7 +243,7 @@ MVP 阶段邮件主题和纯文本正文由后端根据动作码中的动作生�
 
 内部 `PlatformTenantPurgeService` 提供单租户事务入口，供 #163 调度器调用；本阶段不启动调度，也不提供 HTTP 路由。入口只允许 `APP_ENV=production`，以 tenant UUID 锁定行，按数据库时间判定到期。恢复事务使用同一行锁；到期后恢复被拒。清理当前授权、Session 和兼容标识后，将 tenant、user、device、location、person 当前对象改为非 PII 墓碑；subscription 继续 `suspended`。成功审计与状态切换同事务提交，失败时全量回滚，可重试。当前对象的数据库写入门禁共用该行锁，阻止清理后并发写回。完整表顺序及外键矩阵见 `docs/database.md`。
 
-不可变扫码、邮件、provider 回执及审计历史维持原字段值和 UUID 关联；历史快照可能仍有 PII。终结 tenant 不可恢复或复用，平台控制面仍只读最小 tenant 摘要，不暴露历史业务明细。
+ADR-024 的 #170–#173 在本地实现一年正常期限与到期物理销毁：日常清理器先锁 tenant，跳过 `pending_delete`；邮件未终态或发送尝试未完成时跳过并告警。租户到期事务确认没有在途调用后，按幂等、尝试、邮件、扫码、业务审计的外键顺序销毁在线记录，再清理当前对象 PII 并保留非 PII 墓碑。恢复后超期记录立即重新成为日常清理候选。清理器默认关闭，Production 尚未启用；终结 tenant 不可恢复或复用，平台控制面不暴露租户业务明细。#174–#175 将增加独立的平台操作审计只读查询。
 
 ## Staging 整租户立即清理（ADR-023 / #164）
 

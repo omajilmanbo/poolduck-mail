@@ -6,6 +6,8 @@
 
 ## Context
 
+> 后续决策：Accepted ADR-024 局部取代本 ADR 中 Production 租户终结后继续保留扫码、邮件、回执及审计历史的规则；一年恢复期、当前对象非 PII 墓碑与 Staging 立即清理规则不变。历史销毁尚未实施。
+
 用户要求在平台控制台删除整个 tenant：删除前重新输入当前 platform_admin 密码；Production 保留数据一年且可恢复；Staging 立即删除，不提供恢复。现行 Accepted ADR-013 第 7 节明确 MVP 不提供 tenant 物理删除。ADR-006 限定 platform_admin 不读取租户业务明细；ADR-003、ADR-017 限定租户门禁、邮件领取与不可变发送事实；ADR-011 的人员/地点 14 天清理保留不可变业务历史。整租户清理必须明确与这些规则的关系，不能直接为 tenant 表增加级联删除。
 
 当前数据库中 tenant 与用户、地点、人员、扫码、邮件任务、发送尝试、Session、审计、平台开通幂等记录等存在 Restrict/SetNull 外键。仅删除 `tenants` 主行既不能实现整租户删除，也可能因外键失败。Production 恢复还涉及订阅到期、已领取或结果未知的邮件和跨 tenant 隔离。数据库备份生命周期尚未设计，本 ADR 暂不规定备份中的数据如何保留或清除；因此这里的“删除”仅指在线业务数据库中的数据。

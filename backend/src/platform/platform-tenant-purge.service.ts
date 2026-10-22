@@ -26,6 +26,7 @@ export class PlatformTenantPurgeService {
     }
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(Prisma.sql`SELECT set_config('statement_timeout', '600000', true)`);
         // The same row lock is used by delete and restore. Database time is authoritative.
         const rows = await tx.$queryRaw<Array<{ status: string; due: boolean }>>(Prisma.sql`
           SELECT status, purge_after <= (clock_timestamp() AT TIME ZONE 'UTC') AS due
@@ -39,6 +40,18 @@ export class PlatformTenantPurgeService {
           };
         }
 
+        // A suspended tenant cannot start another send, but an earlier provider
+        // invocation may still be in flight. Leave the entire transaction intact
+        // and retry after its attempt reaches a recorded outcome.
+        const unsafeMail = await tx.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+          SELECT count(*) AS count FROM mail_jobs j
+          WHERE j.tenant_id = ${tenantId}::uuid
+            AND (j.status = 'processing' OR EXISTS (
+              SELECT 1 FROM mail_delivery_attempts a
+              WHERE a.mail_job_id = j.id AND a.completed_at IS NULL))
+        `);
+        if (unsafeMail[0].count !== 0n) throw new Error('TENANT_PURGE_MAIL_IN_FLIGHT');
+
         const expected = {
           users: await tx.user.count({ where: { tenantId } }),
           devices: await tx.device.count({ where: { tenantId } }),
@@ -48,14 +61,27 @@ export class PlatformTenantPurgeService {
           legacy_identifiers: await tx.locationLegacyIdentifier.count({ where: { tenantId } }),
           sessions: await tx.session.count({ where: { tenantId } }),
           scan_idempotencies: await tx.scanRequestIdempotency.count({ where: { tenantId } }),
+          attempts: await tx.mailDeliveryAttempt.count({ where: { tenantId } }),
+          mail_jobs: await tx.mailJob.count({ where: { tenantId } }),
+          scan_events: await tx.scanEvent.count({ where: { tenantId } }),
+          audit_logs: await tx.auditLog.count({ where: { tenantId } }),
           platform_idempotencies: await tx.platformTenantIdempotency.count({ where: { tenantId } }),
         };
+
+        // ADR-024: destroy the entire online record graph before current-object
+        // tombstones. FK children go first; counts and the status update commit
+        // atomically, so failure leaves the tenant pending and recoverable only
+        // according to the original deadline.
+        const scanIdempotencies = await tx.scanRequestIdempotency.deleteMany({ where: { tenantId } });
+        const attempts = await tx.mailDeliveryAttempt.deleteMany({ where: { tenantId } });
+        const mailJobs = await tx.mailJob.deleteMany({ where: { tenantId } });
+        const scanEvents = await tx.scanEvent.deleteMany({ where: { tenantId } });
+        const auditLogs = await tx.auditLog.deleteMany({ where: { tenantId } });
 
         // Current-only rows can be removed before their parent tombstones are rewritten.
         const assignments = await tx.operatorLocationAssignment.deleteMany({ where: { tenantId } });
         const legacyIdentifiers = await tx.locationLegacyIdentifier.deleteMany({ where: { tenantId } });
         const sessions = await tx.session.deleteMany({ where: { tenantId } });
-        const scanIdempotencies = await tx.scanRequestIdempotency.deleteMany({ where: { tenantId } });
         const platformIdempotencies = await tx.platformTenantIdempotency.deleteMany({ where: { tenantId } });
 
         // Required manager email / operator username constraints need distinct, non-PII values.
@@ -106,6 +132,8 @@ export class PlatformTenantPurgeService {
           users, devices, people, locations,
           assignments: assignments.count, legacy_identifiers: legacyIdentifiers.count,
           sessions: sessions.count, scan_idempotencies: scanIdempotencies.count,
+          attempts: attempts.count, mail_jobs: mailJobs.count,
+          scan_events: scanEvents.count, audit_logs: auditLogs.count,
           platform_idempotencies: platformIdempotencies.count,
         };
         if (Object.keys(expected).some((key) => counts[key as keyof typeof counts] !== expected[key as keyof typeof expected])) {
@@ -119,7 +147,7 @@ export class PlatformTenantPurgeService {
           },
         });
         return { outcome: 'purged', tenantId, counts };
-      }, { timeout: 120_000 });
+      }, { timeout: 660_000 });
     } catch (error) {
       await this.audit.record({
         targetTenantId: tenantId, action: 'platform.tenant.purge',

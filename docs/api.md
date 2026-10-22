@@ -189,7 +189,7 @@ ADR-017 当前契约：
 - `POST /api/locations/{location_id}/delete`：仅 `tenant_manager`，安排 14 天后终结删除；立即终止 queued 邮件
 - `POST /api/locations/{location_id}/restore`：仅 `tenant_manager`，期限内恢复删除前状态；到期返回 `DELETION_RESTORE_EXPIRED`
 - DELETE 为软停用；停用后拒绝新扫描与人员映射写入，并把该地点 queued 邮件安全终止为 failed/`LOCATION_INACTIVE`
-- 终结清理由幂等后台任务按数据库时间执行：当前 PII 被匿名化、地点 assignments 被撤销，历史快照不删除
+- 终结清理由幂等后台任务按数据库时间执行：当前 PII 被匿名化、地点 assignments 被撤销；既有历史快照不因地点终结而改写，仍按 ADR-024 的正常一年期限独立销毁
 - location ID 冲突最多重试 5 次，耗尽返回 `LOCATION_CODE_GENERATION_EXHAUSTED`；不存在、跨 tenant 或 operator 未授权统一返回 `LOCATION_NOT_FOUND`
 - 错误：`location_id` 非法或不属于当前 tenant 时返回 `LOCATION_NOT_FOUND`
 
@@ -406,6 +406,7 @@ tenant 查询。响应只包含 tenant/subscription/额度/脱敏 manager 摘要
 - `APP_ENV=production`：以数据库时间原子设置 tenant `status=pending_delete`、`deleted_at`、`purge_after=deleted_at + interval '1 year'` 及删除前 tenant/订阅状态快照，同时将订阅改为 `suspended`
 - 目标 `subscription.status=active` 时返回 `409 PLATFORM_TENANT_ACTIVE_SUBSCRIPTION`，不修改 tenant 或订阅；`trial`、`expired`、`suspended` 可继续删除。检查与删除写入位于同一租户锁定事务中
 - Production 返回 `{ tenant_code, status: "pending_delete", deleted_at, purge_after, idempotency_replayed }`；重复删除不重置期限或重复修改订阅
+- Production 待删除窗口内，现存扫码/邮件家族与租户业务审计暂停日常一年到期清理；到期终结时销毁在线记录，仅保留基本对象非 PII 墓碑。平台审计按自身一年期限处理，未结束的删除流程关联记录暂缓清理。数据库备份生命周期另行决定
 - `APP_ENV=staging` 且 `STAGING_TENANT_DELETE_ENABLED=true`：先持久化 `staging_deleting` 和订阅 `suspended`，再事务性删除目标当前对象及全部历史。成功返回 `{ tenant_code, status: "deleted", deleted_at: null, purge_after: null, idempotency_replayed }`；相同租户重复请求仍须重新验密后安全重放。失败时保留阻断状态供重新验密重试；无恢复接口
 - Staging 未启用开关或其他环境返回 `PLATFORM_TENANT_DELETE_ENV_UNAVAILABLE`；该接口不接受客户端选择环境
 - 错误密码返回 `PLATFORM_DELETE_PASSWORD_INVALID`，请求期间失效的 Session 返回 `PLATFORM_DELETE_SESSION_INVALID`；未知 tenant 返回 `PLATFORM_TENANT_NOT_FOUND`，已终结 tenant 返回 `PLATFORM_TENANT_PENDING_DELETE`
@@ -419,6 +420,7 @@ tenant 查询。响应只包含 tenant/subscription/额度/脱敏 manager 摘要
 - 成功返回与 `GET /api/platform/tenants/{tenant_code}` 相同的最小平台摘要；恢复仅成功一次，重复请求返回 `409 PLATFORM_TENANT_NOT_PENDING_DELETE`
 - Staging 或未知环境返回 `PLATFORM_TENANT_RESTORE_ENV_UNAVAILABLE`；订阅状态与快照不一致返回 `PLATFORM_TENANT_RESTORE_STATE_INVALID`，整笔事务回滚
 - 不延长订阅 `end_at`，既有 Session 继续遵循原认证语义；已过期的 `trial`/`active` 仍由 ADR-003 到期门禁阻止扫码和发信。不修改人员/地点的独立删除状态，不重新排队或重发历史邮件
+- 恢复立即解除记录清理冻结；创建时间超过正常一年期限的记录可被下一轮清理删除，无额外导出宽限期
 - 进入恢复服务后的成功与业务拒绝使用内部 tenant/admin ID、合法 request ID、环境、结果和原因码记录脱敏平台审计；认证守卫与请求体验证在服务调用前拒绝
 
 ### PATCH `/api/platform/tenants/{tenant_code}/location-limit`

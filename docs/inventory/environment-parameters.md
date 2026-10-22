@@ -21,6 +21,7 @@
 | REFRESH_TOKEN_SECRET | 刷新令牌签名密钥 | `local-placeholder` | `Secret` | `Secret` | Yes | 不写真实值 |
 | MAIL_PROVIDER | 邮件 provider 类型 | `mock` | `mock`（OCI 待 #145） | `TBD` | No | 仅 `mock` 当前可启动；`sandbox` 不是 selector |
 | REAL_MAIL_SEND_ENABLED | 真实发送独立门禁 | `false` | `false`（#145 前） | `false` | No | 单独设置为 true 仍不能绕过代码门禁 |
+| RECORD_RETENTION_PROCESSOR_ENABLED | ADR-024 到期记录销毁调度 | `false` | `false` | `false`（启用另审） | No | 仅可信 `APP_ENV=production` 可启动；默认关闭 |
 | OCI_EMAIL_REGION | OCI HTTPS region | 空 | `ap-tokyo-1`（资源已建，真实发送未批准） | TBD | No | sender/Email Domain/endpoint 须同 region |
 | OCI_EMAIL_SENDER_COMPARTMENT_ID | approved sender 所在 compartment | 空 | 既有 Staging compartment；资源已建，容器仍不设置真实模式 | TBD | No | 容器运行环境，非数据库字段 |
 | OCI_EMAIL_FROM_ADDRESS | approved sender | 空 | `no-reply@mail.poolducktest.com` 已在 OCI `ACTIVE`，真实发送未批准 | TBD | No | 非登录凭据；不得提前启用 |

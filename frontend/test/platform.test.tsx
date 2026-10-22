@@ -183,6 +183,7 @@ describe('platform tenant deletion UI', () => {
     expect(screen.getByRole('dialog').textContent).toContain('Synthetic Tenant');
     expect(screen.getByRole('dialog').textContent).toContain('10PDTEST01');
     expect(screen.getByRole('dialog').textContent).toContain('Production');
+    expect(screen.getByRole('dialog').textContent).toContain('恢复后超期记录立即重新进入清理队列');
     const password = screen.getByLabelText('删除确认密码') as HTMLInputElement;
     fireEvent.change(password, { target: { value: 'synthetic-secret' } });
     fireEvent.click(screen.getByRole('button', { name: '确认删除' }));

@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - codex/issues-170-173-record-retention
 
 jobs:
   backend:
@@ -109,6 +110,12 @@ jobs:
 
       - name: Verify ADR-023 tenant lifecycle migration and guarded rollback
         run: npm --prefix backend run test:tenant-lifecycle-migration
+
+      - name: Verify ADR-024 record retention and tenant purge transactions
+        run: |
+          npm --prefix backend run test:record-retention
+          npm --prefix backend run test:platform-tenant-purge-transaction
+          npm --prefix backend run test:tenant-retention-large
 
       - name: Run ADR-017 database concurrency, SLO and rollback gate
         run: npm --prefix backend run validate:adr017

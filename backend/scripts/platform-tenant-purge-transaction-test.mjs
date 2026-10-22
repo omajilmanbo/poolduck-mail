@@ -68,7 +68,7 @@ try {
       toEmail: 'person@example.local', subject: 'Synthetic', body: 'Synthetic body',
       templateKey: 'synthetic', status: 'delivery_unknown' } });
     await db.mailDeliveryAttempt.create({ data: { tenantId: tenant.id, mailJobId: mail.id,
-      status: 'delivery_unknown', providerMessageId: 'synthetic-provider-id' } });
+      status: 'delivery_unknown', providerMessageId: 'synthetic-provider-id', completedAt: new Date() } });
     await db.auditLog.create({ data: { tenantId: tenant.id, actorUserId: manager.id,
       action: 'synthetic', resourceType: 'scan', resourceId: scan.id, result: 'success',
       metadataJson: { historical: 'Person Name' } } });
@@ -98,6 +98,10 @@ try {
 
     await db.$executeRaw`UPDATE tenants SET deleted_at = (clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 year' - INTERVAL '1 second',
       purge_after = (clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 second' WHERE id = ${tenant.id}::uuid`;
+    await db.mailDeliveryAttempt.updateMany({ where: { mailJobId: mail.id }, data: { completedAt: null } });
+    await assert.rejects(service.purgeDueTenant(tenant.id), /TENANT_PURGE_MAIL_IN_FLIGHT/);
+    assert.equal((await db.tenant.findUniqueOrThrow({ where: { id: tenant.id } })).status, 'pending_delete');
+    await db.mailDeliveryAttempt.updateMany({ where: { mailJobId: mail.id }, data: { completedAt: new Date() } });
     await db.$executeRaw`CREATE FUNCTION reject_synthetic_purge() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN IF NEW.status = 'purged' THEN RAISE EXCEPTION 'synthetic rollback'; END IF; RETURN NEW; END $$`;
     await db.$executeRaw`CREATE TRIGGER reject_synthetic_purge BEFORE UPDATE ON tenants
@@ -114,7 +118,8 @@ try {
     assert.equal(result.outcome, 'purged');
     assert.deepEqual(result.counts, { users: 2, devices: 1, people: 2, locations: 2,
       assignments: 1, legacy_identifiers: 1, sessions: 1,
-      scan_idempotencies: 1, platform_idempotencies: 1 });
+      scan_idempotencies: 1, attempts: 1, mail_jobs: 1,
+      scan_events: 1, audit_logs: 1, platform_idempotencies: 1 });
     assert.equal((await service.purgeDueTenant(tenant.id)).outcome, 'already_purged');
     assert.equal((await db.tenant.findUniqueOrThrow({ where: { id: tenant.id } })).tenantCode, tenant.tenantCode);
     assert.equal((await db.tenant.findUniqueOrThrow({ where: { id: tenant.id } })).status, 'purged');
@@ -135,7 +140,9 @@ try {
       'scanRequestIdempotency', 'platformTenantIdempotency']) {
       assert.equal(await db[model].count({ where: { tenantId: tenant.id } }), 0);
     }
-    assert.deepEqual(await historical(), beforeHistory);
+    for (const model of ['scanEvent', 'mailJob', 'mailDeliveryAttempt', 'auditLog']) {
+      assert.equal(await db[model].count({ where: { tenantId: tenant.id } }), 0);
+    }
     assert.equal((await db.tenant.findUniqueOrThrow({ where: { id: other.id } })).name, 'Synthetic Tenant');
     assert.equal((await db.subscription.findUniqueOrThrow({ where: { tenantId: other.id } })).status, 'trial');
     await assert.rejects(db.user.update({ where: { id: manager.id }, data: { email: 'rewritten@example.local' } }));
@@ -155,7 +162,7 @@ try {
     assert.equal(JSON.stringify(audits).includes('Person Name'), false);
     process.env.APP_ENV = 'staging';
     await assert.rejects(service.purgeDueTenant(other.id), /PRODUCTION_ONLY/);
-    console.log('Production tenant tombstone transaction, rollback, retry, history, and isolation passed.');
+    console.log('Production tenant tombstone transaction, record destruction, rollback, retry, and isolation passed.');
   } finally {
     await db.$disconnect();
   }
