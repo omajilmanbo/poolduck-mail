@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Inject, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { MAIL_PROVIDER_CONFIG_TOKEN, MailProviderConfig } from '../mail-jobs/mail-provider.config';
 import {
   PLATFORM_ACCESS_COOKIE_NAME,
   PLATFORM_REFRESH_COOKIE_NAME,
@@ -21,7 +22,10 @@ type HttpResponse = {
 
 @Controller('api/platform/auth')
 export class PlatformAuthController {
-  constructor(private readonly auth: PlatformAuthService) {}
+  constructor(
+    private readonly auth: PlatformAuthService,
+    @Inject(MAIL_PROVIDER_CONFIG_TOKEN) private readonly mailProviderConfig: MailProviderConfig,
+  ) {}
 
   @Post('login')
   async login(
@@ -69,6 +73,13 @@ export class PlatformAuthController {
   @UseGuards(PlatformAuthGuard)
   me(@CurrentPlatformAdmin() admin: AuthenticatedPlatformAdmin) {
     return { admin };
+  }
+
+  @Get('mail-mode')
+  @UseGuards(PlatformAuthGuard)
+  @Header('Cache-Control', 'no-store')
+  mailMode() {
+    return { mode: this.mailProviderConfig.kind };
   }
 
   private setCookies(

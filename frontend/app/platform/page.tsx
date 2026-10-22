@@ -36,6 +36,7 @@ function message(error: unknown) {
 export default function PlatformPage() {
   const api = useMemo(() => createPlatformApiClient(), []);
   const [admin, setAdmin] = useState<PlatformAdminSummary | null>(null);
+  const [mailMode, setMailMode] = useState<'mock' | 'oci_email_delivery_https' | 'unknown'>('unknown');
   const [tenants, setTenants] = useState<PlatformTenantSummary[]>([]);
   const [selectedCode, setSelectedCode] = useState('');
   const [error, setError] = useState('');
@@ -77,6 +78,18 @@ export default function PlatformPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void api.getMailMode()
+      .then((result) => {
+        setMailMode(
+          result?.mode === 'mock' || result?.mode === 'oci_email_delivery_https'
+            ? result.mode
+            : 'unknown',
+        );
+      })
+      .catch(() => setMailMode('unknown'));
+  }, [api]);
 
   useEffect(() => {
     if (selected) {
@@ -213,6 +226,18 @@ export default function PlatformPage() {
           退出平台
         </button>
       </header>
+
+      <section className="mt-5 rounded-lg border border-slate-700 bg-slate-900 p-4" aria-label="当前邮件发信模式">
+        <h2 className="text-sm font-semibold text-slate-200">当前邮件发信模式</h2>
+        <p className="mt-1 text-lg font-semibold" data-testid="platform-mail-mode">
+          {mailMode === 'mock'
+            ? '模拟发信（mock）'
+            : mailMode === 'oci_email_delivery_https'
+              ? '真实发信（OCI）'
+              : '状态未知'}
+        </p>
+        <p className="mt-1 text-xs text-slate-400">当前后端的邮件提交模式；不代表单封邮件已送达。</p>
+      </section>
 
       {error ? (
         <div className="mt-5 rounded-md border border-red-800 bg-red-950/50 px-4 py-3 text-sm text-red-200">

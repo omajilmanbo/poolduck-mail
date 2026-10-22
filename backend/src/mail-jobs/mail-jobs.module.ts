@@ -38,6 +38,6 @@ import {
         selectMailProvider(config, sandbox, OciEmailDeliveryProvider.createForStaging),
     },
   ],
-  exports: [MailJobsService],
+  exports: [MailJobsService, MAIL_PROVIDER_CONFIG_TOKEN],
 })
 export class MailJobsModule {}

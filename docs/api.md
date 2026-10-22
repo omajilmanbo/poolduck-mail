@@ -12,7 +12,7 @@
   不加入租户业务角色集合
 - 订阅状态统一：`trial` / `active` / `expired` / `suspended`
 - 扫码邮件正文固定由后端生成，不接收 `custom_message` / `custom_text` / `mail_body` 等自定义正文字段
-- 固定邮件正文模板按动作选择：`entry` 使用“入室しました”，`exit` 使用“退室しました”；动作来自人员动作码，不接受独立动作字段
+- 固定邮件主题和正文按动作选择：`entry` 显示「入室」，`exit` 显示「退室」；动作来自人员动作码，不接受独立动作字段
 
 ## 1. 认证（Auth）
 
@@ -88,6 +88,12 @@
 
 - 只接受 platform access Cookie/token audience
 - 出参只含 platform admin ID、脱敏/必要邮箱字段和状态；不含 `tenant_id`
+
+### GET `/api/platform/auth/mail-mode`
+
+- 只接受 platform access Cookie/token audience；tenant 用户和未认证请求不得读取
+- 返回当前后端已校验的邮件 Provider 选择，响应仅为 `{ "mode": "mock" }` 或 `{ "mode": "oci_email_delivery_https" }`；`Cache-Control: no-store`
+- 不返回发件地址、region、compartment、密钥或租户数据；此模式只表示提交方式，不表示单封邮件最终投递状态
 
 platform token 调用租户业务 API、tenant token 调用上述平台 API 时均返回未授权/禁止，不进行
 角色或账号回退。
@@ -195,7 +201,7 @@ ADR-017 当前契约：
   - 创建扫码事件记录
   - 后端解析版本、动作与 `person_code`；裸 `person_code`、未知版本/动作、格式错误或混合大小写一律返回 `ACTION_CODE_INVALID`
   - 后端只在 JWT tenant + 当前 location 上下文中按解析后的 `person_code` 查找 active 映射；本接口不再兼容裸码或旧 `scan_code`
-  - `entry` 正文使用 `{tenant_name}，{location_name}からのお知らせ：{person_name}　さんは　{time_stamp}　に入室しました。`；`exit` 将末句替换为 `退室しました。`
+  - 新邮件任务的主题为 `【{tenant_name}】【{location_name}】からのお知らせ-{action}`，纯文本正文为姓名敬称、区分、日本时间及自动发送说明；`entry` 使用「入室」，`exit` 使用「退室」。完整格式见 `docs/architecture.md` 第 11 节。历史任务主题/正文不改写
   - 后端在事务内把动作、动作来源 `person_action_code`、person → location → tenant 外键及发送时名称/人员码/动作快照写入 scan event/mail job，再创建初始 `waiting` 任务；provider 在数据库 `send_not_before` 到期且 worker 原子领取后才可调用
   - 同 tenant、location、解析后的 `person_code`、同动作在 10 秒内重复提交时返回原 scan event/mail job，响应 `deduplicated=true`；相反动作在窗口内返回 `SCAN_ACTION_CONFLICT`，不创建第二条记录或任务
   - 邮件重试只发送 mail job 已固化的正文和动作，不根据后续扫描或人员状态重新推断
@@ -213,7 +219,7 @@ ADR-017 当前契约：
   "person_code": "01K0ABC10001",
   "action": "entry",
   "action_source": "person_action_code",
-  "mail_subject": "Office Aからのお知らせ",
+  "mail_subject": "【Poolduck Tenant】【Office A】からのお知らせ-入室",
   "status": "sent",
   "retry_count": 0,
   "scheduled_at": null,

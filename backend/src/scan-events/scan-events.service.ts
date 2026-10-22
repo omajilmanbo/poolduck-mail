@@ -27,13 +27,20 @@ import {
 } from './scan-cancellation.sql';
 
 const MAIL_TEMPLATE_KEYS = {
-  entry: 'scan_entry_notice_v1',
-  exit: 'scan_exit_notice_v1',
+  entry: 'scan_entry_notice_v2',
+  exit: 'scan_exit_notice_v2',
 } as const;
 const SCAN_DEDUPLICATION_WINDOW_MS = 10_000;
 const IDEMPOTENCY_RETENTION_MS = 24 * 60 * 60 * 1000;
 const SCAN_ROUTE = 'POST:/api/scan-events';
 const ACTION_CODE_PATTERN = /^([EX])([0-9A-HJKMNP-TV-Z]{12})$/;
+
+function singleLineMailText(value: string): string {
+  return Array.from(value, (character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return code < 32 || code === 127 ? ' ' : character;
+  }).join('');
+}
 
 type ParsedActionCode = {
   personCode: string;
@@ -471,12 +478,14 @@ export class ScanEventsService {
           select: { id: true },
         });
 
-        const mailSubject = `${location.name}からのお知らせ`;
+        const mailSubject = this.buildMailSubject(
+          location.tenant.name,
+          location.name,
+          parsedCode.action,
+        );
         const mailBody = this.buildMailBody({
-          tenantName: location.tenant.name,
-          locationName: location.name,
           personName: personMapping.personName,
-          timestamp: this.formatUtcTimestamp(receivedAt),
+          timestamp: this.formatJapanTimestamp(receivedAt),
           action: parsedCode.action,
         });
 
@@ -925,19 +934,52 @@ export class ScanEventsService {
     return createHash('sha256').update(value, 'utf8').digest('hex');
   }
 
+  private buildMailSubject(
+    tenantName: string,
+    locationName: string,
+    action: Exclude<ScanAction, 'unknown'>,
+  ): string {
+    const actionText = action === 'entry' ? '入室' : '退室';
+    const fixed = `【】【】からのお知らせ-${actionText}`;
+    const names = [tenantName, locationName].map((name) =>
+      Array.from(singleLineMailText(name)),
+    );
+    const originalLengths = names.map((name) => name.length);
+    const budget = 255 - fixed.length;
+    while (names[0].length + names[1].length > budget) {
+      const longer = names[0].length >= names[1].length ? 0 : 1;
+      names[longer].pop();
+    }
+    const displayNames = names.map((name, index) =>
+      name.length < originalLengths[index]
+        ? `${name.slice(0, -1).join('')}…`
+        : name.join(''),
+    );
+    return `【${displayNames[0]}】【${displayNames[1]}】からのお知らせ-${actionText}`;
+  }
+
   private buildMailBody(input: {
-    tenantName: string;
-    locationName: string;
     personName: string;
     timestamp: string;
     action: Exclude<ScanAction, 'unknown'>;
   }): string {
     const actionText = input.action === 'entry' ? '入室' : '退室';
-    return `${input.tenantName}，${input.locationName}からのお知らせ：${input.personName}　さんは　${input.timestamp}　に${actionText}しました。`;
+    return `${singleLineMailText(input.personName)} 様\n\n区分：${actionText}\n時刻：${input.timestamp}（日本時間）\n\n※このメールは入退室メール送信アプリから自動送信されています。\nお心当たりがない場合は、お手数ですが、このメールを破棄してください。`;
   }
 
-  private formatUtcTimestamp(value: Date): string {
-    return value.toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  private formatJapanTimestamp(value: Date): string {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Tokyo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(value);
+    const part = (type: string) => parts.find((item) => item.type === type)?.value;
+    return `${part('year')}年${part('month')}月${part('day')}日 ${part('hour')}:${part('minute')}:${part('second')}`;
   }
 
   private historySelect() {

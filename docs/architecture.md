@@ -125,6 +125,10 @@ OCI 真实邮件链路按边界拆为两张主题图：
 - tenant 为一级隔离边界
 - user、device、scan_event、mail_job 均归属 tenant
 - 审计日志保留 tenant、actor、resource、result 与脱敏元数据；禁止密码、JWT、完整邮箱、邮件正文和 provider secret
+- ADR-023 已 Accepted，规定平台管理员整租户删除的后续实现边界：Production 删除时将 subscription
+  原子置为 `suspended`，沿用现有新扫码与邮件发送门禁；登录、Session 与既有读取维持暂停订阅语义。
+  一日历年内可恢复，到期将当前对象清理为非 PII 墓碑并保留 ADR-011 要求的不可变历史；
+  Staging 立即受控清理且不提供恢复。数据库备份生命周期另行决策。
 
 ## 8. 订阅模型
 
@@ -201,16 +205,20 @@ flowchart TD
     CD --> CD1[待后续补充]
 ```
 
-## 11. 扫码邮件正文固定模板（MVP）
+## 11. 扫码邮件固定模板（MVP）
 
-MVP 阶段邮件正文由后端根据动作码中的动作生成，不接收前端自定义正文，也不根据每日次数或历史状态推断动作。固定模板如下：
+MVP 阶段邮件主题和纯文本正文由后端根据动作码中的动作生成，不接收前端自定义正文，也不根据每日次数或历史状态推断动作。新任务使用 v2 模板，创建时固化主题和正文；历史 v1 任务及重试不改写。
 
 ```text
-entry:
-{tenant_name}，{location_name}からのお知らせ：{person_name}　さんは　{time_stamp}　に入室しました。
+主题： 【{tenant_name}】【{location_name}】からのお知らせ-{action}
 
-exit:
-{tenant_name}，{location_name}からのお知らせ：{person_name}　さんは　{time_stamp}　に退室しました。
+{person_name} 様
+
+区分：{action}
+時刻：{time_stamp}（日本時間）
+
+※このメールは入退室メール送信アプリから自動送信されています。
+お心当たりがない場合は、お手数ですが、このメールを破棄してください。
 ```
 
 变量来源：
@@ -218,6 +226,9 @@ exit:
 - `{tenant_name}`：租户公司名
 - `{location_name}`：当前办公室/学校名
 - `{person_name}`：扫码编号对应人员姓名
-- `{time_stamp}`：该次进入或离开动作的接收时间，格式为 `yyyymmddhhmmss`
+- `{action}`：`entry` 为「入室」，`exit` 为「退室」；主题和正文使用同一动作
+- `{time_stamp}`：该次进入或离开动作的数据库接收时间，转换为日本时间，格式为 `yyyy年MM月dd日 HH:mm:ss`
+
+主题限制为 255 字符；tenant/location 名称含控制字符时替换为空格，过长时截断并以省略号标示，保留动作后缀。正文使用创建时的人员姓名快照，姓名中的控制字符同样替换为空格；重试不重新读取人员资料。
 
 说明：用户自定义邮件文本为后续扩展，不在当前 MVP 范围内。
