@@ -65,3 +65,19 @@ Issue #116 的执行与恢复使用 [`docs/testing/staging-capacity-runbook.md`]
 运维人员负责确认测试窗口、备份、mock provider、宿主机采集和停止条件；测试负责人负责外部负载机、
 阶梯与结果报告。出现提前 provider 调用、真实误发、跨租户读取、OOM/restart、数据库异常或持续 5xx 时，
 立即停止负载，保留聚合证据并按 P0/P1 流程处理。
+
+## 6. Production 租户到期清理（#163）
+
+自动清理只在 `APP_ENV=production` 且人工审核后显式设置 `TENANT_PURGE_PROCESSOR_ENABLED=true` 时启动；默认关闭。每分钟用数据库时间取最多 20 个到期 tenant，逐个运行 #162 事务。多个实例可以同时运行；tenant 行锁保证每个租户只完成一次。失败时本轮停止，保留 `pending_delete` 与 `suspended`，下一轮或重启后重试；到期恢复立即被拒，即使清理尚未成功。
+
+查看结构化 `tenant_purge_metrics`：`pending`、`oldestOverdueSeconds`、`purged`、`failed`、`skipped`。`tenant_purge_alert` 的 `WRONG_ENVIRONMENT`、`SCAN_FAILED`、`TENANT_TRANSACTION_FAILED` 和 `BACKLOG_OVERDUE`（最老逾期超过 15 分钟）需进入生产运维告警路由。日志只有内部 tenant UUID、原因码和计数，不含名称、邮箱和正文。若出现环境错误或关联计数不符，保持开关关闭或立即设为 `false` 并重启 worker，核对数据库状态、迁移和 FK 计数后再恢复；不可直接将 `pending_delete` 改回可用状态，也不可重发未知邮件。停机及回滚保留生命周期字段和 `suspended` 门禁。发布前必须核准告警接收方、值班安排、迁移与回滚步骤；本次未启用生产任务。
+
+## 7. 租户删除与恢复验收及故障处理（#166）
+
+发布前在隔离的本地 PostgreSQL 上，以合成数据执行 `npm run test:tenant-deletion-acceptance`、`npm run test:tenant-deletion-rollback` 和 #160–#164 的事务/调度脚本；确认平台 Session、重新验密、`active` 订阅拒绝、跨租户隔离、暂停后的扫码/发信阻断、恢复期限及原订阅状态、到期墓碑和历史不变。检查本次代码与迁移的评审记录、Staging 演练、告警路由及人工放行。测试结果记录在 `docs/testing/tenant-deletion-acceptance-2026-10-20.md`。
+
+Staging 仅在 `APP_ENV=staging` 且 `STAGING_TENANT_DELETE_ENABLED=true` 时允许物理删除。若事务失败，目标停留在 `staging_deleting`，订阅保持 `suspended`；先用内部 tenant UUID 核对状态及各关联表计数，修复故障后由平台管理员在同一环境重新验密、重试相同目标。只有接口返回 `deleted` 且目标数据为零、平台结果审计存在，才确认完成。网络结果未知时先刷新平台状态再重试。不得将状态改回 active、绕开门禁或手工部分删除。Staging 不考虑备份和保留期。
+
+控制台“删除中”来自最近 10 分钟的开始审计，“删除失败”来自明确的失败审计；超过该窗口或缺少对应审计则显示“删除结果未确认”。这些是操作状态提示，不替代数据库残留核对。清理重试重新验密后写入新的开始审计，避免继续显示上一次失败。
+
+Production 到期失败时保留 `pending_delete` 与 `suspended`；查 `tenant_purge_alert` 原因码、待处理量和数据库锁/错误聚合，修复后由调度器重试。恢复只允许数据库时间严格早于 `purge_after`；到期即使清理还没运行也拒绝。暂停调度或回滚应用时保留 schema 与写入门禁。对于历史邮件的 `delivery_unknown`，仅人工对账，不重置发送状态。日志、工单和验收记录不得含管理员密码、租户名称、邮箱、邮件正文或原始 SQL 错误。

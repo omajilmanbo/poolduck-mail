@@ -186,6 +186,7 @@ describe('License API', () => {
       email,
       role: 'operator',
       status: 'active',
+      tenant: { tenantCode: '10CA000001', status: 'active' },
     };
   }
 });

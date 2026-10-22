@@ -107,6 +107,9 @@ jobs:
       - name: Install backend
         run: npm --prefix backend ci
 
+      - name: Verify ADR-023 tenant lifecycle migration and guarded rollback
+        run: npm --prefix backend run test:tenant-lifecycle-migration
+
       - name: Run ADR-017 database concurrency, SLO and rollback gate
         run: npm --prefix backend run validate:adr017
 

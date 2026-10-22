@@ -9,12 +9,46 @@
 - `id` (pk, uuid)
 - `tenant_code` (varchar(10), unique) - 服务端生成的全局唯一 Crockford Base32 登录标识；不可由客户指定或修改
 - `name` (varchar)
-- `status` (varchar) - active/suspended
+- `status` (varchar) - 通常为 active/suspended；Production 删除设为 pending_delete，到期清理设为 purged；Staging 即时清理的待补偿状态为 staging_deleting
+- `deleted_at` / `purge_after` (timestamp, nullable) - ADR-023 Production 删除起点与一日历年恢复截止；数据库时间为权威，恰好到期不可恢复
+- `deleted_from_status` / `deleted_from_subscription_status` (varchar(32), nullable) - 删除前 tenant 与 subscription 状态快照，供后续恢复 API 使用
 - `location_limit` (integer, positive) - ADR-013 的人工运营额度；active/inactive/pending deletion
   location 均计数，purged 后释放
-- `platform_version` (integer) - platform_admin 修改 subscription/额度时使用的乐观并发版本
+- `platform_version` (integer) - platform_admin 调整额度的乐观并发版本；Production 删除时递增
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
+
+`deleted_at`、`purge_after` 和两项状态快照必须同时为空或同时非空；非空时 tenant
+`status` 为 `pending_delete` / `purged`，且 `purge_after = deleted_at + interval '1 year'`。
+PostgreSQL 的日历年计算将 2024-02-29 12:00 映射为 2025-02-28 12:00（数据库时间）。
+到期扫描索引为 `(purge_after, status)`。#160 的 Production 删除事务写入生命周期与原状态快照，
+同时将订阅改为 `suspended`。#161 恢复事务仅在数据库时间早于 `purge_after` 时清空四项生命周期字段，
+恢复原 tenant/subscription 状态并递增版本。#162 提供 Production 到期后单租户事务清理入口；#163 接入到期调度，Staging 删除由 #164 实现。
+
+### ADR-023 Production 到期清理矩阵（#162）
+
+`platformTenantPurgeService.purgeDueTenant(tenant.id)` 仅供内部调度调用。先锁定 tenant 行，确认数据库时间达到 `purge_after` 且状态为 `pending_delete`；与恢复共用行锁。整个租户在同一事务中按下列顺序清理，任何一步失败均回滚，重试时 `purged` 为无操作结果。仅接受内部 UUID；没有对租户开放的清理 API。
+
+| 顺序 | 表 | 处理 | 外键与保留理由 |
+| --- | --- | --- | --- |
+| 1 | `operator_location_assignments`, `location_legacy_identifiers` | 删除当前授权和兼容地点标识 | 前者依赖 user/location，后者依赖 location；均非不可变历史 |
+| 2 | `sessions`, `scan_request_idempotency`, `platform_tenant_idempotency` | 删除登录 Session 与当前幂等记录 | Session 依赖 user；幂等记录依赖 scan/mail 或 platform_admin/tenant；已不再服务业务 |
+| 3 | `users` | 保留 UUID/角色；移除真实邮箱、用户名、密码哈希和最后登录时间，写入唯一非 PII 登录占位符，状态 `purged` | `scan_events`、`audit_logs` 的 user 外键无需 SetNull，历史关系仍稳定；必填身份约束继续成立 |
+| 4 | `devices` | 移除原 device code、名称、最后在线时间；UUID 构造非 PII code/name，状态 `purged` | `scan_events.device_id` 仍可引用 UUID 墓碑 |
+| 5 | `person_mappings` | 姓名/邮箱改为非 PII 墓碑，状态 `purged`，清除独立删除前状态 | 保留 UUID、不可复用 `person_code` 和 `scan_code`；`scan_events`/`mail_jobs` Restrict 关系不变 |
+| 6 | `locations` | 名称改为非 PII 墓碑，状态 `purged`，清除独立删除前状态 | 保留 UUID 与不可复用 `location_code`；历史 Restrict/SetNull 关系不变 |
+| 7 | `subscriptions`, `tenants` | 订阅保持 `suspended` 并递增版本；tenant 名称改为非 PII UUID 墓碑、状态 `purged`、版本递增 | 保留 tenant UUID、不可复用 `tenant_code`、删除日期/恢复期限/原状态快照以满足生命周期约束；平台历史审计仍可引用 tenant |
+| 8 | `platform_audit_logs` | 同事务追加仅含内部 ID、原因码和清理计数的成功记录 | 原有平台审计行不改写 |
+
+`scan_events`、`mail_jobs`、`mail_delivery_attempts`、`audit_logs`、`platform_audit_logs` 的原有行与历史快照不改写；其中可能含当时的 PII。清理不重置邮件状态或 provider 回执。上述业务码仍被墓碑行占用，不能重新发配；设备旧 code 与兼容地点标识被删除，但终结 tenant 永远不能重新执行业务。
+
+`20261020010000_guard_purged_tenant_current_writes` 为上述当前对象表的 INSERT/UPDATE 加数据库门禁：写入时共享锁定 tenant 行并拒绝 `purged`，与清理事务的独占行锁串行化，防止已进入处理的请求在清理提交后重新写入 PII、Session 或兼容标识。后续 `20261020020000_guard_staging_tenant_deletion` 也拒绝 `staging_deleting`。历史表不加此门禁，也不改写原记录。
+
+### ADR-023 Staging 物理清理矩阵（#164）
+
+Staging 删除先在独立事务验平台 Session 与密码，确认订阅不是 `active`，将 tenant 置为 `staging_deleting`、订阅置为 `suspended`，记录仅含内部 ID 的待补偿审计。`staging_deleting` 不使用一年生命周期字段；认证拒绝登录、刷新及已有租户 token，`20261020020000_guard_staging_tenant_deletion` 使当前对象写入门禁也拒绝此状态。物理清理失败时前述状态持久保留，重新验密后可重试。
+
+物理清理在单个事务中按 FK 子表到父表顺序删除：`scan_request_idempotency` → `mail_delivery_attempts` → `mail_jobs` → `scan_events` → `audit_logs` → `sessions` → `operator_location_assignments` → `location_legacy_identifiers` → `person_mappings` → `locations` → `devices` → `users` → `subscriptions` → `platform_tenant_idempotency` → 目标 `platform_audit_logs` → `tenants`。外键 Restrict 保证遗漏子行会使事务回滚，不允许部分完成。成功事务最后仅保留一条无 tenant FK 的平台操作结果，含内部 UUID、随机公共码的 SHA-256、删除计数和安全原因码；重复请求重新验密后凭该记录幂等返回。Staging 不保留 tenant 当前对象、历史扫码/邮件/回执/审计，也没有恢复入口或数据保留期。此路径不用于 Production。
 
 ## 2. users
 
@@ -326,7 +360,11 @@ Implementation notes:
   公开业务 ID 和关系锚点，但地点名称、人员姓名和邮箱被匿名化。成功扫码、邮件和审计历史不删除。
 - `20260728020000_add_delayed_deletion` 仅增加可空列与索引，不回填或删除现有数据。该生命周期迁移
   不提供破坏性 SQL 回滚；需要回滚应用时保留新增列，待恢复版本再次接管到期清理。
+- `20261020000000_add_tenant_deletion_lifecycle` 仅扩展 `tenants` 的可空字段、约束和索引，
+  不回填或更改现有租户及其外键/历史关系。`backend/prisma/rollback/20261020000000_add_tenant_deletion_lifecycle.sql`
+  仅在没有任何租户进入删除流程时允许移除新字段；否则拒绝回滚并保留状态。先在停写维护窗口确认无 `staging_deleting`、`pending_delete` 或 `purged`，再依逆序运行 `20261020020000_guard_staging_tenant_deletion.sql`、`20261020010000_guard_purged_tenant_current_writes.sql`、生命周期 rollback；每步均有状态守卫，拒绝时保留现有门禁。
 - Core tenant-scoped indexes are included for users, devices, locations, person mappings, scan events, mail jobs, and audit logs.
+- `20261020030000_index_tenant_staging_purge_foreign_keys` 为 Staging 整租户物理清理涉及的子表外键列增加索引。大租户删除父行时，PostgreSQL 外键检查因此无需反复全表扫描已删除但尚未 vacuum 的子表行。部署此迁移前须结束旧版正在运行的清理事务，迁移完成后再重试 `staging_deleting` 租户。
 
 Local migration commands:
 

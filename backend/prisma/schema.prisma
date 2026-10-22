@@ -7,29 +7,34 @@ datasource db {
 }
 
 model Tenant {
-  id                          String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantCode                  String                       @unique @map("tenant_code") @db.VarChar(10)
-  name                        String                       @db.VarChar(255)
-  status                      String                       @default("active") @db.VarChar(32)
-  locationLimit               Int                          @map("location_limit")
-  platformVersion             Int                          @default(1) @map("platform_version")
-  createdAt                   DateTime                     @default(now()) @map("created_at")
-  updatedAt                   DateTime                     @updatedAt @map("updated_at")
-  users                       User[]
-  subscription                Subscription?
-  devices                     Device[]
-  locations                   Location[]
-  personMappings              PersonMapping[]
-  scanEvents                  ScanEvent[]
-  mailJobs                    MailJob[]
-  mailDeliveryAttempts        MailDeliveryAttempt[]
-  auditLogs                   AuditLog[]
-  sessions                    Session[]
-  scanIdempotencies           ScanRequestIdempotency[]
-  operatorLocationAssignments OperatorLocationAssignment[]
-  platformAuditLogs           PlatformAuditLog[]
-  platformIdempotencies       PlatformTenantIdempotency[]
+  id                            String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantCode                    String                       @unique @map("tenant_code") @db.VarChar(10)
+  name                          String                       @db.VarChar(255)
+  status                        String                       @default("active") @db.VarChar(32)
+  deletedAt                     DateTime?                    @map("deleted_at")
+  purgeAfter                    DateTime?                    @map("purge_after")
+  deletedFromStatus             String?                      @map("deleted_from_status") @db.VarChar(32)
+  deletedFromSubscriptionStatus String?                      @map("deleted_from_subscription_status") @db.VarChar(32)
+  locationLimit                 Int                          @map("location_limit")
+  platformVersion               Int                          @default(1) @map("platform_version")
+  createdAt                     DateTime                     @default(now()) @map("created_at")
+  updatedAt                     DateTime                     @updatedAt @map("updated_at")
+  users                         User[]
+  subscription                  Subscription?
+  devices                       Device[]
+  locations                     Location[]
+  personMappings                PersonMapping[]
+  scanEvents                    ScanEvent[]
+  mailJobs                      MailJob[]
+  mailDeliveryAttempts          MailDeliveryAttempt[]
+  auditLogs                     AuditLog[]
+  sessions                      Session[]
+  scanIdempotencies             ScanRequestIdempotency[]
+  operatorLocationAssignments   OperatorLocationAssignment[]
+  platformAuditLogs             PlatformAuditLog[]
+  platformIdempotencies         PlatformTenantIdempotency[]
 
+  @@index([purgeAfter, status])
   @@map("tenants")
 }
 
@@ -199,6 +204,11 @@ model ScanEvent {
   idempotencyRecords ScanRequestIdempotency[]
 
   @@index([tenantId, receivedAt])
+  @@index([deviceId])
+  @@index([locationId])
+  @@index([personMappingId])
+  @@index([createdByUserId])
+  @@index([canceledByUserId])
   @@index([tenantId, locationId, createdAt])
   @@index([tenantId, personMappingId, createdAt])
   @@index([tenantId, locationId, personMappingId, receivedAt])
@@ -241,6 +251,9 @@ model MailJob {
   deliveryAttempts      MailDeliveryAttempt[]
 
   @@index([tenantId, status, createdAt])
+  @@index([locationId])
+  @@index([personMappingId])
+  @@index([scanEventId])
   @@index([status, sendNotBefore])
   @@index([status, scheduledAt])
   @@index([status, claimedAt])
@@ -287,6 +300,8 @@ model ScanRequestIdempotency {
   mailJob            MailJob   @relation(fields: [mailJobId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, route, keyHash])
+  @@index([scanEventId])
+  @@index([mailJobId])
   @@index([expiresAt])
   @@map("scan_request_idempotency")
 }
@@ -305,6 +320,7 @@ model AuditLog {
   actorUser    User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, createdAt])
+  @@index([actorUserId])
   @@map("audit_logs")
 }
 

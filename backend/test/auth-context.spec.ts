@@ -137,6 +137,7 @@ describe('Auth tenant context', () => {
       email,
       role,
       status: 'active',
+      tenant: { tenantCode: '10CA000001', status: 'active' },
     };
   }
 });

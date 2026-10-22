@@ -50,6 +50,22 @@
 本地质量门禁命令：
 
 - Backend：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`
+- ADR-023 租户生命周期迁移：在 `APP_ENV=local` 或 `test`、`DATABASE_URL` 指向本机 PostgreSQL 时，
+  于 `backend/` 执行 `npm run test:tenant-lifecycle-migration`；脚本仅创建并删除随机命名的合成测试数据库。
+- #160 平台删除事务：在相同本地环境下，于 `backend/` 执行 `npm run test:platform-delete-transaction`；
+  脚本只在随机命名的临时数据库中验证并发重放、订阅更新竞态与失败回滚，完成后删除该数据库。
+- #161 平台恢复事务：在相同本地环境下，于 `backend/` 执行 `npm run test:platform-restore-transaction`；
+  脚本只在随机命名的临时数据库中验证恢复期限、并发、独立业务状态与失败回滚，完成后删除该数据库。
+- #162 Production 当前对象墓碑事务：在相同本地环境下，于 `backend/` 执行 `npm run test:platform-tenant-purge-transaction`；
+  脚本只在随机命名的临时数据库中验证到期边界、全关联清理、失败回滚、重试、跨租户隔离和历史字段不变，完成后删除该数据库。
+- #163 Production 清理调度：在相同本地环境下，于 `backend/` 执行 `npm run test:platform-tenant-purge-scheduler`；
+  脚本在随机命名的临时数据库中验证 25 个合成 tenant、双 worker、重启、失败重试与错误环境。
+- #164 Staging 即时清理：在相同本地环境下，于 `backend/` 执行 `npm run test:staging-tenant-deletion`；
+  脚本在随机命名的临时数据库中验证验密、环境隔离、完整 FK 图、补偿重试、重复请求及跨租户隔离。
+- #166 跨模块 HTTP 验收：在相同本地环境下，于 `backend/` 执行 `npm run test:tenant-deletion-acceptance`；
+  脚本使用随机命名的临时数据库、合成租户和 mock 邮件 provider 验证认证、订阅/扫码/邮件门禁、恢复、到期墓碑及 Staging 全图清理。
+- #166 迁移回滚守卫：在相同本地环境下，于 `backend/` 执行 `npm run test:tenant-deletion-rollback`；
+  脚本仅在临时数据库中验证三层 rollback 对删除中状态的拒绝，以及状态清空后的逆序回滚。
 - Frontend：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`
 - 关键 E2E：准备合成 seed 并启动前后端后，在 `frontend/` 执行 `npm run test:e2e`
 
