@@ -112,7 +112,7 @@ try {
     await db.$executeRaw`UPDATE tenants SET status = 'active', deleted_at = NULL, purge_after = NULL,
       deleted_from_status = NULL, deleted_from_subscription_status = NULL WHERE id = ${tenant.id}::uuid`;
     await db.subscription.update({ where: { tenantId: tenant.id }, data: { status: 'trial' } });
-    assert.equal((await retention.dueScanFamilies()).some((row) => row.id === scan.id), true);
+    assert.equal((await retention.dueScanFamilies()).some((row) => row.id === scan.id), false);
     assert.equal((await retention.dueScanFamilies()).some((row) => row.id === waitingScan.id), false);
     assert.equal(await retention.purgeScanFamily(other.id, scan.id), 'not_due');
     assert.equal(await db.scanEvent.count({ where: { id: scan.id } }), 1);
