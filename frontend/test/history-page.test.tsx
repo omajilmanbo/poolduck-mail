@@ -126,16 +126,178 @@ describe('history workspace', () => {
       await screen.findByText('取消结果未知，正在刷新权威状态。'),
     ).not.toBeNull();
     expect(screen.getByTestId('mail-status').textContent).toContain('可取消等待中');
-    expect(screen.queryByText('已取消')).toBeNull();
+    expect(screen.getByTestId('mail-status').textContent).not.toContain('已取消');
+  });
+
+  it('shows at most 25 records and moves through server cursor pages', async () => {
+    const first = Array.from({ length: 25 }, (_, index) => namedHistoryItem(index + 1));
+    const fetchMock = createWorkspaceFetch((url) => url.searchParams.get('cursor') === 'older'
+      ? { items: [namedHistoryItem(26)], next_cursor: null }
+      : { items: [...first, namedHistoryItem(99)], next_cursor: 'older' });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<HomePage />);
+
+    const table = await screen.findByRole('table', { name: '扫码记录' });
+    await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(26));
+    expect(screen.queryByText('Person 99')).toBeNull();
+    const firstUrl = new URL(String(fetchMock.mock.calls.find(([input]) => String(input).includes('/api/scan-events?'))?.[0]));
+    expect(firstUrl.searchParams.get('limit')).toBe('25');
+    expect(firstUrl.searchParams.get('location_id')).toBe(locationId);
+
+    fireEvent.click(screen.getByTestId('history-next'));
+    expect(await screen.findByText('Person 26')).not.toBeNull();
+    expect(screen.queryByText('Person 1')).toBeNull();
+    expect((screen.getByTestId('history-next') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('history-previous'));
+    expect(await screen.findByText('Person 1')).not.toBeNull();
+  });
+
+  it('sends status and local-day filters to the server and resets cursor on filter or location changes', async () => {
+    const secondLocation = '44444445-4445-4445-8445-444444444445';
+    const requests: URL[] = [];
+    const fetchMock = createWorkspaceFetch((url) => {
+      requests.push(url);
+      return {
+        items: [namedHistoryItem(requests.length)],
+        next_cursor: url.searchParams.has('cursor') ? null : 'older',
+      };
+    }, undefined, [locationId, secondLocation]);
+    vi.stubGlobal('fetch', fetchMock);
+    render(<HomePage />);
+
+    await screen.findByText('Person 1');
+    fireEvent.click(screen.getByTestId('history-next'));
+    await screen.findByText('Person 2');
+    fireEvent.change(screen.getByTestId('history-status-filter'), { target: { value: 'waiting' } });
+    await screen.findByText('Person 3');
+    expect(requests.at(-1)?.searchParams.get('status')).toBe('waiting');
+    expect(requests.at(-1)?.searchParams.has('cursor')).toBe(false);
+    expect(screen.getByText(/第 1 页/)).not.toBeNull();
+
+    fireEvent.change(screen.getByTestId('history-from-filter'), { target: { value: '2026-07-01' } });
+    await screen.findByText('Person 4');
+    fireEvent.change(screen.getByTestId('history-to-filter'), { target: { value: '2026-07-02' } });
+    await screen.findByText('Person 5');
+    expect(requests.at(-1)?.searchParams.get('created_from')).toBe(new Date('2026-07-01T00:00:00').toISOString());
+    expect(requests.at(-1)?.searchParams.get('created_to')).toBe(new Date('2026-07-02T23:59:59.999').toISOString());
+
+    fireEvent.change(screen.getByTestId('location-select'), { target: { value: secondLocation } });
+    await screen.findByText('Person 6');
+    expect(requests.at(-1)?.searchParams.get('location_id')).toBe(secondLocation);
+    expect(requests.at(-1)?.searchParams.has('cursor')).toBe(false);
+    fireEvent.click(screen.getByTestId('history-clear-filters'));
+    await screen.findByText('Person 7');
+    expect(requests.at(-1)?.searchParams.has('status')).toBe(false);
+    expect(requests.at(-1)?.searchParams.has('created_from')).toBe(false);
+    expect(requests.at(-1)?.searchParams.has('created_to')).toBe(false);
+  });
+
+  it('does not query an inverted date range and shows a permission error for forbidden history', async () => {
+    const fetchMock = createWorkspaceFetch((url) => url.searchParams.has('created_from')
+      ? { status: 403 }
+      : { items: [], next_cursor: null });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<HomePage />);
+    await screen.findByText('暂无扫码记录');
+    fireEvent.change(screen.getByTestId('history-from-filter'), { target: { value: '2026-07-03' } });
+    fireEvent.change(screen.getByTestId('history-to-filter'), { target: { value: '2026-07-01' } });
+    expect((await screen.findByRole('alert')).textContent).toContain('起始日期不能晚于结束日期');
+    const before = fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/scan-events?')).length;
+    fireEvent.change(screen.getByTestId('history-to-filter'), { target: { value: '2026-07-04' } });
+    expect(await screen.findByText('无权限查看此地点的扫码记录')).not.toBeNull();
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/scan-events?'))).toHaveLength(before + 1);
+  });
+
+  it('refreshes and polls only the selected cursor page without appending duplicate records', async () => {
+    let olderLoads = 0;
+    const waiting = { ...namedHistoryItem(2), ...historyItem('waiting'),
+      scan_event_id: 'scan-2', person_name: 'Person 2',
+      cancel_until: new Date(Date.now() + 10_000).toISOString() };
+    const fetchMock = createWorkspaceFetch((url) => {
+      if (!url.searchParams.has('cursor')) return { items: [namedHistoryItem(1)], next_cursor: 'older' };
+      olderLoads += 1;
+      return { items: [olderLoads < 3 ? waiting : namedHistoryItem(2)], next_cursor: null };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<HomePage />);
+    await screen.findByText('Person 1');
+    fireEvent.click(screen.getByTestId('history-next'));
+    await screen.findByText('Person 2');
+    fireEvent.click(screen.getByTestId('history-refresh'));
+    await waitFor(() => expect(olderLoads).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(screen.getByTestId('mail-status').textContent).toContain('已发送'), { timeout: 5_000 });
+    const table = screen.getByRole('table', { name: '扫码记录' });
+    expect(within(table).getAllByRole('row')).toHaveLength(2);
+    expect(screen.queryByText('Person 1')).toBeNull();
+    const olderRequests = fetchMock.mock.calls.filter(([input]) =>
+      String(input).includes('/api/scan-events?') && new URL(String(input)).searchParams.get('cursor') === 'older');
+    expect(olderRequests).toHaveLength(olderLoads);
+  });
+
+  it('keeps cancellation available on a filtered page and reloads that filter after canceling', async () => {
+    let canceled = false;
+    const waiting = { ...historyItem('waiting'), cancel_until: new Date(Date.now() + 10_000).toISOString() };
+    const workspaceFetch = createWorkspaceFetch((url) => ({
+      items: url.searchParams.get('status') === 'waiting' && canceled ? [] : [waiting],
+      next_cursor: null,
+    }));
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/cancel')) canceled = true;
+      return workspaceFetch(input);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<HomePage />);
+    await screen.findByTestId('scan-cancel');
+    fireEvent.change(screen.getByTestId('history-status-filter'), { target: { value: 'waiting' } });
+    const cancel = await screen.findByTestId('scan-cancel');
+    expect((cancel as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(cancel);
+    await screen.findByText('暂无扫码记录');
+    const lastHistoryUrl = new URL(String(fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/scan-events?')).at(-1)?.[0]));
+    expect(lastHistoryUrl.searchParams.get('status')).toBe('waiting');
+    expect(screen.queryByTestId('scan-cancel')).toBeNull();
+  });
+
+  it('returns to the first unfiltered page after a new scan so the waiting cancellation stays visible', async () => {
+    let created = false;
+    const waiting = { ...historyItem('waiting'), scan_event_id: 'new-scan', person_name: 'New Person',
+      cancel_until: new Date(Date.now() + 10_000).toISOString() };
+    const baseFetch = createWorkspaceFetch((url) => url.searchParams.has('cursor')
+      ? { items: [namedHistoryItem(26)], next_cursor: null }
+      : { items: created ? [waiting, ...Array.from({ length: 24 }, (_, index) => namedHistoryItem(index + 1))]
+        : Array.from({ length: 25 }, (_, index) => namedHistoryItem(index + 1)), next_cursor: 'older' });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/api/scan-events') && init?.method === 'POST') {
+        created = true;
+        return jsonResponse({ scan_event_id: 'new-scan' });
+      }
+      return baseFetch(input);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<HomePage />);
+    await screen.findByText('Person 1');
+    fireEvent.change(screen.getByTestId('history-status-filter'), { target: { value: 'sent' } });
+    await screen.findByText('Person 1');
+    fireEvent.click(screen.getByTestId('history-next'));
+    await screen.findByText('Person 26');
+    fireEvent.change(screen.getByTestId('scan-code-input'), { target: { value: 'E01K0ABC80001' } });
+    fireEvent.click(screen.getByTestId('scan-submit'));
+    expect(await screen.findByText('New Person')).not.toBeNull();
+    expect((screen.getByTestId('history-status-filter') as HTMLSelectElement).value).toBe('');
+    expect(screen.getByText(/第 1 页/)).not.toBeNull();
+    expect((screen.getByTestId('scan-cancel') as HTMLButtonElement).disabled).toBe(false);
+    expect(within(screen.getByRole('table', { name: '扫码记录' })).getAllByRole('row')).toHaveLength(26);
   });
 });
 
 function createWorkspaceFetch(
   history:
-    | { items: ScanHistoryItem[]; next_cursor: null }
-    | { status: 401 }
-    | TypeError,
+    | { items: ScanHistoryItem[]; next_cursor: string | null }
+    | { status: number }
+    | TypeError
+    | ((url: URL) => { items: ScanHistoryItem[]; next_cursor: string | null } | { status: number } | TypeError),
   cancelError?: TypeError,
+  locationIds = [locationId],
 ) {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -143,7 +305,7 @@ function createWorkspaceFetch(
       return jsonResponse({ user: { user_id: 'user-1', tenant_code: '10CA000001', email: 'operator@example.local', role: 'operator' } });
     }
     if (url.endsWith('/api/auth/refresh')) {
-      if (!(history instanceof TypeError) && 'status' in history) {
+      if (typeof history !== 'function' && !(history instanceof TypeError) && 'status' in history) {
         return jsonResponse({ code: 'UNAUTHORIZED' }, 401);
       }
       return jsonResponse({ expires_in: 900, user: {} });
@@ -159,27 +321,26 @@ function createWorkspaceFetch(
       });
     }
     if (url.endsWith('/api/locations')) {
-      return jsonResponse([
-        {
-          location_id: locationId,
+      return jsonResponse(locationIds.map((id, index) => ({
+          location_id: id,
           location_code: 'OFFICE-A',
-          location_name: 'Office A',
+          location_name: `Office ${index + 1}`,
           type: 'office',
           is_active: true,
-        },
-      ]);
+        })));
     }
     if (url.includes('/people')) {
       return jsonResponse([]);
     }
     if (url.includes('/api/scan-events?')) {
-      if (history instanceof TypeError) {
-        throw history;
+      const result = typeof history === 'function' ? history(new URL(url)) : history;
+      if (result instanceof TypeError) {
+        throw result;
       }
-      if ('status' in history) {
-        return jsonResponse({ code: 'UNAUTHORIZED', message: '登录已失效' }, history.status);
+      if ('status' in result) {
+        return jsonResponse({ code: 'UNAUTHORIZED', message: '登录已失效' }, result.status);
       }
-      return jsonResponse(history);
+      return jsonResponse(result);
     }
     if (url.includes('/api/scan-events/') && url.endsWith('/cancel')) {
       if (cancelError) throw cancelError;
@@ -194,6 +355,11 @@ function createWorkspaceFetch(
     }
     throw new Error(`Unexpected URL: ${url}`);
   });
+}
+
+function namedHistoryItem(index: number): ScanHistoryItem {
+  const item = historyItem('sent');
+  return { ...item, scan_event_id: `scan-${index}`, person_name: `Person ${index}` };
 }
 
 function jsonResponse(body: unknown, status = 200) {

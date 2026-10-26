@@ -309,7 +309,7 @@ ADR-017 当前契约：
 - 说明：按location（办公室/校舍）与状态查询扫码记录，用于页面“扫码记录栏”展示
 - 权限：已登录用户（`tenant_manager` / `operator`）
 - 订阅要求：无（历史记录可查）
-- 状态：`queued` / `processing` / `sent` / `failed`
+- 状态筛选：`waiting` / `queued` / `processing` / `sent` / `failed` / `canceled` / `delivery_unknown`
 - 出参：`{ items: [...], next_cursor }`；按 `created_at DESC, id DESC` 稳定排序，下一页原样传回 `next_cursor`
 - 非本 tenant 的 `location_id` 返回 `LOCATION_NOT_FOUND`
 - operator 未分配的 `location_id` 同样返回 `LOCATION_NOT_FOUND`；不提供 location 过滤条件时，列表也只包含已分配地点

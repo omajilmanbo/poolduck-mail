@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ApiError,
   LicenseCheck,
@@ -10,6 +10,7 @@ import {
   ScanAction,
   ScanActionSource,
   ScanHistoryItem,
+  ScanHistoryQuery,
   createApiClient,
   isSendAllowed,
   mailStatusLabel,
@@ -18,6 +19,12 @@ import {
 
 const HISTORY_POLL_INTERVAL_MS = 2_000;
 const HISTORY_MAX_POLL_ATTEMPTS = 10;
+const HISTORY_PAGE_SIZE = 25;
+
+function dateBoundary(value: string, endOfDay: boolean) {
+  if (!value) return undefined;
+  return new Date(`${value}T${endOfDay ? '23:59:59.999' : '00:00:00'}`).toISOString();
+}
 
 type UserSummary = {
   username: string | null;
@@ -137,12 +144,37 @@ export default function HomePage() {
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [historyStatus, setHistoryStatus] = useState<MailJobStatus | ''>('');
+  const [historyFrom, setHistoryFrom] = useState('');
+  const [historyTo, setHistoryTo] = useState('');
+  const [historyCursors, setHistoryCursors] = useState<Array<string | null>>([null]);
+  const [historyPage, setHistoryPage] = useState(0);
+  const [historyNextCursor, setHistoryNextCursor] = useState<string | null>(null);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [historyPollAttempts, setHistoryPollAttempts] = useState(0);
   const [cancelingScanEventId, setCancelingScanEventId] = useState('');
   const [clockTick, setClockTick] = useState(0);
+  const historyRequestId = useRef(0);
 
   const canSend = isSendAllowed(license);
   const selectedLocation = locations.find((location) => location.location_id === selectedLocationId);
+  const historyDateError = historyFrom && historyTo && historyFrom > historyTo
+    ? '起始日期不能晚于结束日期'
+    : '';
+  const historyQuery = useMemo<ScanHistoryQuery>(() => ({
+    cursor: historyCursors[historyPage],
+    status: historyStatus || undefined,
+    createdFrom: dateBoundary(historyFrom, false),
+    createdTo: dateBoundary(historyTo, true),
+  }), [historyCursors, historyPage, historyStatus, historyFrom, historyTo]);
+
+  const resetHistoryPage = useCallback(() => {
+    setHistoryPage(0);
+    setHistoryCursors([null]);
+    setHistoryNextCursor(null);
+    setHistoryPollAttempts(0);
+  }, []);
 
   useEffect(() => {
     if (!records.some((record) => record.status === 'waiting')) return;
@@ -159,9 +191,12 @@ export default function HomePage() {
       setSelectedLocationId('');
       setPeople([]);
       setRecords([]);
+      historyRequestId.current += 1;
+      setHistoryError('');
+      resetHistoryPage();
       setWorkspaceError(message ?? '');
     },
-    [],
+    [resetHistoryPage],
   );
 
   const loadWorkspace = useCallback(
@@ -197,22 +232,28 @@ export default function HomePage() {
   );
 
   const loadHistory = useCallback(
-    async (accessToken: string, locationId: string, background = false) => {
+    async (accessToken: string, locationId: string, query: ScanHistoryQuery, background = false) => {
+      const requestId = ++historyRequestId.current;
       if (!background) {
         setHistoryLoading(true);
-        setWorkspaceError('');
       }
+      setHistoryError('');
       try {
-        const response = await api.getScanHistory(accessToken, locationId);
-        setRecords(response.items.map(historyItemToRecord));
+        const response = await api.getScanHistory(accessToken, locationId, query);
+        if (requestId !== historyRequestId.current) return;
+        setRecords(response.items.slice(0, HISTORY_PAGE_SIZE).map(historyItemToRecord));
+        setHistoryNextCursor(response.next_cursor);
       } catch (error) {
+        if (requestId !== historyRequestId.current) return;
         if (error instanceof ApiError && error.status === 401) {
           clearSession('登录已失效，请重新登录');
           return;
         }
-        setWorkspaceError(getFriendlyError(error));
+        setHistoryError(error instanceof ApiError && [403, 404].includes(error.status)
+          ? '无权限查看此地点的扫码记录'
+          : getFriendlyError(error));
       } finally {
-        if (!background) {
+        if (!background && requestId === historyRequestId.current) {
           setHistoryLoading(false);
         }
       }
@@ -268,17 +309,30 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!token || !selectedLocationId) {
+      historyRequestId.current += 1;
       setRecords([]);
+      setHistoryNextCursor(null);
+      setHistoryError('');
       return;
     }
+    historyRequestId.current += 1;
+    setRecords([]);
+    setHistoryNextCursor(null);
     setHistoryPollAttempts(0);
-    void loadHistory(token, selectedLocationId);
-  }, [loadHistory, selectedLocationId, token]);
+    if (historyDateError) {
+      setHistoryError(historyDateError);
+      setHistoryLoading(false);
+      return;
+    }
+    void loadHistory(token, selectedLocationId, historyQuery);
+    return () => { historyRequestId.current += 1; };
+  }, [historyDateError, historyQuery, historyRefreshKey, loadHistory, selectedLocationId, token]);
 
   useEffect(() => {
     if (
       !token ||
       !selectedLocationId ||
+      historyLoading ||
       !shouldPollHistory(records, historyPollAttempts)
     ) {
       return;
@@ -286,10 +340,10 @@ export default function HomePage() {
 
     const timer = window.setTimeout(() => {
       setHistoryPollAttempts((current) => current + 1);
-      void loadHistory(token, selectedLocationId, true);
+      void loadHistory(token, selectedLocationId, historyQuery, true);
     }, HISTORY_POLL_INTERVAL_MS);
     return () => window.clearTimeout(timer);
-  }, [historyPollAttempts, loadHistory, records, selectedLocationId, token]);
+  }, [historyLoading, historyPollAttempts, historyQuery, loadHistory, records, selectedLocationId, token]);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -333,30 +387,12 @@ export default function HomePage() {
     setWorkspaceError('');
 
     try {
-      const response = await api.createScanEvent(token, selectedLocation.location_id, scanCode);
-      setRecords((current) => [
-        {
-          scanEventId: response.scan_event_id,
-          mailJobId: response.mail_job_id,
-          mailSubject: response.mail_subject,
-          status: response.status,
-          scanCode: response.person_code,
-          action: response.action,
-          actionSource: response.action_source,
-          personName:
-            people.find((person) => person.person_code === response.person_code)
-              ?.person_name ?? '-',
-          receivedAt: new Date().toISOString(),
-          providerMessage: response.error_message ?? undefined,
-          canCancel: response.can_cancel,
-          cancelUntil: response.cancel_until,
-          canceledAt: response.canceled_at,
-          effectiveStatus: response.effective_status,
-          serverOffsetMs: new Date(response.server_time).getTime() - Date.now(),
-        },
-        ...current,
-      ]);
-      setHistoryPollAttempts(0);
+      await api.createScanEvent(token, selectedLocation.location_id, scanCode);
+      setHistoryStatus('');
+      setHistoryFrom('');
+      setHistoryTo('');
+      resetHistoryPage();
+      setHistoryRefreshKey((current) => current + 1);
       setScanCode('');
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
@@ -364,7 +400,7 @@ export default function HomePage() {
         return;
       }
       setWorkspaceError(getFriendlyError(error));
-      await loadHistory(token, selectedLocation.location_id, true);
+      await loadHistory(token, selectedLocation.location_id, historyQuery, true);
     } finally {
       setScanLoading(false);
     }
@@ -388,6 +424,7 @@ export default function HomePage() {
             }
           : item,
       ));
+      if (selectedLocationId) void loadHistory(token, selectedLocationId, historyQuery, true);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         clearSession('登录已失效，请重新登录');
@@ -398,7 +435,7 @@ export default function HomePage() {
           ? '取消窗口已结束或发送已开始，正在刷新权威状态。'
           : '取消结果未知，正在刷新权威状态。',
       );
-      if (selectedLocationId) await loadHistory(token, selectedLocationId, true);
+      if (selectedLocationId) await loadHistory(token, selectedLocationId, historyQuery, true);
     } finally {
       setCancelingScanEventId('');
     }
@@ -562,7 +599,10 @@ export default function HomePage() {
               <select
                 data-testid="location-select"
                 value={selectedLocationId}
-                onChange={(event) => setSelectedLocationId(event.target.value)}
+                onChange={(event) => {
+                  setSelectedLocationId(event.target.value);
+                  resetHistoryPage();
+                }}
                 className="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
               >
                 {locations.map((location) => (
@@ -660,13 +700,45 @@ export default function HomePage() {
                 disabled={historyLoading || !selectedLocationId}
                 onClick={() => {
                   setHistoryPollAttempts(0);
-                  void loadHistory(token, selectedLocationId);
+                  if (!historyDateError) void loadHistory(token, selectedLocationId, historyQuery);
                 }}
                 className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
               >
                 {historyLoading ? '加载中' : '刷新'}
               </button>
             </div>
+            <div className="grid gap-3 border-b border-slate-200 px-4 py-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
+              <label className="text-sm font-medium">邮件状态
+                <select data-testid="history-status-filter" value={historyStatus} onChange={(event) => {
+                  setHistoryStatus(event.target.value as MailJobStatus | '');
+                  resetHistoryPage();
+                }} className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2">
+                  <option value="">全部状态</option>
+                  {(['waiting', 'queued', 'processing', 'sent', 'failed', 'canceled', 'delivery_unknown'] as const).map((status) => (
+                    <option key={status} value={status}>{mailStatusLabel(status)}（{status}）</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm font-medium">起始日期
+                <input data-testid="history-from-filter" type="date" value={historyFrom} onChange={(event) => {
+                  setHistoryFrom(event.target.value);
+                  resetHistoryPage();
+                }} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2" />
+              </label>
+              <label className="text-sm font-medium">结束日期
+                <input data-testid="history-to-filter" type="date" value={historyTo} onChange={(event) => {
+                  setHistoryTo(event.target.value);
+                  resetHistoryPage();
+                }} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2" />
+              </label>
+              <button type="button" data-testid="history-clear-filters" onClick={() => {
+                setHistoryStatus('');
+                setHistoryFrom('');
+                setHistoryTo('');
+                resetHistoryPage();
+              }} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50">清除筛选</button>
+            </div>
+            {historyError ? <p role="alert" className="px-4 py-3 text-sm text-red-700">{historyError}</p> : null}
             <div className="overflow-x-auto">
               <table aria-label="扫码记录" className="w-full min-w-[760px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500">
@@ -751,11 +823,20 @@ export default function HomePage() {
                   ))}
                 </tbody>
               </table>
-              {!records.length ? (
+              {!records.length && !historyError ? (
                 <p className="px-4 py-8 text-sm text-slate-500">
                   {historyLoading ? '正在加载扫码记录…' : '暂无扫码记录'}
                 </p>
               ) : null}
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm">
+              <button type="button" data-testid="history-previous" disabled={historyLoading || historyPage === 0} onClick={() => setHistoryPage((page) => page - 1)} className="rounded-md border border-slate-300 px-3 py-2 disabled:cursor-not-allowed disabled:text-slate-400">上一页</button>
+              <span>第 {historyPage + 1} 页 · 每页最多 {HISTORY_PAGE_SIZE} 条</span>
+              <button type="button" data-testid="history-next" disabled={historyLoading || !!historyError || !historyNextCursor} onClick={() => {
+                if (!historyNextCursor) return;
+                setHistoryCursors((current) => [...current.slice(0, historyPage + 1), historyNextCursor]);
+                setHistoryPage((page) => page + 1);
+              }} className="rounded-md border border-slate-300 px-3 py-2 disabled:cursor-not-allowed disabled:text-slate-400">下一页</button>
             </div>
           </section>
         </section>
