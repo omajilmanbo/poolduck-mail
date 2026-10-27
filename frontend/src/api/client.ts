@@ -139,6 +139,13 @@ export type ScanHistoryResponse = {
   next_cursor: string | null;
 };
 
+export type ScanHistoryQuery = {
+  cursor?: string | null;
+  status?: MailJobStatus;
+  createdFrom?: string;
+  createdTo?: string;
+};
+
 export type CancelScanEventResponse = {
   scan_event_id: string;
   mail_job_id: string;
@@ -513,11 +520,14 @@ export function createApiClient(config: ApiClientConfig = {}) {
         `/api/users/${encodeURIComponent(userId)}/password`,
         { method: 'POST', body: { new_password: newPassword } },
       ),
-    getScanHistory: (token: string, locationId: string, limit = 50) =>
-      request<ScanHistoryResponse>(
-        `/api/scan-events?location_id=${encodeURIComponent(locationId)}&limit=${limit}`,
-        { token },
-      ),
+    getScanHistory: (token: string, locationId: string, query: ScanHistoryQuery = {}) => {
+      const params = new URLSearchParams({ location_id: locationId, limit: '25' });
+      if (query.cursor) params.set('cursor', query.cursor);
+      if (query.status) params.set('status', query.status);
+      if (query.createdFrom) params.set('created_from', query.createdFrom);
+      if (query.createdTo) params.set('created_to', query.createdTo);
+      return request<ScanHistoryResponse>(`/api/scan-events?${params.toString()}`, { token });
+    },
   };
 }
 

@@ -9,6 +9,8 @@
     "lint": "eslint . --max-warnings=0",
     "start": "next start",
     "test": "vitest run",
+    "help:sync": "node scripts/sync-help-guide.mjs",
+    "help:check": "node scripts/sync-help-guide.mjs --check",
     "test:e2e": "playwright test"
   },
   "dependencies": {

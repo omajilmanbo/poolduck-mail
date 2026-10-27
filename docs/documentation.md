@@ -21,6 +21,8 @@
 | 测试策略与验证证据 | `docs/testing.md`、`docs/testing/` | README 不复制完整账号、矩阵或报告 |
 | 用户可见行为 | `docs/user-guide.md`、`docs/admin-guide.md` | 与已实现行为同步，不写未实现能力为现状 |
 
+客户端 `/help` 的简明操作内容集中维护在 `frontend/src/help/content.json`。`docs/user-guide.md` 中 `web-help` 标记块由 `npm --prefix frontend run help:sync` 生成，`help:check` 和前端测试防止网页与文档摘要分叉；标记块外保留更详细的用户说明，修改业务规则时仍需同步核对。
+
 ## 2. 核心术语与规则 SSOT
 
 - `tenant` 是一级数据隔离边界。

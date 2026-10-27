@@ -123,6 +123,38 @@ describe('Tenant-scoped history APIs', () => {
         take: 2,
       }),
     );
+
+    await request(app.getHttpServer())
+      .get('/api/scan-events')
+      .query({ location_id: locationId, status: 'queued', limit: 1, cursor: response.body.next_cursor })
+      .set('Authorization', `Bearer ${token()}`)
+      .expect(200);
+    expect(prisma.scanEvent.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        tenantId,
+        locationId,
+        mailJobs: { some: { status: 'queued' } },
+        OR: expect.any(Array),
+      }),
+      take: 2,
+    }));
+  });
+
+  it('rejects an unassigned location and malformed date filters before reading history', async () => {
+    prisma.location.findFirst.mockResolvedValue(null);
+    await request(app.getHttpServer())
+      .get('/api/scan-events')
+      .query({ location_id: locationId })
+      .set('Authorization', `Bearer ${token()}`)
+      .expect(404);
+    expect(prisma.scanEvent.findMany).not.toHaveBeenCalled();
+
+    await request(app.getHttpServer())
+      .get('/api/scan-events')
+      .query({ created_from: 'not-a-date', created_to: '2026-07-31' })
+      .set('Authorization', `Bearer ${token()}`)
+      .expect(400);
+    expect(prisma.scanEvent.findMany).not.toHaveBeenCalled();
   });
 
   it('returns legacy scans as unknown without inferring an action', async () => {
