@@ -415,6 +415,9 @@ export default function HomePage() {
               <p className="mt-4 max-w-xl text-base leading-7 text-slate-600">
                 本地 MVP 黑盒验证入口，连接后端 sandbox provider，完成登录、location 选择、扫码记录和邮件发送触发。
               </p>
+              <a href="/help" target="_blank" rel="noopener noreferrer" className="mt-5 inline-flex rounded-md border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
+                使用手册（新标签页）
+              </a>
             </div>
 
             <form onSubmit={handleLogin} className="rounded-md border border-slate-200 bg-white p-6 shadow-sm">
@@ -498,12 +501,15 @@ export default function HomePage() {
             <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">Poolduck Mail</p>
             <h1 className="text-2xl font-semibold">扫码工作台</h1>
           </div>
-          <div className="flex items-center gap-3 text-sm">
+          <div className="flex flex-wrap items-center justify-end gap-3 text-sm">
             <span className="hidden text-slate-500 sm:inline">
               {user?.username ?? user?.email ?? '已登录'}
             </span>
             <a href="/people" className="rounded-md border border-slate-300 px-3 py-2 font-medium hover:bg-slate-50">
               人员管理
+            </a>
+            <a href="/help" target="_blank" rel="noopener noreferrer" className="rounded-md border border-emerald-700 px-3 py-2 font-medium text-emerald-800 hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
+              使用手册
             </a>
             {user?.role === 'tenant_manager' ? (
               <>
