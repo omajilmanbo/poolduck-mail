@@ -496,20 +496,22 @@ export default function HomePage() {
   return (
     <main className="min-h-screen bg-stone-100 text-slate-950">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-4">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-4">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">Poolduck Mail</p>
-            <h1 className="text-2xl font-semibold">扫码工作台</h1>
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <h1 className="text-2xl font-semibold">扫码工作台</h1>
+              <a href="/help" target="_blank" rel="noopener noreferrer" className="rounded-md border border-emerald-700 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
+                使用手册
+              </a>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-3 text-sm">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-3 text-sm">
             <span className="hidden text-slate-500 sm:inline">
               {user?.username ?? user?.email ?? '已登录'}
             </span>
             <a href="/people" className="rounded-md border border-slate-300 px-3 py-2 font-medium hover:bg-slate-50">
               人员管理
-            </a>
-            <a href="/help" target="_blank" rel="noopener noreferrer" className="rounded-md border border-emerald-700 px-3 py-2 font-medium text-emerald-800 hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
-              使用手册
             </a>
             {user?.role === 'tenant_manager' ? (
               <>

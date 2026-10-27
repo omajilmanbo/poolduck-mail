@@ -1,6 +1,7 @@
 # 用户操作手册（初版）
 
 网页手册 `/help` 使用 `frontend/src/help/content.json` 作为共用摘要；修改摘要后运行 `npm --prefix frontend run help:sync`，一致性由前端测试检查。以下详细说明继续作为补充。
+登录后可从工作台左侧“扫码工作台”标题右边的“使用手册”入口打开；登录页也提供入口，均在新标签页显示。
 
 <!-- web-help:start -->
 ## 网页手册共用内容

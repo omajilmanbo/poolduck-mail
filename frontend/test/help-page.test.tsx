@@ -74,6 +74,7 @@ describe('HTML user guide', () => {
     const link = screen.getByRole('link', { name: '使用手册' });
     expect(link.getAttribute('href')).toBe('/help');
     expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.parentElement?.querySelector('h1')?.textContent).toBe('扫码工作台');
   });
 });
 
