@@ -496,7 +496,7 @@ export default function HomePage() {
   return (
     <main className="min-h-screen bg-stone-100 text-slate-950">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-4">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-end justify-between gap-4 px-6 py-4">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">Poolduck Mail</p>
             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2">
