@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -12,6 +13,7 @@ import * as argon2 from 'argon2';
 import {
   createHash,
   createHmac,
+  randomUUID,
 } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import {
@@ -95,109 +97,128 @@ export class PlatformTenantsService {
       type: argon2.argon2id,
     });
 
+    const safeRequestId = requestId && /^[A-Za-z0-9_-]{1,128}$/.test(requestId)
+      ? requestId : randomUUID();
+    const provision = async (tx: Prisma.TransactionClient, tenantCode: string) => {
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${keyHash}, 0))`,
+      );
+      const existing = await tx.platformTenantIdempotency.findUnique({
+        where: { keyHash },
+        select: {
+          requestFingerprint: true,
+          platformAdminId: true,
+          tenant: { select: this.tenantSelect() },
+        },
+      });
+      if (existing) {
+        if (
+          existing.requestFingerprint !== fingerprint ||
+          existing.platformAdminId !== admin.platform_admin_id
+        ) {
+          throw new ConflictException({
+            code: 'IDEMPOTENCY_KEY_CONFLICT',
+            message: 'Idempotency-Key 已用于不同请求',
+          });
+        }
+        return {
+          tenant: existing.tenant,
+          replayed: true,
+        };
+      }
+
+      const tenant = await tx.tenant.create({
+        data: {
+          tenantCode,
+          name: normalized.name,
+          status: 'active',
+          locationLimit: normalized.location_limit,
+          platformVersion: 1,
+          subscription: {
+            create: {
+              plan: 'manual',
+              status: normalized.subscription_status,
+              startAt,
+              endAt,
+            },
+          },
+          users: {
+            create: {
+              email: normalized.manager_email,
+              username: null,
+              passwordHash,
+              role: 'tenant_manager',
+              status: 'active',
+              mustChangePassword: true,
+            },
+          },
+        },
+        select: this.tenantSelect(),
+      });
+      await tx.platformTenantIdempotency.create({
+        data: {
+          keyHash,
+          requestFingerprint: fingerprint,
+          platformAdminId: admin.platform_admin_id,
+          tenantId: tenant.id,
+          expiresAt: new Date(Date.now() + IDEMPOTENCY_TTL_MS),
+        },
+      });
+      return { tenant, replayed: false };
+    };
+
     for (
       let attempt = 1;
       attempt <= TENANT_CODE_MAX_ATTEMPTS;
       attempt += 1
     ) {
       const tenantCode = generateTenantCode();
+      let transactionStarted = false;
+      let callbackReturned = false;
+      let result: Awaited<ReturnType<typeof provision>>;
       try {
-        const result = await this.prisma.$transaction(async (tx) => {
-          await tx.$executeRaw(
-            Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${keyHash}, 0))`,
-          );
-          const existing = await tx.platformTenantIdempotency.findUnique({
-            where: { keyHash },
-            select: {
-              requestFingerprint: true,
-              platformAdminId: true,
-              tenant: { select: this.tenantSelect() },
-            },
-          });
-          if (existing) {
-            if (
-              existing.requestFingerprint !== fingerprint ||
-              existing.platformAdminId !== admin.platform_admin_id
-            ) {
-              throw new ConflictException({
-                code: 'IDEMPOTENCY_KEY_CONFLICT',
-                message: 'Idempotency-Key 已用于不同请求',
-              });
-            }
-            return {
-              tenant: existing.tenant,
-              replayed: true,
-            };
-          }
-
-          const tenant = await tx.tenant.create({
-            data: {
-              tenantCode,
-              name: normalized.name,
-              status: 'active',
-              locationLimit: normalized.location_limit,
-              platformVersion: 1,
-              subscription: {
-                create: {
-                  plan: 'manual',
-                  status: normalized.subscription_status,
-                  startAt,
-                  endAt,
-                },
-              },
-              users: {
-                create: {
-                  email: normalized.manager_email,
-                  username: null,
-                  passwordHash,
-                  role: 'tenant_manager',
-                  status: 'active',
-                  mustChangePassword: true,
-                },
-              },
-            },
-            select: this.tenantSelect(),
-          });
-          await tx.platformTenantIdempotency.create({
-            data: {
-              keyHash,
-              requestFingerprint: fingerprint,
-              platformAdminId: admin.platform_admin_id,
-              tenantId: tenant.id,
-              expiresAt: new Date(Date.now() + IDEMPOTENCY_TTL_MS),
-            },
-          });
-          return { tenant, replayed: false };
+        result = await this.prisma.$transaction(async (tx) => {
+          transactionStarted = true;
+          const prepared = await provision(tx, tenantCode);
+          callbackReturned = true;
+          return prepared;
         });
-
-        await this.audit.record({
-          platformAdminId: admin.platform_admin_id,
-          targetTenantId: result.tenant.id,
-          requestId,
-          action: 'platform.tenant.create',
-          resourceType: 'tenant',
-          resourceId: result.tenant.id,
-          result: 'success',
-          metadata: {
-            replayed: result.replayed,
-            tenant_code: result.tenant.tenantCode,
-            location_limit: result.tenant.locationLimit,
-          },
-        });
-        return {
-          ...this.presentTenant(result.tenant),
-          temporary_password: temporaryPassword,
-          idempotency_replayed: result.replayed,
-        };
       } catch (error) {
-        if (
-          this.isTenantCodeConflict(error) &&
-          attempt < TENANT_CODE_MAX_ATTEMPTS
-        ) {
-          continue;
+        if (error instanceof HttpException) throw error;
+        if (transactionStarted && (!callbackReturned || this.isCommitRejection(error))) {
+          if (this.isTenantCodeConflict(error) && attempt < TENANT_CODE_MAX_ATTEMPTS) continue;
+          await this.audit.record({
+            platformAdminId: admin.platform_admin_id,
+            requestId: safeRequestId,
+            action: 'platform.tenant.create',
+            resourceType: 'tenant',
+            resourceId: 'unknown',
+            result: 'failure',
+            metadata: { reason: 'TRANSACTION_ROLLED_BACK' },
+          });
         }
-        throw error;
+        throw new HttpException('Internal server error', HttpStatus.INTERNAL_SERVER_ERROR);
       }
+
+      await this.audit.record({
+        platformAdminId: admin.platform_admin_id,
+        targetTenantId: result.tenant.id,
+        requestId: safeRequestId,
+        action: 'platform.tenant.create',
+        resourceType: 'tenant',
+        resourceId: result.tenant.id,
+        result: 'success',
+        metadata: {
+          replayed: result.replayed,
+          tenant_code: result.tenant.tenantCode,
+          location_limit: result.tenant.locationLimit,
+        },
+      });
+      return {
+        ...this.presentTenant(result.tenant),
+        temporary_password: temporaryPassword,
+        idempotency_replayed: result.replayed,
+      };
     }
     throw new ServiceUnavailableException({
       code: 'TENANT_CODE_GENERATION_EXHAUSTED',
@@ -911,10 +932,24 @@ export class PlatformTenantsService {
   }
 
   private isTenantCodeConflict(error: unknown) {
-    return (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === 'P2002' &&
-      String(error.meta?.target ?? '').includes('tenant_code')
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+      return false;
+    }
+    if (String(error.meta?.target ?? '').includes('tenant_code')) return true;
+    const adapterError = error.meta?.driverAdapterError as {
+      cause?: { constraint?: { fields?: unknown } };
+    } | undefined;
+    const fields = adapterError?.cause?.constraint?.fields;
+    return Array.isArray(fields) && fields.length === 1 && fields[0] === 'tenant_code';
+  }
+
+  private isCommitRejection(error: unknown) {
+    // After the callback returns, only explicit PostgreSQL aborts prove rollback.
+    // A transport error or statement_completion_unknown can also follow a successful COMMIT.
+    if (!(error instanceof Error) || error.name !== 'DriverAdapterError') return false;
+    const code = (error.cause as { originalCode?: string } | undefined)?.originalCode;
+    return typeof code === 'string' && (
+      code.startsWith('23') || ['40000', '40001', '40002', '40P01', 'P0001'].includes(code)
     );
   }
 
