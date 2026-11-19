@@ -52,6 +52,7 @@
 - Backend：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`
 - ADR-023 租户生命周期迁移：在 `APP_ENV=local` 或 `test`、`DATABASE_URL` 指向本机 PostgreSQL 时，
   于 `backend/` 执行 `npm run test:tenant-lifecycle-migration`；脚本仅创建并删除随机命名的合成测试数据库。
+- 在相同本地环境下，于 `backend/` 运行 `npm run test:platform-provisioning-transaction`。脚本在临时数据库中经平台登录和 HTTP 开通，用独立 SQL 连接核对事务中途失败、提交时拒绝、审计不可写、同键重放和租户码碰撞重试，结束后删除该库。
 - #160 平台删除事务：在相同本地环境下，于 `backend/` 执行 `npm run test:platform-delete-transaction`；
   脚本只在随机命名的临时数据库中验证并发重放、订阅更新竞态与失败回滚，完成后删除该数据库。
 - #161 平台恢复事务：在相同本地环境下，于 `backend/` 执行 `npm run test:platform-restore-transaction`；

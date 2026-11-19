@@ -49,6 +49,20 @@ ADR-017 本地运行时代码已落地，按以下 Runbook 排查：
 3. 检查时区与过期判断逻辑
 4. 确认订阅状态是否属于 `trial` / `active` / `expired` / `suspended` 之一，并核对门禁动作
 
+### 3.1 平台租户开通失败
+
+通过受控只读数据库连接，用本次 `POST /api/platform/tenants` 的 `X-Request-Id` 绑定参数 `$1`。平台控制台可按操作和结果筛选，精确匹配请求标识需查询平台审计表。
+
+```sql
+SELECT created_at, platform_admin_id, result, target_tenant_id, metadata_json->>'reason' AS reason
+FROM platform_audit_logs
+WHERE action = 'platform.tenant.create' AND request_id = $1;
+```
+
+确认开通事务回滚时，审计可写就会产生一条 `failure`，原因为 `TRANSACTION_ROLLED_BACK`，目标租户 ID 为空。请求标识可使用随机 UUID，支持 1–128 位 ASCII 字母、数字、下划线和连字符。缺失或格式无效时，服务端生成审计用 UUID，此时可用操作时间、平台管理员内部 ID 和结果缩小查询范围。
+
+审计库不可写或提交确认丢失时，查询可能为空，单凭 HTTP 500 或零条记录无法判定业务结果。恢复后使用同一平台身份、原幂等键和相同请求内容重试，为这次 HTTP 请求使用新的请求标识。核对成功响应的 `idempotency_replayed` 及对应成功审计，确认是首次开通还是重放。向运维提供请求标识即可，幂等键和临时凭据留在原受控流程内。
+
 ## 4. 租户隔离异常（高优先级）
 
 排查步骤：

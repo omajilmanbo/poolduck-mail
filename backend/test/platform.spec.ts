@@ -1,12 +1,14 @@
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { createHash } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma.service';
 import { PlatformTenantsService } from '../src/platform/platform-tenants.service';
+import { TENANT_CODE_MAX_ATTEMPTS } from '../src/tenants/tenant-code.generator';
 
 describe('Platform control plane', () => {
   let app: INestApplication;
@@ -652,6 +654,112 @@ describe('Platform control plane', () => {
     expect(replay.body.temporary_password).toBe(
       created.body.temporary_password,
     );
+  });
+
+  describe('tenant provisioning failures', () => {
+    const key = 'synthetic-provision-key';
+    const endpoint = '/api/platform/tenants';
+    const body = {
+      name: 'Synthetic Provisioning',
+      manager_email: 'provision@example.local',
+      subscription_status: 'active' as const,
+      start_at: now.toISOString(),
+      end_at: new Date(Date.now() + 86_400_000).toISOString(),
+      location_limit: 1,
+    };
+    const actor = {
+      platform_admin_id: adminId, session_id: sessionId,
+      identity_version: 1, email_masked: 'r***t@example.local',
+    };
+    const create = (requestId?: string) =>
+      app.get(PlatformTenantsService).createTenant(actor, key, body, requestId);
+    const collision = new Prisma.PrismaClientKnownRequestError('synthetic collision', {
+      code: 'P2002', meta: { target: ['tenant_code'] }, clientVersion: 'test',
+    });
+
+    it.each([undefined, 'bad@example.local', 'x'.repeat(129)])(
+      'replaces a missing or unsafe request ID in a rollback event',
+      async (requestId) => {
+        prisma.platformTenantIdempotency.create.mockRejectedValue(new Error('fixture detail'));
+        await expect(create(requestId)).rejects.toMatchObject({ status: 500 });
+        expect(prisma.platformAuditLog.create.mock.calls).toEqual([[{ data: {
+          platformAdminId: adminId, targetTenantId: null,
+          requestId: expect.stringMatching(/^[a-f0-9-]{36}$/),
+          action: 'platform.tenant.create', resourceType: 'tenant', resourceId: 'unknown',
+          result: 'failure', metadataJson: { reason: 'TRANSACTION_ROLLED_BACK' },
+        } }]]);
+      },
+    );
+
+    it('keeps the generic failure when the rollback audit is unwritable', async () => {
+      const agent = request.agent(app.getHttpServer());
+      await agent.post('/api/platform/auth/login').send({ email: 'root@example.local', password }).expect(201);
+      prisma.platformAuditLog.create.mockClear().mockRejectedValue(new Error('audit detail'));
+      prisma.platformTenantIdempotency.create.mockRejectedValue(new Error('database detail'));
+      await agent.post(endpoint).set('Idempotency-Key', key).set('X-Request-Id', 'test-rollback')
+        .send(body).expect(500, { statusCode: 500, message: 'Internal server error' });
+      expect(prisma.platformAuditLog.create).toHaveBeenCalledTimes(1);
+      expect(prisma.platformAuditLog.create.mock.calls[0][0].data.result).toBe('failure');
+      expect(prisma.auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('records only the final outcome of automatic tenant code retries', async () => {
+      prisma.tenant.create.mockRejectedValueOnce(collision);
+      await expect(create('retry-ok')).resolves.toMatchObject({ idempotency_replayed: false });
+      expect(prisma.tenant.create).toHaveBeenCalledTimes(2);
+      prisma.tenant.create.mockClear().mockRejectedValue(collision);
+      await expect(create('retry-exhausted')).rejects.toMatchObject({ status: 500 });
+      expect(prisma.tenant.create).toHaveBeenCalledTimes(TENANT_CODE_MAX_ATTEMPTS);
+      expect(prisma.platformAuditLog.create.mock.calls.map(([{ data }]: any) =>
+        [data.requestId, data.result])).toEqual([['retry-ok', 'success'], ['retry-exhausted', 'failure']]);
+    });
+
+    it('does not record a rollback when a transaction cannot start or commit acknowledgement is lost', async () => {
+      prisma.$transaction.mockRejectedValueOnce(new Error('unavailable'));
+      await expect(create('no-tx')).rejects.toMatchObject({ status: 500 });
+      prisma.$transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => {
+        await callback(prisma);
+        const error = new Error('statement completion unknown', { cause: { originalCode: '40003' } });
+        error.name = 'DriverAdapterError';
+        throw error;
+      });
+      await expect(create('unknown-commit')).rejects.toMatchObject({ status: 500 });
+      expect(prisma.tenant.create).toHaveBeenCalledTimes(1);
+      expect(prisma.platformAuditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('returns the committed result when the success audit store is unavailable', async () => {
+      prisma.platformAuditLog.create.mockRejectedValue(new Error('audit unavailable'));
+      await expect(create('committed-audit-unavailable')).resolves.toMatchObject({ idempotency_replayed: false });
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.platformAuditLog.create).toHaveBeenCalledTimes(1);
+      expect(prisma.platformAuditLog.create.mock.calls[0][0].data.result).toBe('success');
+    });
+
+    it('does not retry or record a rollback for a post-commit presentation error', async () => {
+      // Use the same error as a retryable transaction collision to exercise the catch boundary.
+      jest.spyOn(app.get(PlatformTenantsService) as any, 'presentTenant').mockImplementation(() => { throw collision; });
+      await expect(create('committed')).rejects.toBe(collision);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.platformAuditLog.create).toHaveBeenCalledTimes(1);
+      expect(prisma.platformAuditLog.create.mock.calls[0][0].data.result).toBe('success');
+    });
+
+    it('excludes unauthorized submissions and idempotency conflicts from rollback events', async () => {
+      const tenantToken = new JwtService({ secret: process.env.JWT_SECRET })
+        .sign({ sub: 'user-1', tenant_id: tenantId, role: 'tenant_manager' });
+      await request(app.getHttpServer()).post(endpoint).set('Authorization', `Bearer ${tenantToken}`)
+        .set('Idempotency-Key', key).send(body).expect(401);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      prisma.platformTenantIdempotency.findUnique.mockResolvedValue({
+        requestFingerprint: 'different-request', platformAdminId: adminId, tenant: tenantRow,
+      });
+      await expect(create('conflict')).rejects.toMatchObject({
+        status: 409, response: { code: 'IDEMPOTENCY_KEY_CONFLICT' },
+      });
+      expect(prisma.tenant.create).not.toHaveBeenCalled();
+      expect(prisma.platformAuditLog.create).not.toHaveBeenCalled();
+    });
   });
 
   it('enforces the location quota before creating a location', async () => {
