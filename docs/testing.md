@@ -14,6 +14,8 @@
 
 [六类未映射扫码的数据库验收](testing/candidate-s04-unmapped-scan-rejection-2026-11-20.md)逐次核对拒绝与零写入。[#217／#218 的版本对照](testing/candidate-issue85-application-acceptance-2026-11-20.md#safe-failure-branch)记录安全失败原因的展示。[发布分支与合成提交的 CI 对照](testing/release-ci-185-189-2026-11-20.md)记录原远端检查与合成测试结果。 [多节点偏钟下的取消倒计时](testing/candidate-s11-multi-node-countdown-2026-11-20.md)记录基线的提示偏差及修复分支的数据库时间结果。 #185 当前提交的通知草稿见[首发说明与通知](https://github.com/omajilmanbo/poolduck-mail/blob/4459ebb06f1e5a790ed8d729739a4cf7facdf93f/docs/first-production-deployment.md#31-首发发布说明与通知草稿)。 [H01 旧记录兼容验收](testing/candidate-legacy-scan-history-2026-11-20.md)记录迁移前后的名称和已删地点读取。 [损坏归档中止与恢复](testing/restore-failure-rehearsal-2026-11-20.md)记录校验门禁、事务回滚和换新实例验证。
 
+[Chrome 夏令时单日筛选](testing/candidate-scan-history-dst-2026-11-20.md)记录固定候选的洛杉矶切换日。[22 PR 本机组合验收](testing/local-22-pr-validation-2026-11-20.md)记录两版组合的慢读取、浏览器、部署与恢复结果。
+
 ## 1. 测试目标
 
 - 覆盖核心业务闭环：登录 → 扫码事件 → 邮件任务
