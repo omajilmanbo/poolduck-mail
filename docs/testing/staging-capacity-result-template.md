@@ -7,6 +7,7 @@
 - 应用 commit：`<full SHA>`
 - 场景：`steady | burst | mixed-success | mixed-provider-failure`
 - 负载机：`<区域/网络；不得写个人 IP>`
+- 负载机 CPU 峰值 / 最低可用内存 / 是否饱和：`<同窗观测，缺测填未知>`
 - 结果状态：`通过 | 达到停止条件 | 无效需重测`
 
 ## 环境
@@ -47,9 +48,15 @@
 |---|---|---|
 | Host load / available memory / root disk | `<value>` | `<yes/no>` |
 | Backend CPU / memory / PIDs | `<value>` | `<yes/no>` |
-| PostgreSQL CPU / memory / block IO | `<value>` | `<yes/no>` |
-| Frontend/Caddy CPU / memory/network | `<value>` | `<yes/no>` |
+| PostgreSQL CPU / memory | `<value>` | `<yes/no>` |
+| Frontend/Caddy CPU / memory | `<value>` | `<yes/no>` |
 | Container restart / OOM | `<value>` | `<yes/no>` |
+
+容器 I/O 按场景、容器和方向逐项填写，字节数取自 `capacity:io`。根盘空间使用率另记于上表。
+
+| UTC 起止 / 最大间隔（秒） | 容器 / 方向（Block 读、写或网络收、发） | 观测增量 B / 有效覆盖 ms | 整窗增量 B | 跳过的计数回退区间数（该容器） |
+|---|---|---|---|---:|
+| `<start/end / gap>` | `<service / direction>` | `<observed_bytes 或未知 / covered_ms>` | `<window_bytes 或未知>` | `<reset_intervals>` |
 
 ## 结论
 
@@ -57,7 +64,7 @@
 - 对应 API 吞吐：`<RPS>`
 - 对应 mail job 处理吞吐：`<jobs/s>`
 - 首要瓶颈：`<evidence-backed finding>`
-- 次要瓶颈：`<evidence-backed finding>`
+- 次要瓶颈：`<证据；若仅观察到拐点，记录候选归因与待验证数据>`
 - 置信边界：`<duration, sample size, load generator limits, mock-provider limitation>`
 
 ## 监控与后续
@@ -69,6 +76,8 @@
 - 后续 Issue：`<links>`
 
 ## 恢复验证
+
+分别记录测试前后 health、订阅门禁（含 trial）、tenant/location isolation 与 mock/sandbox mail smoke 的时间和结果。缺失项标“未验证”。
 
 - [ ] provider result 已恢复
 - [ ] `/health`、`/healthz`、登录通过
