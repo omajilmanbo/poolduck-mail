@@ -26,3 +26,17 @@
 | 本机 fake Monitoring 上报的聚合指标项 | 7 |
 
 受检的完整合成收件地址、正文及原始错误标记在各样本中均为 0 命中。已授权人员编辑属于独立的资料维护契约。目标云端有效配额、日志与保留、真实指标及告警送达仍待单独验证。[配额 #139](https://github.com/omajilmanbo/poolduck-mail/issues/139) · [OCI 日志与告警 #142](https://github.com/omajilmanbo/poolduck-mail/issues/142)
+
+<a id="safe-failure-branch"></a>
+
+## #217 的样本校正与 #218 分支验收
+
+#85 在 `a052518` 的永久失败样本为 `OCI_AUTH_REJECTED`。补充 Issue 已按原样本校正。停止投递是修复分支新增的覆盖场景。[更正后的 #217](https://github.com/omajilmanbo/poolduck-mail/issues/217) · [原始候选发布记录](https://github.com/omajilmanbo/poolduck-mail/blob/12bc4e1d2189525005eab19c99d9323ee0debbb5/docs/testing/candidate-issue85-application-acceptance-2026-11-20.md)
+
+| 版本 | 应用侧结果 |
+| --- | --- |
+| 固定候选 `a052518` | 临时配额与永久发信认证拒绝可从内部 attempt 和审计分别追溯，普通操作员在界面只看到同一通用提示。 |
+| #218 早期提交 `43ba025` | 可分别显示配额拒绝与停止投递。加入原始认证拒绝样本后，定向回归仍有一项失败。 |
+| #218 提交 `d2375a7` | 四类 HTTP 读取及实际工作台均验证三种提示。配额拒绝显示等待自动重试，约 30.17 秒后同一任务成功。永久发信认证拒绝仅 1 次尝试、无排期，操作员会话继续有效。停止投递仅 1 次尝试、无排期，提示独立可区分。 |
+
+`d2375a7` 本机后端 284 项、前端 73 项通过。验收使用本机 fake OCI 客户端，真实发送为零。该提交首轮 GitHub CI 四项通过。Critical E2E 的 mock 成功模式 9/10，取消后退出重登时等待租户码输入框超时。同一提交复跑后五项通过。分支待独立审查及合并。[修复提交](https://github.com/omajilmanbo/poolduck-mail/commit/d2375a77111ba8ab7e22b2d57a9e0ba54553cffb) · [#218 验收正文](https://github.com/omajilmanbo/poolduck-mail/pull/218) · [第二次 CI](https://github.com/omajilmanbo/poolduck-mail/actions/runs/44626762941/attempts/2) · [失败作业](https://github.com/omajilmanbo/poolduck-mail/actions/runs/44626762941/job/135924670074)
