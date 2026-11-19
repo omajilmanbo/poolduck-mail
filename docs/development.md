@@ -128,6 +128,36 @@
 - 合成 seed：仅 Local/CI/Staging 可显式设置 `PLATFORM_SYNTHETIC_SEED=true`、
   `.example.local` 邮箱和运行时测试密码，再执行 `npm.cmd run platform:seed`
 - Production 会拒绝合成 seed；CLI 与 seed 均不输出邮箱、密码、token 或哈希
+
+## 8. 本地容量逐请求对账（#152）
+
+在 `backend/` 运行 `npm run capacity:test`，可用固定合成样本离线验证负载参数和对账逻辑。实际运行 `npm run capacity:reconcile` 前须取得 D04 批准。执行窗口、并发、时长、停止和恢复条件见 [#152 计划草稿](https://github.com/omajilmanbo/poolduck-mail/pull/184)。
+
+每个实例只核对一档。使用专用 `capacity152` PostgreSQL、合成数据、loopback HTTP 和隔离的 Docker 内部网络。核对被测后端的实际配置为 `APP_ENV=local`、`MAIL_PROVIDER=mock`、`REAL_MAIL_SEND_ENABLED=false`。一档内仅本负载器写入扫码数据。管理员操作、smoke、定向探针和合成人员映射变更放在独立窗口。
+
+保持候选后端镜像固定。若镜像尚未包含工具，只给计划中的 `loadgen` 容器增加以下只读挂载和本地连接配置。将 `CAPACITY_TOOLS_DIR` 设为工具 checkout 的 `backend/scripts` 绝对路径，数据库密码沿用专用 Compose 会话已有的临时值。
+
+```yaml
+# 合入计划的 services.loadgen
+environment:
+  APP_ENV: local
+  MAIL_PROVIDER: mock
+  REAL_MAIL_SEND_ENABLED: 'false'
+  DATABASE_URL: postgresql://capacity152:${CAPACITY_DB_PASSWORD:?required}@postgres:5432/capacity152
+volumes:
+  - "${CAPACITY_TOOLS_DIR:?required}/capacity-load-test.mjs:/app/scripts/capacity-load-test.mjs:ro"
+  - "${CAPACITY_TOOLS_DIR:?required}/capacity-reconcile.mjs:/app/scripts/capacity-reconcile.mjs:ro"
+```
+
+在已有的 `run_step` 参数与 watchdog 基础上，将最终命令改为 `node scripts/capacity-load-test.mjs --reconcile --plan`，预览同一档参数。获得人工批准并完成准备、监控和停机核验后，为执行档移除 `--plan`。每档执行后继续依照计划跟踪排空，使用原有 `capacity:report` 查队列时序和聚合。
+
+对账模式保留 `capacity_load.step`、`capacity_load.complete` 的聚合，另输出一条 `capacity_reconcile.complete`：
+
+- `passed`（退出 0）表示请求与只读快照一致。重复扫码或幂等重放复用原 event/job。若客户端无回执但数据库可按幂等键确认关联，会计入 `matched_without_response`。API SLO 仍以负载汇总判定。
+- `failed`（退出 1）表示发现错误关联、漏或重复的 job、tenant/location 或收件快照不符、拒绝请求发生持久化，或该档出现无关联的新事件或 job。
+- `incomplete`（退出 2）表示没有可验证关联、缺少回执或数据库证据。被中途终止且没有对账末行的档位也记为缺证据。无回执且找不到幂等记录只说明当前快照未能确认提交。
+
+幂等键哈希、event/job ID 和预期租户地点只在进程内使用。数据库按档使用只读快照，收件快照比较只返回布尔值。只保留计数和结果，不保存逐行数据。取消窗口、worker 领取和逐项 provider 故障仍依原计划另行取证。
 - UI：`http://localhost:3000/platform/login`；租户登录仍为 `http://localhost:3000/`
 
 聚焦验证：
