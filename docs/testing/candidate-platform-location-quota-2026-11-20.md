@@ -27,6 +27,12 @@
 
 旧版本调额和低于当前用量的并发降额均带请求 ID，平台审计分别查得 0 条。拒绝语义与数据不变量已通过，但这两次拒绝无法按请求 ID 关联平台审计。高影响额度调整的审计缺口由 [#209](https://github.com/omajilmanbo/poolduck-mail/issues/209) 跟踪。两类 409 的 HTTP 与业务数据结果已分别核对。#192 涉及 CLI 成功操作，#207 涉及租户开通失败。[#192](https://github.com/omajilmanbo/poolduck-mail/issues/192) · [#207](https://github.com/omajilmanbo/poolduck-mail/issues/207)
 
+### #209 的独立修复分支
+
+[PR #210](https://github.com/omajilmanbo/poolduck-mail/pull/210) 的 `b59a446` 直接基于 `a052518`，核对时尚待合并。旧版本与低于当前用量仍分别返回原错误码和 HTTP 409。按请求 ID 对账，审计可写时两类拒绝各有一条 `platform.location_limit.update` / `denied`。撤销审计 INSERT 权限后两类请求仍各返回原 409，各查得 0 条，额度、用量和版本保持原值。恢复权限后合法调额返回 200，留下一条成功审计。[修复提交](https://github.com/omajilmanbo/poolduck-mail/commit/b59a44638808b9ad41b59fdabc5f0c13dfef2a64)
+
+分支本地的 HTTP 与 SQL 对账在临时 PostgreSQL 16.16 中载入候选演练库的 `pg_dump --schema-only` 空表结构，无业务数据或迁移历史。该次对账没有从空库重放迁移。分支定向测试 36/36、后端全套 284/284 通过，远端五项 CI 全部通过。固定候选的两次拒绝仍各缺一条审计。[分支 CI](https://github.com/omajilmanbo/poolduck-mail/actions/runs/44564841090)
+
 ## 未验
 
 本轮响应与数据库状态对应创建先落库的执行次序。另一合法结果是降额成功、创建因满额被拒，该次序未取样。额度 1 的单独场景、满额时重新启用或恢复，以及自动调度等待均未复验。
