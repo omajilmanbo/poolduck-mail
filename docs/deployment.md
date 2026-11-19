@@ -246,6 +246,8 @@ Issue #58 deployment result for 2026-07-07 is recorded in `docs/testing/staging-
 
 ## 6. Production 部署
 
+首次发布从[生产部署操作手册](first-production-deployment.md)进入。候选 `a052518` 的[本机隔离演练记录](testing/first-deployment-rehearsal-2026-11-19.md)覆盖干净构建、迁移、业务冒烟、异实例恢复与应用回退。正式邮件准入仍阻塞上线。
+
 - 必须经过 staging 验证
 - 执行数据库 migration（先备份）
 - 配置监控告警（登录失败率、邮件失败率）

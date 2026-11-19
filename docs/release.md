@@ -9,6 +9,8 @@
 
 ## 2. 发布前检查
 
+首次生产发布的目标配置、停止条件和逐步操作见[首次生产部署手册](first-production-deployment.md)。
+
 - 关联 Issue/PR 完整
 - 必需 CI 全通过
 - 测试回归完成（见 `docs/testing.md`）
