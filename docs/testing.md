@@ -16,6 +16,8 @@
 
 [Chrome 夏令时单日筛选](testing/candidate-scan-history-dst-2026-11-20.md)记录固定候选的洛杉矶切换日。[22 PR 本机组合验收](testing/local-22-pr-validation-2026-11-20.md)记录两版组合的慢读取、浏览器、部署与恢复结果。
 
+[Worker 进程中断](testing/candidate-m05-worker-restart-2026-11-20.md)记录两种调用边界和实际恢复。[平台审计旧游标空页](testing/candidate-platform-audit-p06-cleared-page-2026-11-20.md)记录清理后的浏览器提示。[加密归档独立取钥](testing/encrypted-restore-rehearsal-2026-11-20.md)记录失败停止与旧版本恢复。
+
 ## 1. 测试目标
 
 - 覆盖核心业务闭环：登录 → 扫码事件 → 邮件任务

@@ -99,4 +99,4 @@
 | 角色及会话 | 租户经理和操作员访问平台审计均返回 401 并回到平台登录，平台管理员访问租户业务审计也返回 401。经理可读本租户业务审计，操作员为 403。隔离库中将测试平台会话置为到期后，原浏览器查询及刷新均为 401，重新登录后可以查询。 |
 | 查询的最小审计 | 12 次成功查询各留一条 `platform.audit.query`，元数据只含 `count`，与各次响应条数相符。非法筛选、被拒身份和过期会话均未产生成功查询审计。 |
 
-查询审计写入失败另用后端 Jest 夹具核对。HTTP 为 503／`PLATFORM_AUDIT_UNAVAILABLE`，响应没有记录、游标或测试行内容。后端定向 26 项通过，含一项临时故障断言。前端 Vitest 两项通过，其中验证 503 页面提示。已有游标对应的整页被清空时的专用提示仍待真实浏览器验证。平台审计可见范围仍待人工审核。[后端用例](../../backend/test/platform.spec.ts) · [前端用例](../../frontend/test/platform-audit.test.tsx) · [#174](https://github.com/omajilmanbo/poolduck-mail/issues/174) · [#175](https://github.com/omajilmanbo/poolduck-mail/issues/175)
+查询审计写入失败另用后端 Jest 夹具核对。HTTP 为 503／`PLATFORM_AUDIT_UNAVAILABLE`，响应没有记录、游标或测试行内容。后端定向 26 项通过，含一项临时故障断言。前端 Vitest 两项通过，其中验证 503 页面提示。该场景的后续验收另见[持有游标后的空页](candidate-platform-audit-p06-cleared-page-2026-11-20.md)。平台审计可见范围仍待人工审核。[后端用例](../../backend/test/platform.spec.ts) · [前端用例](../../frontend/test/platform-audit.test.tsx) · [#174](https://github.com/omajilmanbo/poolduck-mail/issues/174) · [#175](https://github.com/omajilmanbo/poolduck-mail/issues/175)
