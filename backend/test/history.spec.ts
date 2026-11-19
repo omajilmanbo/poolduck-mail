@@ -273,6 +273,56 @@ describe('Tenant-scoped history APIs', () => {
     );
   });
 
+  it.each([
+    ['queued', 'OCI_QUOTA_REJECTED', '邮件服务因配额或频率限制拒绝了本次发送，等待自动重试'],
+    ['processing', 'OCI_QUOTA_REJECTED', '邮件服务因配额或频率限制拒绝了本次发送'],
+    ['failed', 'OCI_QUOTA_REJECTED', '邮件服务因配额或频率限制拒绝了本次发送，本次任务已停止重试'],
+    ['failed', 'RECIPIENT_SUPPRESSED', '邮件服务已停止向该收件地址投递，本次任务不会自动重试'],
+    ['delivery_unknown', 'PROVIDER_OUTCOME_UNKNOWN', '邮件发送失败'],
+    ['failed', 'Sandbox provider simulated failure', 'Sandbox provider simulated failure'],
+    ['failed', 'OCI_QUOTA_REJECTED: synthetic-recipient@example.invalid synthetic-body raw-provider-marker', '邮件发送失败'],
+    ['failed', '', null],
+    ['sent', null, null],
+  ] as const)('returns consistent safe reasons for %s with stored reason %s', async (status, errorMessage, expected) => {
+    const auth = `Bearer ${token()}`;
+    const scheduledAt = status === 'queued' ? new Date('2026-07-20T01:02:33.000Z') : null;
+    const scan = scanRow(scanEventId, status);
+    const job = {
+      ...scan.mailJobs[0],
+      createdAt,
+      errorMessage,
+      retryCount: status === 'queued' ? 1 : 0,
+      scheduledAt,
+      locationId,
+      location: scan.location,
+      scanEvent: scan,
+      toEmail: 'synthetic-recipient@example.invalid',
+      body: 'synthetic-body',
+    };
+    const scanWithJob = { ...scan, mailJobs: [job] };
+    prisma.scanEvent.findMany.mockResolvedValue([scanWithJob]);
+    prisma.scanEvent.findFirst.mockResolvedValue(scanWithJob);
+    prisma.mailJob.findMany.mockResolvedValue([job]);
+    prisma.mailJob.findFirst.mockResolvedValue(job);
+    const server = app.getHttpServer();
+    const responses = await Promise.all([
+      request(server).get('/api/scan-events').set('Authorization', auth).expect(200),
+      request(server).get(`/api/scan-events/${scanEventId}`).set('Authorization', auth).expect(200),
+      request(server).get('/api/mail-jobs').set('Authorization', auth).expect(200),
+      request(server).get(`/api/mail-jobs/${mailJobId}`).set('Authorization', auth).expect(200),
+    ]);
+
+    const [scanList, scanDetail, jobList, jobDetail] = responses;
+    const common = { mail_job_id: mailJobId, status, error_message: expected };
+    expect(scanList.body.items[0].mail_job).toMatchObject(common);
+    expect(scanDetail.body.mail_job).toMatchObject(common);
+    expect(jobList.body.items[0]).toMatchObject({ ...common, scheduled_at: scheduledAt?.toISOString() ?? null });
+    expect(jobDetail.body).toMatchObject({ ...common, scheduled_at: scheduledAt?.toISOString() ?? null });
+    for (const response of responses) {
+      expect(response.text).not.toMatch(/synthetic-recipient@example\.invalid|synthetic-body|raw-provider-marker/);
+    }
+  });
+
   it('rejects invalid locations, cursors and unauthenticated reads', async () => {
     prisma.location.findFirst.mockResolvedValue(null);
     await request(app.getHttpServer())
