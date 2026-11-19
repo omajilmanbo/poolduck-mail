@@ -11,6 +11,7 @@ describe('Scan Events API', () => {
   let jwtService: JwtService;
   let prisma: {
     $transaction: jest.Mock;
+    $queryRaw: jest.Mock;
     $executeRawUnsafe: jest.Mock;
     $queryRawUnsafe: jest.Mock;
     user: {
@@ -65,6 +66,7 @@ describe('Scan Events API', () => {
     jest.useFakeTimers().setSystemTime(receivedAt);
 
     prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
       $transaction: jest.fn(async (callback: (tx: typeof prisma) => unknown) =>
         callback(prisma),
       ),
@@ -170,6 +172,7 @@ describe('Scan Events API', () => {
           scheduled_at: null,
           error_message: null,
           deduplicated: false,
+          same_action_warning: null,
         });
 
       expect(prisma.location.findFirst).toHaveBeenCalledWith(
@@ -680,6 +683,7 @@ describe('Scan Events API', () => {
         scheduled_at: null,
         error_message: null,
         deduplicated: true,
+        same_action_warning: null,
       });
 
     expect(prisma.scanEvent.findFirst).toHaveBeenCalledWith(

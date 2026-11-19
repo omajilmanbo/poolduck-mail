@@ -259,6 +259,14 @@ ADR-017 已 `Accepted`，schema/API/worker/Frontend 已在本地实现。本节�
 migration、运行生产取消/领取 SQL 与两个真实 worker 实例、演练 guarded rollback，并在 `finally`
 删除该数据库；脚本拒绝非 Local/CI 或非本地主机。
 
+#### 连续同动作提示
+
+在本机临时 PostgreSQL 中执行 `npm --prefix backend run test:scan-action-history`。脚本通过登录、扫码、取消、列表和详情 HTTP 入口检查首扫、连续进入/离开、稳定 ID 顺序、取消/未知记录、幂等和动作冲突，以及跨人、跨租户、未分配地点和撤权。前端 `history-page.test.tsx` 检查新扫码返回第一页后的提示、筛选行的前序详情和撤权后的清屏。
+
+人工核对时，用合成人员在同一地点相隔至少 10 秒扫描两次进入码。第二条仍显示“进入”，展开“前一次有效扫码”可核对第一条的时间与编号。取消第二条后刷新，该行的提示消失。用离开码重复此流程，并在日期或邮件状态筛选隐藏前序记录时核对提示。
+
+与 #182 联验时，将 `replace_action` 的有效动作及 `insert_missing_action` 的声明发生时间接入 `findSameActionWarnings` 的有效动作查询，分别核对被调整记录与后一条有效记录。比较新扫码响应、历史列表和单条详情，复核原扫码、投递快照及任务数量。
+
 ### 4.8 Issue #96 operator-location 授权验证
 
 - 正常与边界：tenant_manager 为 operator 设置单个、多个或空 assignment；重复 location ID 返回 `400`，空数组撤销全部。新旧 operator 没有 assignment 时 location 列表为空。
