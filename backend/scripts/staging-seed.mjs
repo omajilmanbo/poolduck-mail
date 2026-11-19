@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import argon2 from "argon2";
+import { activeTenant, stagingPassword } from "./staging-fixture.mjs";
 import { config } from "dotenv";
 
 config({ path: "../.env", quiet: true });
@@ -14,40 +15,13 @@ const DATABASE_URL =
 const adapter = new PrismaPg({ connectionString: DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
-const password = "PoolduckStaging123!";
 const activeStartAt = new Date("2026-01-01T00:00:00.000Z");
 const activeEndAt = new Date("2027-01-01T00:00:00.000Z");
 const expiredStartAt = new Date("2025-01-01T00:00:00.000Z");
 const expiredEndAt = new Date("2025-12-31T23:59:59.000Z");
 
 const tenants = [
-  {
-    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-    tenantCode: "5A6E000001",
-    name: "Poolduck Staging Active Tenant",
-    subscriptionStatus: "active",
-    operator: {
-      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-      username: "staging-active-operator",
-      email: "staging-active-operator@example.local",
-    },
-    tenantManager: {
-      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-      email: "staging-active-tenant-manager@example.local",
-    },
-    location: {
-      id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-      code: "5A6E0001",
-      name: "Staging Active Office",
-      type: "location",
-    },
-    mapping: {
-      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-      scanCode: "01K0ABC20001",
-      personName: "Staging Active Recipient",
-      email: "staging-active-recipient@example.local",
-    },
-  },
+  activeTenant,
   {
     id: "11111112-1112-4112-8112-111111111112",
     tenantCode: "5A6E000002",
@@ -322,31 +296,14 @@ async function seedTenant(tenant, passwordHash) {
 }
 
 async function main() {
-  const passwordHash = await argon2.hash(password);
+  const passwordHash = await argon2.hash(stagingPassword);
 
   for (const tenant of tenants) {
     await seedTenant(tenant, passwordHash);
   }
 
-  console.log("Staging seed data is ready.");
-  console.log(
-    JSON.stringify(
-      {
-        password,
-        tenants: tenants.map((tenant) => ({
-          tenant_code: tenant.tenantCode,
-          subscription_status: tenant.subscriptionStatus,
-          operator_username: tenant.operator.username,
-          operator_email: tenant.operator.email,
-          tenant_manager_email: tenant.tenantManager.email,
-          location_id: tenant.location.id,
-          scan_code: tenant.mapping.scanCode,
-        })),
-      },
-      null,
-      2,
-    ),
-  );
+  console.log("Staging synthetic seed completed (3 tenants).");
+
 }
 
 main()
