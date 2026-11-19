@@ -109,7 +109,7 @@ psql -XAt -v ON_ERROR_STOP=1 --dbname="service=$SOURCE_PG_SERVICE" \
 
 ## 3. 验收与开放流量
 
-1. 在内部验证 PostgreSQL 可用、前后端 healthy。再经批准的正式 HTTPS 入口检查 `/health`、`/healthz`、`/`，验证 TLS、CORS、认证 Cookie 和反向代理路由。无会话访问业务接口应返回 401。
+1. 在内部确认 PostgreSQL 可用、前后端 healthy。从获批的外部网络检查 HTTP 跳转保留正式主机、路径和查询串，按目标信任链校验证书和域名。通过同一 HTTPS 入口确认首页可用，`/health` 和 `/healthz` 分别返回后端和前端的服务名。核对 CORS 允许的来源，再用获批验收账号确认 `/api/auth/me` 从无会话的 401 变为登录后的 200。只记录两枚 Cookie 的名称、路径及 `Secure`、`HttpOnly`、`SameSite` 属性。按批准的网络边界核对入口和内部端口的可达性。[固定候选的本机 HTTPS 验收](testing/candidate-local-https-2026-11-20.md)
 2. 上线前在**隔离合成环境**按演练记录执行登录、订阅、地点、扫码、取消、mock 任务与历史检查。仓库的 `local:seed`、`staging:seed` 和 `smoke:api` 属于合成演练。正式环境使用经批准的账号/数据和该窗口批准的只读验收步骤。任何涉及投递的生产验收由正式邮件准入另行定义。
 3. 发布负责人逐项核对备份可恢复、迁移成功、权限和历史正确、告警接收有效、无未知投递被自动重发。记录 release notes、观察窗口和负责回退的人。只有人工批准后才切流，按已批准观察窗口跟踪错误、拒绝率、任务积压、失败率与数据库状态。
 
