@@ -8,7 +8,7 @@
 |---|---|---|---|---|---|---|---|---|
 | CI/CD | GitHub Actions | 构建、测试、发布流程 | Yes | Yes | Yes | Repo workflow + Secrets | 人工指定 | 与 `docs/workflow.md` 对齐 |
 | Database | PostgreSQL | 业务数据存储 | Yes（本地） | Yes（独立实例） | Yes（独立实例） | Infra config + Secrets | 人工指定 | 版本建议 16 |
-| Mail Provider | Mock（当前）；OCI Email Delivery HTTPS（待准入） | 邮件任务验证；未来受控真实提交 | Yes（mock） | Yes（当前仅 mock） | TBD | 非秘密容器配置 + OCI Instance Principal（未来） | 人工指定 | #141–#145 未验收；OCI 无 SMTP/API 私钥 |
+| Mail Provider | Mock；OCI Email Delivery HTTPS | 邮件任务验证、受控真实提交 | Yes（mock） | mock 日常运行，OCI 仅限独立批准窗口 | TBD | 非秘密容器配置 + OCI Instance Principal | 人工指定 | #145 已完成历史单封，#141 的拒绝效果待验证。见 [准入清单](../oci-mail-staging-readiness.md) |
 | DNS | Domain provider | `app.poolducktest.com` 解析 | No | Yes | TBD | DNS 控制台 | 人工指定 | 仅保存 A record，不把 provider 凭据放到 VM |
 | TLS Certificate | Let's Encrypt | Staging HTTPS 证书 | No | Yes | TBD | Caddy `/data` volume | 人工指定 | Caddy 通过 HTTP-01 自动签发与续期 |
 | Hosting Platform | OCI Always Free | 前后端托管 | Local machine | Yes | TBD | OCI Console + IaC | 人工指定 | Staging 单 VM + Docker Compose |
