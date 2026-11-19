@@ -115,8 +115,32 @@ psql -XAt -v ON_ERROR_STOP=1 --dbname="service=$SOURCE_PG_SERVICE" \
 
 ## 4. 停止、应用回退与数据库恢复
 
-- **入口、健康、租户隔离或邮件状态异常。** 立即暂停切流、收写和发送，记录最后正常时刻及汇总计数；保留日志、数据库和卷。存在 `delivery_unknown` 或已越过 provider 边界的任务时由值班人与 provider 对账，再决定处置。
-- **应用故障、schema 兼容。** 把生产清单中的前后端镜像切为记录中的旧 digest，保留当前数据库。用该清单执行下列命令，复核健康、认证、订阅、地点与只读历史，再决定是否恢复入口。演练的两个提交具有完全相同的 Prisma 目录；更早版本须重新验证。
+入口、健康、租户隔离或邮件状态异常时，先关闭业务入口、停止收写和发送，记录最后正常时刻并保全原库、卷和日志。故障时已经发出的请求可能在停机后才有结果。值班人核对在途事务及投递结果后，再选择下列路径。
+
+### 首发没有获批的上一生产镜像
+
+1. **切流前中止。** 保持所有业务入口关闭或返回静态 503，在独立客户端验证首页和写入路径。停下已启动的应用，核实原库的扫码、任务、尝试及在途事务。迁移、初始化或其他已提交写入也须保留。若发现已接收业务，按下一步处理。
+2. **已接收业务后撤回。** 将全部业务流量切到持久的维护响应或关闭入口，使既有会话也无法提交写入，并封住直连和旁路。尽快停止所有 Backend 副本，再停 Frontend。候选的首次发送、重试和手动发送 API 都在 Backend 内。仅切换入口仍会处理到期任务。分别记录入口开始拒绝写入及所有处理进程退出的时刻，核对两者之间的提交、在途调用和最终事务结果。[候选后台处理器](../backend/src/mail-jobs/mail-job-processor.service.ts) · [发送 API](../backend/src/mail-jobs/mail-jobs.controller.ts)
+
+以下示例适用于第 1 节已核准的 Compose 服务名。使用 Caddy 时，先把可在重启后生效的维护配置放到挂载位置，保留获批域名和 TLS，将业务代理规则替换为 `respond "maintenance" 503`，并加 `header Cache-Control "no-store"`。其他入口使用目标平台的等价维护操作。停止等待时长由当次窗口指定。
+
+```bash
+: "${APP_STOP_GRACE_SECONDS:?}"
+if ! ( "${dc[@]}" exec -T reverse-proxy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile &&
+       "${dc[@]}" exec -T reverse-proxy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile ); then
+  "${dc[@]}" stop -t "$APP_STOP_GRACE_SECONDS" reverse-proxy || echo '入口仍待确认，立即阻断上游并停 Backend' >&2
+fi
+"${dc[@]}" stop -t "$APP_STOP_GRACE_SECONDS" backend
+"${dc[@]}" stop -t "$APP_STOP_GRACE_SECONDS" frontend
+"${dc[@]}" ps --all
+```
+
+3. **确认冻结。** 从入口外侧验证首页及写入路径均返回维护状态或连接已关闭。正式验收的写入探针应使用即使误达应用也无法创建业务记录的请求。确认所有 Backend 已退出、编排器不会补起副本，保持原数据库、卷和日志。经受控只读连接按原任务 ID 比对扫码、任务、幂等记录及尝试。用数据库时钟跨过相应的 `send_not_before` 或 `scheduled_at` 再核对尝试数和 `provider_invoked_at` 计数。已有调用、`processing`、`delivery_unknown` 或中断时结果不明的任务，由值班人与 provider 对账后逐项决定，禁止自动重发。禁止用上线前空库覆盖已接收的记录。
+4. **审批恢复。** 先确认故障处置、获批镜像和原库、在途结果、积压清单及可恢复的投递范围。启动 Backend 即可能领取逾期任务，必须在启动前取得恢复处理的批准。先保持入口维护，核对旧任务及尝试的变化，再经批准恢复入口、用获批账号复核原历史。若仍无获批的可运行版本，继续维护并保全数据。演练用历史提交不作为首发回退镜像。[本机首次撤回验收](testing/first-release-withdrawal-2026-11-20.md)
+
+### 有获批回退镜像或需要恢复数据库
+
+- **应用故障、schema 兼容。** 把生产清单中的前后端镜像切为已批准的上一生产 digest，保留当前数据库。启动前完成在途投递对账和恢复处理审批，复核健康、认证、订阅、地点与只读历史，再决定是否恢复入口。演练的两个提交具有完全相同的 Prisma 目录；更早版本须重新验证。
 
 ```bash
 "${dc[@]}" config --images
