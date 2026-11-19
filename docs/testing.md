@@ -4,6 +4,8 @@
 
 候选 `a052518` 的订阅变化、首次领取与取消计数见[订阅与取消补验](testing/candidate-a08-s10-subscription-cancellation-2026-11-20.md)。四图解码、模拟键入、实际提交范围和待决 D16 见[扫码输入补验](testing/candidate-scan-input-2026-11-20.md)。
 
+同一旧库在三个版本的正常登录和 21 项迁移见[旧租户与登录身份升级](testing/candidate-a02-a03-legacy-login-upgrade-2026-11-20.md)。本机 Caddy 的临时信任链、同源登录与目标环境待验项见 [#185 的固定 HTTPS 报告](https://github.com/omajilmanbo/poolduck-mail/blob/c379d35333e5a9750e18c320b9485d22f0b3cee3/docs/testing/candidate-local-https-2026-11-20.md)。
+
 ## 1. 测试目标
 
 - 覆盖核心业务闭环：登录 → 扫码事件 → 邮件任务
