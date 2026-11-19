@@ -1,6 +1,6 @@
 # 候选 a052518 平台开通、凭据交付与管理员 CLI 补验
 
-2026-11-19（日本时间）。候选为 `origin/main` 的 `a05251897d7fc11d96114606bcaa1807dd96af55`。本报告记录 P01–P04 的平台开通 HTTP 与数据库联动、P01 的平台管理员 CLI 生命周期及 P03 的本地真实浏览器验收。各行链接到矩阵中的对应条款。
+2026-11-19 至 2026-11-20（日本时间）。候选为 `origin/main` 的 `a05251897d7fc11d96114606bcaa1807dd96af55`。本报告记录 P01–P04 的平台开通 HTTP 与数据库联动、P01 的平台管理员 CLI 生命周期及 P03 的本地真实浏览器验收。各行链接到矩阵中的对应条款。
 
 ## 环境与命令
 
@@ -22,7 +22,7 @@
 | 条款 | 本轮实测 | 仍待取证 |
 | --- | --- | --- |
 | [P01](business-requirements-matrix.md#P01) 平台登录与会话 | 平台登录 201、`/me` 200，经独立 Cookie jar 调用。平台会话访问租户地点 API、租户会话访问平台租户 API 均为 401。平台 refresh、logout 均为 201，数据库中唯一的平台 Session 在退出后标记撤销。另一空库验证 CLI 四种正常动作、顺序重复初始化和四个旧会话的撤销，详见下节。 | 并发初始化、会话自然到期、正常 refresh 轮换后使用旧值。CLI 审计缺少请求标识由[#192](https://github.com/omajilmanbo/poolduck-mail/issues/192)跟踪。 |
-| [P02](business-requirements-matrix.md#P02) 人工开通、幂等与改密 | trial 开通返回初始口令。同 key 同请求返回相同 tenant code 且标记重放，变更请求返回 409。首登标记必须改密，改密成功后用新密码重登。另用独立浏览器上下文复验，旧口令重登返回 401，新口令返回 201 并进入工作台。数据库新增 1 个租户、1 个订阅、1 个已完成改密的租户管理员和 1 条开通幂等记录。 | 开通事务故障回滚、active 初始开通、并发同 key、改密前业务访问，以及改密前签发的旧 Session 是否失效。脚本只断言首次开通响应含口令，另有后端单测使用模拟数据库断言安全重放返回原临时口令。 |
+| [P02](business-requirements-matrix.md#P02) 人工开通、幂等与改密 | trial 开通返回初始口令。同 key 同请求返回相同 tenant code 且标记重放，变更请求返回 409。首登标记必须改密，改密成功后用新密码重登。另用独立浏览器上下文复验，旧口令重登返回 401，新口令返回 201 并进入工作台。11 月 20 日的真实 HTTP 与数据库专项另验 active 初始开通、同键并发一次创建及一次重放、故障回滚和同键重试，详见文末。 | 核验改密前的租户业务访问限制，以及改密前签发的旧会话是否立即失效。开通失败请求缺少对应平台审计由 [#207](https://github.com/omajilmanbo/poolduck-mail/issues/207) 跟踪。 |
 | [P03](business-requirements-matrix.md#P03) 凭据展示与交付 | API 首次开通响应含初始口令，订阅切换至 active 后返回的摘要含审计 ID，断言序列化结果不含完整管理员邮箱或新口令。 本地真实浏览器 7/7 通过，核对了成功页与 CSV 的四个字段、凭据清除和返回控制台的行为，并在四类浏览器存储中检查临时口令及完整经理邮箱。 | 正式交付仍须核对实际接收人、使用获准渠道、受控保管及交付后删除明文 CSV。 |
 | [P04](business-requirements-matrix.md#P04) 订阅与地点额度 | 额度 2 时建成两个地点，第三次返回 `LOCATION_LIMIT_REACHED`。降到 1 返回 `LOCATION_LIMIT_BELOW_CURRENT_USAGE`，提高到 3 成功。以当前版本切换到 suspended、active 均返回 200。数据库复核额度为 3、地点仍为 2、订阅最终为 active，有一条提额成功审计和顺序一致的两条订阅成功审计。 | 提额后再创建、旧版本和并发写入、地点停用或待删的占用及终结后释放额度。四类订阅 fixture 的存在只证明 seed 覆盖，业务状态门禁另行取证。 |
 
@@ -67,3 +67,19 @@
 本机跨端口读取另见[#195](https://github.com/omajilmanbo/poolduck-mail/issues/195)。前端与 API 的端口不同，邮件模式和环境的 GET 请求携带 `Cache-Control`，该请求头未获 CORS 预检许可。两个 GET 因此被拦下，已独立核实后端为 mock，控制台却显示“状态未知”。在 `APP_ENV=local` 下，环境接口正常读取时应返回 `environment=unavailable`、`deletion_enabled=false`。开通和凭据交付请求均成功，本次观察限于本机跨端口场景。[前端平台 API 客户端](../../frontend/src/api/client.ts) · [后端 CORS 配置](../../backend/src/main.ts) · [平台环境接口](../../backend/src/platform/platform-auth.controller.ts)
 
 正式交付仍由上线人员执行。核对接收人，按手册通过获准的安全渠道交付，受控保管下载的明文 CSV，并在交付后及时删除文件。[管理员操作手册第 2 节](../admin-guide.md)
+
+## P02 active 开通、同键并发与回滚
+
+2026-11-20（日本时间）。从固定候选构建 Backend runtime，使用一次性 PostgreSQL 16 和只监听 loopback 的真实 Nest HTTP。新卷上运行 `npm run db:deploy` 应用 21 项迁移，`npm run platform:admin -- bootstrap` 初始化一个合成管理员，两个命令均退出 0。测试环境使用 `APP_ENV=test`、`NODE_ENV=test`、`MAIL_PROVIDER=mock`、`REAL_MAIL_SEND_ENABLED=false`。当次临时探针 `node p02-evidence.mjs` 退出 0，实验结束后已清理。前文保留 trial 顺序重放证据，本轮复验的是 active 及并发。候选已有的 Jest 开通用例使用注入的 Prisma 模拟对象，本节使用真实控制器、会话、事务和数据库。[ADR-013](../decisions/ADR-013-platform-admin-control-plane-and-manual-tenant-provisioning.md) · [既有后端用例](../../backend/test/platform.spec.ts)
+
+| 验收项 | HTTP 和 PostgreSQL 实测 |
+| --- | --- |
+| active 初始订阅及额度 | 开通返回 201，API 与数据库的订阅均为 active，起止时间与输入一致，额度为 3，已用地点为 0。数据库正好有 1 个 active 首任经理，必须首登改密，保存的 Argon2id 哈希通过本轮口令验证。平台摘要显示脱敏经理邮箱。 |
+| 同键、同请求的两个授权提交 | 同一 active 平台管理员通过两个独立 Session 和 TCP 连接发起请求。独立 PostgreSQL 连接暂持该合成键的事务级 advisory lock，观察到两个请求同时等待后释放。两个响应均为 201，一个标记创建、一个标记重放，返回相同租户码和同一临时口令，仅在内存比较。累计 1 个租户、1 个订阅、1 个经理、1 条幂等记录。两条成功审计分别关联各自请求 ID，指向同一管理员和租户，区分创建与重放，元数据无完整邮箱、口令或原始幂等键。安全重放返回原临时口令与现行 API 文档一致。 |
+| 开通中途失败及重试 | 仅针对另一合成键，在实验库对幂等记录插入设置 `AFTER INSERT` 触发器。触发器在同一事务看见租户、订阅、经理和幂等记录都已插入后递增非事务性探针序列，再抛出异常。探针确认命中一次，API 返回 500，响应未暴露夹具细节或凭据。独立连接核对租户、订阅、经理、幂等记录及成功审计增量均为 0。移除触发器后，同键同请求以新的请求 ID 重试，返回 201 且标记为首次创建。 |
+
+最终独立 SQL 对账为 2 个租户、2 个 active 订阅、2 个待首登改密的经理、2 条幂等记录、3 条成功开通审计。邮件任务与投递尝试均为 0。故障夹具、容器、专用 PostgreSQL 卷、临时镜像标签和探针文件已回收，剩余容器、卷及镜像标签均为 0。[平台开通 API 契约](../api.md) · [开通事务与成功审计实现](../../backend/src/platform/platform-tenants.service.ts)
+
+受控失败请求携带 `X-Request-Id`，返回 500 后按该标识查到 0 条平台审计。[#207](https://github.com/omajilmanbo/poolduck-mail/issues/207) 单独跟踪 HTTP 开通失败的审计缺口。[#192](https://github.com/omajilmanbo/poolduck-mail/issues/192) 跟踪平台 CLI 已有成功审计缺少关联标识。
+
+P02 仍待补验改密前租户业务访问限制，以及改密前签发的旧 Session 在改密后是否立即失效。P03 已实测旧临时口令被拒。
