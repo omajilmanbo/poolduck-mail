@@ -8,6 +8,8 @@
 
 人员与所属地点的六组删除、恢复及清理场景见 [A12 实测](testing/candidate-a12-person-location-deletion-2026-11-20.md)。Staging 部署脚本的分支演练和固定候选的合成种子到期时间见 [O07／O08 分支证据](testing/business-requirements-matrix.md#deployment-and-seed-branches)。
 
+候选的人员码、历史分页及首发撤回验收见[旧人员码回填与双进程创建](testing/candidate-a11-person-code-backfill-2026-11-20.md)、[翻页连续性与筛选重置](testing/candidate-scan-history-continuity-2026-11-20.md)和[无旧镜像的首发撤回](https://github.com/omajilmanbo/poolduck-mail/blob/8b2af737a74c20474a192091f696e87f360e9c3b/docs/testing/first-release-withdrawal-2026-11-20.md)。两个未合并 head 的组合验收见[联合部署与跨年种子报告](testing/joint-deployment-seed-acceptance-2026-11-20.md)。
+
 ## 1. 测试目标
 
 - 覆盖核心业务闭环：登录 → 扫码事件 → 邮件任务
