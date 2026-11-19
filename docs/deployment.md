@@ -488,6 +488,8 @@ Agents must stop and report blockers instead of guessing when any of the followi
 
 Backend database migrations are managed with Prisma.
 
+After a migration, restore to the current schema, or synthetic seed, run the manual integrity check on the offline database before accepting the result. See the [operations guide for the command, exit codes and failure procedure](operation.md#offline-integrity).
+
 Local development flow:
 
 1. Start PostgreSQL 16, for example with `docker compose up -d postgres`.

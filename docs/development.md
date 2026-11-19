@@ -50,6 +50,7 @@
 本地质量门禁命令：
 
 - Backend：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`
+- #211 离线数据库验收见[运维手册第 9 节](operation.md#offline-integrity)。在 `backend/` 执行 `npm run test:offline-integrity` 可复现迁移回填及反例测试。设置 `APP_ENV=test` 或 `local`，将 `DATABASE_URL` 指向专用本机 PostgreSQL。测试账号需能创建临时数据库和 pgcrypto 扩展。脚本在新建的数据库内构造样本，结束时删除测试库。
 - ADR-023 租户生命周期迁移：在 `APP_ENV=local` 或 `test`、`DATABASE_URL` 指向本机 PostgreSQL 时，
   于 `backend/` 执行 `npm run test:tenant-lifecycle-migration`；脚本仅创建并删除随机命名的合成测试数据库。
 - #160 平台删除事务：在相同本地环境下，于 `backend/` 执行 `npm run test:platform-delete-transaction`；
