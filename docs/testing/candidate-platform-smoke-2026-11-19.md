@@ -24,7 +24,7 @@
 | [P01](business-requirements-matrix.md#P01) 平台登录与会话 | 平台登录 201、`/me` 200，经独立 Cookie jar 调用。平台会话访问租户地点 API、租户会话访问平台租户 API 均为 401。平台 refresh、logout 均为 201，数据库中唯一的平台 Session 在退出后标记撤销。另一空库验证 CLI 四种正常动作、顺序重复初始化和四个旧会话的撤销，详见下节。 | 并发初始化、会话自然到期、正常 refresh 轮换后使用旧值。CLI 审计缺少请求标识由[#192](https://github.com/omajilmanbo/poolduck-mail/issues/192)跟踪。 |
 | [P02](business-requirements-matrix.md#P02) 人工开通、幂等与改密 | trial 开通返回初始口令。同 key 同请求返回相同 tenant code 且标记重放，变更请求返回 409。首登标记必须改密，改密成功后用新密码重登。另用独立浏览器上下文复验，旧口令重登返回 401，新口令返回 201 并进入工作台。11 月 20 日的真实 HTTP 与数据库专项另验 active 初始开通、同键并发一次创建及一次重放、故障回滚和同键重试，详见文末。 | 核验改密前的租户业务访问限制，以及改密前签发的旧会话是否立即失效。开通失败请求缺少对应平台审计由 [#207](https://github.com/omajilmanbo/poolduck-mail/issues/207) 跟踪。 |
 | [P03](business-requirements-matrix.md#P03) 凭据展示与交付 | API 首次开通响应含初始口令，订阅切换至 active 后返回的摘要含审计 ID，断言序列化结果不含完整管理员邮箱或新口令。 本地真实浏览器 7/7 通过，核对了成功页与 CSV 的四个字段、凭据清除和返回控制台的行为，并在四类浏览器存储中检查临时口令及完整经理邮箱。 | 正式交付仍须核对实际接收人、使用获准渠道、受控保管及交付后删除明文 CSV。 |
-| [P04](business-requirements-matrix.md#P04) 订阅与地点额度 | 额度 2 时建成两个地点，第三次返回 `LOCATION_LIMIT_REACHED`。降到 1 返回 `LOCATION_LIMIT_BELOW_CURRENT_USAGE`，提高到 3 成功。以当前版本切换到 suspended、active 均返回 200。数据库复核额度为 3、地点仍为 2、订阅最终为 active，有一条提额成功审计和顺序一致的两条订阅成功审计。 | 提额后再创建、旧版本和并发写入、地点停用或待删的占用及终结后释放额度。四类订阅 fixture 的存在只证明 seed 覆盖，业务状态门禁另行取证。 |
+| [P04](business-requirements-matrix.md#P04) 订阅与地点额度 | 额度 2 时建成两个地点，第三次返回 `LOCATION_LIMIT_REACHED`。降到 1 返回 `LOCATION_LIMIT_BELOW_CURRENT_USAGE`，提高到 3 成功。以当前版本切换到 suspended、active 均返回 200。数据库复核额度为 3、地点仍为 2、订阅最终为 active，有一条提额成功审计和顺序一致的两条订阅成功审计。 另有七组[地点额度补验](candidate-platform-location-quota-2026-11-20.md)核验竞争最后一个名额、创建先成功的并发降额及终结后的额度释放。 | 两类调额拒绝均为 409，欠缺可关联的平台审计，见 [#209](https://github.com/omajilmanbo/poolduck-mail/issues/209)。反向执行次序未取样。额度 1、满额重新启用／恢复及自动调度等待尚待验。 |
 
 代码入口与断言见 [platform-synthetic-seed.mjs](../../backend/scripts/platform-synthetic-seed.mjs)、[platform-api-smoke-test.mjs](../../backend/scripts/platform-api-smoke-test.mjs) 和 [platform.spec.ts](../../backend/test/platform.spec.ts)。
 
@@ -81,5 +81,7 @@
 最终独立 SQL 对账为 2 个租户、2 个 active 订阅、2 个待首登改密的经理、2 条幂等记录、3 条成功开通审计。邮件任务与投递尝试均为 0。故障夹具、容器、专用 PostgreSQL 卷、临时镜像标签和探针文件已回收，剩余容器、卷及镜像标签均为 0。[平台开通 API 契约](../api.md) · [开通事务与成功审计实现](../../backend/src/platform/platform-tenants.service.ts)
 
 受控失败请求携带 `X-Request-Id`，返回 500 后按该标识查到 0 条平台审计。[#207](https://github.com/omajilmanbo/poolduck-mail/issues/207) 单独跟踪 HTTP 开通失败的审计缺口。[#192](https://github.com/omajilmanbo/poolduck-mail/issues/192) 跟踪平台 CLI 已有成功审计缺少关联标识。
+
+[PR #208](https://github.com/omajilmanbo/poolduck-mail/pull/208) 的修复分支 `becae10` 在本地 PostgreSQL 验证了事务回调失败和数据库在提交时明确拒绝两种情况。业务行回滚，各有一条失败审计可按请求 ID 对账。审计存储也拒写时仍返回 500，对应审计为 0 条。分支的平台定向测试 34/34、后端 282/282 和 GitHub [五项 CI](https://github.com/omajilmanbo/poolduck-mail/actions/runs/44560146454)通过。固定候选 `a052518` 的实测结果仍为 0 条失败审计。
 
 P02 仍待补验改密前租户业务访问限制，以及改密前签发的旧 Session 在改密后是否立即失效。P03 已实测旧临时口令被拒。
