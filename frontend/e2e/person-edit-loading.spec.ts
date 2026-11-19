@@ -1,4 +1,4 @@
-import { expect, Page, test } from '@playwright/test';
+import { APIRequestContext, expect, Page, Route, test } from '@playwright/test';
 
 const api = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
 const office = '10CA1001';
@@ -24,16 +24,36 @@ function networkError(page: Page) {
   return page.getByRole('alert').filter({ hasText: '无法连接后端 API' });
 }
 
-async function login(page: Page, identifier: string) {
-  const response = await page.request.post(`${api}/api/auth/login`, {
+let operator: APIRequestContext;
+let manager: APIRequestContext;
+
+test.beforeAll(async ({ playwright }) => {
+  operator = await playwright.request.newContext();
+  manager = await playwright.request.newContext();
+  await login(operator, 'local-operator');
+  await login(manager, 'tenant-manager@example.local');
+});
+
+test.afterAll(async () => {
+  await operator?.dispose();
+  await manager?.dispose();
+});
+
+async function login(request: APIRequestContext, identifier: string) {
+  const response = await request.post(`${api}/api/auth/login`, {
     data: { tenant_code: '10CA000001', identifier, password: 'PoolduckLocal123!' },
   });
-  expect(response.ok()).toBe(true);
+  expect(response.status()).toBe(201);
 }
 
-async function createPerson(page: Page, location: string) {
+async function useSession(page: Page, request: APIRequestContext) {
+  const { cookies } = await request.storageState();
+  await page.context().addCookies(cookies);
+}
+
+async function createPerson(request: APIRequestContext, location: string) {
   const person = { person_name: 'Edit Race Fixture', email: 'edit-race@example.local' };
-  const response = await page.request.post(peopleUrl(location), { data: person });
+  const response = await request.post(peopleUrl(location), { data: person });
   expect(response.status()).toBe(201);
   const { person_id } = await response.json();
   return { person, personId: person_id as string, detailUrl: `${peopleUrl(location)}/${person_id}` };
@@ -44,10 +64,11 @@ async function holdDetail(page: Page, location: string, personId: string) {
   let release!: () => void;
   const hold = new Promise<void>((resolve) => { release = resolve; });
   page.once('close', release);
-  await page.route(url, async (route) => {
+  const routeDetail = async (route: Route) => {
     await hold;
     if (!page.isClosed()) await route.continue();
-  }, { times: 1 });
+  };
+  await page.route(url, routeDetail);
   const requested = page.waitForRequest((request) => request.url() === url && request.method() === 'GET');
   await editButton(page, personId).click();
   await requested;
@@ -57,12 +78,13 @@ async function holdDetail(page: Page, location: string, personId: string) {
     const response = await received;
     expect(response.status()).toBe(200);
     await response.finished();
+    await page.unroute(url, routeDetail);
   };
 }
 
 test('held person detail blocks keyboard input and submission, then saves and rereads both fields', async ({ page }) => {
-  await login(page, 'local-operator');
-  const { person, personId, detailUrl } = await createPerson(page, office);
+  await useSession(page, operator);
+  const { person, personId, detailUrl } = await createPerson(operator, office);
   const writes: string[] = [];
   page.on('request', (request) => {
     if (request.url().startsWith(peopleUrl(office)) && ['POST', 'PATCH'].includes(request.method())) {
@@ -115,8 +137,8 @@ test('held person detail blocks keyboard input and submission, then saves and re
 });
 
 test('failed detail can be retried and an older person response cannot replace the current draft', async ({ page }) => {
-  await login(page, 'local-operator');
-  const { person, personId, detailUrl } = await createPerson(page, office);
+  await useSession(page, operator);
+  const { person, personId, detailUrl } = await createPerson(operator, office);
   await page.goto('/people');
   const finishEarlierDetail = await holdDetail(page, office, seededPerson);
   await page.route(detailUrl, (route) => route.abort('failed'), { times: 1 });
@@ -148,9 +170,8 @@ test('failed detail can be retried and an older person response cannot replace t
 });
 
 test('changing location isolates the edit and preserves operator location boundaries', async ({ page }) => {
-  await login(page, 'tenant-manager@example.local');
-  const { person, personId, detailUrl } = await createPerson(page, school);
-  await login(page, 'local-operator');
+  const { person, personId, detailUrl } = await createPerson(manager, school);
+  await useSession(page, operator);
   await page.goto(`/people?location_id=${school}`);
   const location = page.getByRole('combobox', { name: '地点' });
   await expect(location).toHaveValue(office);
@@ -165,7 +186,7 @@ test('changing location isolates the edit and preserves operator location bounda
     }
   }
 
-  await login(page, 'tenant-manager@example.local');
+  await useSession(page, manager);
   await page.goto(`/people?location_id=${office}`);
   const finishOfficeDetail = await holdDetail(page, office, seededPerson);
   await location.selectOption(school);
