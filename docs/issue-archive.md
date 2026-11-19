@@ -102,6 +102,7 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #145 | 运维 | 在受控窗口启用 Staging OCI 发信并验证单封与回滚 | 2026-10-16 单封获 OCI accept/relay 且收件确认，已回滚 mock；原小批量范围拆至 #153 | 是，已批准单封窗口；后续窗口另批 |
 | #152 | 运维 | 用合成数据与 mock/fake provider 执行短时高并发扫码和邮件队列测试 | 待批准测试参数；真实 OCI 压测不在默认范围 | 是，需批准窗口和停止阈值 |
 | #153 | 运维 | 在新批准窗口进行有限的小批量 Staging OCI 真实发信与回滚验收 | 从 #145 剩余范围拆出；不等同于高并发压力测试 | 是，须再次批准真实发信窗口和收件数据 |
+| [#219](https://github.com/omajilmanbo/poolduck-mail/issues/219) | 缺陷 | 用 PostgreSQL 时间显示新扫码和历史记录的可取消窗口 | 实时状态见 GitHub | 否，沿用 ADR-017 |
 | 待建 Issue | 工程改进 | 按 ADR-005 实现幂等 Staging 部署脚本；人工审批触发，并保留恢复 Runbook | 已批准设计，尚未实现 | 是 |
 | #86 | 基础设施 | Staging 域名、TLS 与访问控制 | ADR-012 Accepted；总体跟踪，Caddy/Let's Encrypt 实施见 #107 | 是 |
 | #107 | 基础设施 | 按 ADR-012 为 Staging 接入 Caddy、Let's Encrypt、HTTPS 路由与证书续期 | 已完成并部署；80/443 公网入口于 2026-07-29 人工批准 | 是，ADR-012 与公网入口已确认 |

@@ -57,6 +57,18 @@ type ScanPersistenceClient = Pick<
   'mailJob' | 'scanRequestIdempotency'
 >;
 
+function cancellationWindow(
+  mailJob: { status: string; cancelUntil: Date | null } | undefined,
+  serverTime: Date,
+) {
+  const deadline = mailJob?.cancelUntil ?? null;
+  return {
+    can_cancel: mailJob?.status === 'waiting' && deadline !== null && serverTime < deadline,
+    cancel_until: deadline?.toISOString() ?? null,
+    server_time: serverTime.toISOString(),
+  };
+}
+
 @Injectable()
 export class ScanEventsService {
   constructor(
@@ -109,12 +121,17 @@ export class ScanEventsService {
       select: this.historySelect(),
     });
 
+    if (!rows.length) return { items: [], next_cursor: null };
+    const serverTime = await this.databaseNow(this.prisma);
     const hasMore = rows.length > query.limit;
     const page = rows.slice(0, query.limit);
     const last = page.at(-1);
 
     return {
-      items: page.map((row) => this.toHistoryItem(row)),
+      items: page.map((row) => ({
+        ...this.historyFields(row),
+        ...cancellationWindow(row.mailJobs[0], serverTime),
+      })),
       next_cursor:
         hasMore && last
           ? this.encodeCursor(last.createdAt, last.id)
@@ -142,7 +159,8 @@ export class ScanEventsService {
       });
     }
 
-    return this.toHistoryItem(row);
+    const serverTime = await this.databaseNow(this.prisma);
+    return { ...this.historyFields(row), ...cancellationWindow(row.mailJobs[0], serverTime) };
   }
 
   async exportScanEvents(user: AuthenticatedUserResponse, query: ExportScanEventsDto) {
@@ -189,7 +207,7 @@ export class ScanEventsService {
         'mail_job_id',
       ],
       ...rows.map((row) => {
-        const item = this.toHistoryItem(row);
+        const item = this.historyFields(row);
         return [
           item.received_at,
           item.location_name ?? '',
@@ -438,12 +456,7 @@ export class ScanEventsService {
             status: existingMailJob.status as CreateScanEventResponse['status'],
             effective_status: 'active',
             mail_status: existingMailJob.status as CreateScanEventResponse['mail_status'],
-            can_cancel:
-              existingMailJob.status === 'waiting' &&
-              existingMailJob.cancelUntil !== null &&
-              receivedAt < existingMailJob.cancelUntil,
-            cancel_until: existingMailJob.cancelUntil?.toISOString() ?? null,
-            server_time: receivedAt.toISOString(),
+            ...cancellationWindow(existingMailJob, receivedAt),
             canceled_at: null,
             retry_count: existingMailJob.retryCount,
             scheduled_at:
@@ -510,9 +523,7 @@ export class ScanEventsService {
           select: {
             id: true,
             status: true,
-            createdAt: true,
             cancelUntil: true,
-            sendNotBefore: true,
           },
         });
 
@@ -526,15 +537,7 @@ export class ScanEventsService {
           status: 'waiting',
           effective_status: 'active',
           mail_status: 'waiting',
-          can_cancel:
-            mailJob.status === 'waiting' &&
-            (mailJob.cancelUntil === null ||
-              mailJob.cancelUntil === undefined ||
-              (mailJob.createdAt ?? receivedAt) < mailJob.cancelUntil),
-          cancel_until:
-            mailJob.cancelUntil?.toISOString() ??
-            new Date(receivedAt.getTime() + 10_000).toISOString(),
-          server_time: (mailJob.createdAt ?? receivedAt).toISOString(),
+          ...cancellationWindow(mailJob, receivedAt),
           canceled_at: null,
           retry_count: 0,
           scheduled_at: null,
@@ -846,7 +849,6 @@ export class ScanEventsService {
       });
     }
 
-    const serverTime = now;
     const canceled = mailJob.status === 'canceled';
     return {
       scan_event_id: mailJob.scanEvent.id,
@@ -858,12 +860,7 @@ export class ScanEventsService {
       status: mailJob.status as CreateScanEventResponse['status'],
       effective_status: canceled ? 'canceled' : 'active',
       mail_status: mailJob.status as CreateScanEventResponse['mail_status'],
-      can_cancel:
-        mailJob.status === 'waiting' &&
-        mailJob.cancelUntil !== null &&
-        serverTime < mailJob.cancelUntil,
-      cancel_until: mailJob.cancelUntil?.toISOString() ?? null,
-      server_time: serverTime.toISOString(),
+      ...cancellationWindow(mailJob, now),
       canceled_at: mailJob.scanEvent.canceledAt?.toISOString() ?? null,
       retry_count: mailJob.retryCount,
       scheduled_at: mailJob.scheduledAt?.toISOString() ?? null,
@@ -1013,7 +1010,7 @@ export class ScanEventsService {
     };
   }
 
-  private toHistoryItem(row: {
+  private historyFields(row: {
     id: string;
     locationId: string | null;
     personCodeSnapshot: string | null;
@@ -1028,18 +1025,16 @@ export class ScanEventsService {
       id: string;
       status: string;
       sentAt: Date | null;
-      cancelUntil: Date | null;
       errorMessage: string | null;
       locationNameSnapshot: string;
       personNameSnapshot: string;
       personCodeSnapshot: string;
       actionSnapshot: string;
     }>;
-  }): ScanEventHistoryItem {
+  }): Omit<ScanEventHistoryItem, 'can_cancel' | 'cancel_until' | 'server_time'> {
     const mailJob = row.mailJobs[0] ?? null;
     const status: ScanHistoryStatus =
       (mailJob?.status as ScanHistoryStatus | undefined) ?? 'queued';
-    const serverTime = new Date();
     const canceled = row.canceledAt !== null || status === 'canceled';
 
     return {
@@ -1058,13 +1053,6 @@ export class ScanEventsService {
       status,
       effective_status: canceled ? 'canceled' : 'active',
       mail_status: status,
-      can_cancel:
-        status === 'waiting' &&
-        mailJob?.cancelUntil !== null &&
-        mailJob?.cancelUntil !== undefined &&
-        serverTime < mailJob.cancelUntil,
-      cancel_until: mailJob?.cancelUntil?.toISOString() ?? null,
-      server_time: serverTime.toISOString(),
       canceled_at: row.canceledAt?.toISOString() ?? null,
       mail_job: mailJob
         ? {
