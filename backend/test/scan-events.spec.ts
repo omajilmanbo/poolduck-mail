@@ -330,17 +330,21 @@ describe('Scan Events API', () => {
     });
   });
 
-  it('uses Japan time across midnight and keeps long subject names within the database limit', async () => {
+  it.each([
+    ['midnight', '2026-06-22T15:04:05.000Z', '2026年06月23日 00:04:05', '長'],
+    ['New Year', '2026-12-31T15:04:05.000Z', '2027年01月01日 00:04:05', '𠮷'],
+  ])('uses Japan time across %s and keeps long subjects within the database limit', async (_boundary, utcTime, jstTime, nameCharacter) => {
     mockAuthenticatedUser();
     mockSubscription('active');
-    const longName = '長'.repeat(240);
+    const longName = nameCharacter.repeat(240);
     prisma.location.findFirst.mockResolvedValue({
       id: locationId,
       name: longName,
       status: 'active',
       tenant: { name: `Tenant\n${longName}` },
     });
-    prisma.$queryRawUnsafe.mockResolvedValue([{ now: new Date('2026-06-22T15:04:05.000Z') }]);
+    const dbReceivedAt = new Date(utcTime);
+    prisma.$queryRawUnsafe.mockResolvedValue([{ now: dbReceivedAt }]);
     prisma.personMapping.findFirst.mockResolvedValue({
       id: personMappingId,
       personCode,
@@ -357,12 +361,23 @@ describe('Scan Events API', () => {
       .expect(201);
 
     const data = prisma.mailJob.create.mock.calls[0][0].data;
-    expect(data.subject.length).toBeLessThanOrEqual(255);
+    const subject: string = data.subject;
+    const subjectCharacters = Array.from(subject);
+    expect(subjectCharacters).toHaveLength(255);
+    expect(subjectCharacters).toContain(nameCharacter);
+    expect(subjectCharacters).toContain('…');
+    expect(subjectCharacters.some((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint >= 0xD800 && codePoint <= 0xDFFF;
+    })).toBe(false);
     expect(data.subject).toMatch(/^【Tenant /);
     expect(data.subject).toMatch(/】からのお知らせ-入室$/);
     expect(data.subject).not.toMatch(/[\r\n]/);
     expect(data.body).toContain('山田 太郎 様');
-    expect(data.body).toContain('時刻：2026年06月23日 00:04:05（日本時間）');
+    expect(data.body).toContain(`時刻：${jstTime}（日本時間）`);
+    expect(prisma.scanEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ receivedAt: dbReceivedAt }) }),
+    );
   });
 
   it.each([
