@@ -1,6 +1,6 @@
 # 首次部署候选扫码历史与 CSV 补验（2026-11-19）
 
-候选为 `a05251897d7fc11d96114606bcaa1807dd96af55`。本报告补充[业务要求矩阵](business-requirements-matrix.md#H01)的历史查询、分页和 CSV 导出证据。在独立 PostgreSQL 上，浏览器两轮补验最终均通过。H03 记录了页面筛选与下载范围的差异，供产品评审。
+候选为 `a05251897d7fc11d96114606bcaa1807dd96af55`。本报告补充[业务要求矩阵](business-requirements-matrix.md#H01)的历史查询、分页和 CSV 导出证据。在独立 PostgreSQL 上，浏览器两轮补验最终均通过。同日另验两种 CSV 的空结果与单次 503 反馈。H03 分别记录反馈缺口和待产品裁定的 D09 导出范围。
 
 ## 既有证据
 
@@ -16,7 +16,7 @@
 | [H03](business-requirements-matrix.md#H03) CSV 字段和限制 | 两个下载均为 UTF-8 BOM，中文、日文、逗号和引号往返一致，时间以 UTC `Z` 表示。扫描 CSV 记录原 `entry`、取消状态及时间；邮件 CSV 保留 `entry` 与 `canceled`，无发送时间，地址本地部分脱敏。下载未包含合成完整地址、正文、主题、原始载荷、错误或 provider 标记。两种导出跨租户地点为 404、超 31 天为 400。operator 无导出按钮，直接调用两种导出均为 403。 |
 | [H03](business-requirements-matrix.md#H03) 行数上限和审计 | 在同一隔离库追加 5,001 对终态记录后，地点 B 有 5,002 行。两个工作台下载都返回 HTTP 200 和最新 5,000 行，均省略最旧 2 行。成功导出审计逐类记录 28、33 和 5,000 行，与实测对应。脚本调整前额外做过一次扫描下载，多一条计数为 33 的成功审计。 |
 
-**待产品裁定** [#79](https://github.com/omajilmanbo/poolduck-mail/issues/79) 的验收文字是“导出自己 tenant 的筛选结果”，[#169](https://github.com/omajilmanbo/poolduck-mail/issues/169) 将导出规则排除在范围之外。候选的 API 支持按筛选结果导出，工作台按钮固定下载当前地点近 30 天。对只关注某日或状态的用户，文件可包含页面未显示的记录。现有两项 Issue 未裁定按钮是否应沿用页面条件，或保留近 30 天并明确标示。该选择保留给产品评审。
+**D09 导出范围待产品裁定** [#79](https://github.com/omajilmanbo/poolduck-mail/issues/79) 的验收文字是“导出自己 tenant 的筛选结果”，[#169](https://github.com/omajilmanbo/poolduck-mail/issues/169) 将导出规则排除在范围之外。候选的 API 支持按筛选结果导出，工作台按钮固定下载当前地点近 30 天。对只关注某日或状态的用户，文件可包含页面未显示的记录。现有两项 Issue 未裁定按钮是否应沿用页面条件，或保留近 30 天并明确标示。该选择保留给产品评审。
 
 ## 环境和命令
 
@@ -45,6 +45,20 @@ Windows，Docker Desktop Linux 引擎 29.7.2，容器 Node 20.20.2、PostgreSQL 
 | `frontend/` | `npm test -- test/history-page.test.tsx` | [工作台历史组件](../../frontend/test/history-page.test.tsx) |
 | `frontend/` | `npm run test:e2e -- e2e/mvp-workspace.spec.ts` | [既有浏览器回归](../../frontend/e2e/mvp-workspace.spec.ts) |
 
+## H03 空地点与单次 503 的导出反馈
+
+在同一候选另建隔离项目，只加载仓库的标准合成种子。tenant_manager 登录后切换到空地点 B，历史接口返回 200 和空列表，工作台原先就显示“暂无扫码记录”。
+
+| 操作 | 导出扫描 | 导出邮件 |
+| --- | --- | --- |
+| 空地点点击导出 | HTTP 200，`scan-events.csv` 只有 1 行表头、0 行数据 | HTTP 200，`mail-jobs.csv` 只有 1 行表头、0 行数据 |
+| 浏览器路由仅对下一次请求返回 503 | 下载 0 个文件，出现 1 次未处理的 Promise 拒绝“导出失败” | 下载 0 个文件，出现 1 次未处理的 Promise 拒绝“导出失败” |
+| 503 后直接再次点击同一按钮 | 按钮仍可用，HTTP 200，恢复下载 1 行表头、0 行数据 | 按钮仍可用，HTTP 200，恢复下载 1 行表头、0 行数据 |
+
+空结果和 503 后，页面可见文案及 `alert`、`status` 均与点击前相同。两种成功下载均有 UTF-8 BOM。[#190](https://github.com/omajilmanbo/poolduck-mail/issues/190)独立跟踪导出空结果及失败缺少反馈。核对时，[PR #191](https://github.com/omajilmanbo/poolduck-mail/pull/191)的[五项 CI](https://github.com/omajilmanbo/poolduck-mail/actions/runs/44512950595)通过，修复尚未合并。候选 `a052518` 上的表现仍以上表为准。D09 单独处理按钮的导出范围。
+
+当次仅运行仓库的基础种子和临时浏览器驱动 `node history-lab/check-feedback.cjs`。该驱动与临时 Compose 配置均未提交。后台 Chrome、Node 及 Playwright 的版本同前，脚本退出 0，耗时约 1.7 秒。扫码、邮件任务和发送尝试均为 0。清理后确认实验容器、网络和数据库卷均无残留。
+
 ## 本次未覆盖
 
-当前页短时轮询与取消沿用已有测试证据。本次未实测翻页期间并发插入、旧记录缺少姓名快照或已删地点、新增扫码重置筛选、空 CSV、下载异常的界面提示、其他浏览器或时区。5,002 行场景仅验证功能上限。测试对象是本机合成 PostgreSQL 和浏览器，生产容量与云服务不在本次覆盖内。
+当前页短时轮询与取消沿用已有测试证据。本次未实测翻页期间并发插入、旧记录缺少姓名快照或已删地点、新增扫码重置筛选、单次 503 以外的下载异常、其他浏览器或时区。5,002 行场景仅验证功能上限。测试对象是本机合成 PostgreSQL 和浏览器，生产容量与云服务不在本次覆盖内。
