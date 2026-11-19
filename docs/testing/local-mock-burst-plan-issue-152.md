@@ -231,8 +231,47 @@ FROM sample;
 
 | 验收 | 候选现有证据与剩余缺口 |
 |---|---|
-| 逐项 fake 429、timeout、5xx | [OCI fake 契约](../../backend/test/oci-mail-contract.spec.ts) 在进程内验证 429 的 transient 退避和 timeout/5xx 的 `delivery_unknown`、不自动重发。批准后可在已准备依赖的本地目录运行 `npm test -- --runTestsByPath test/oci-mail-contract.spec.ts`；此测试无 OCI 网络。运行中 [mock provider](../../backend/src/mail-jobs/sandbox-mail.provider.ts) 只支持统一成功/失败。逐项错误与 burst/队列同跑须补本地测试注入，再由人工复核 |
+| 逐项 fake 429、timeout、5xx | [OCI fake 契约](../../backend/test/oci-mail-contract.spec.ts) 与 [队列重试测试](../../backend/test/mail-job-retry.spec.ts) 已在当前候选离线通过。运行中 [mock provider](../../backend/src/mail-jobs/sandbox-mail.provider.ts) 只支持统一成功/失败。逐项错误与 burst/队列同跑须补本地测试注入，再由人工复核 |
 | Burst 逐请求、排队和收件人对账 | [负载器](../../backend/scripts/capacity-load-test.mjs) 只汇总 `kind:HTTP status`，把 `valid:201` 都计为预期，未记录 deduplicated、event/job ID 或已提交但客户端超时的请求。数据库报告只查单 tenant 的半开 UTC 时间窗及即时聚合。上面的快照及探针可验证队列与关系一致性，无法证明 burst 每个响应都对应唯一 job；完整验收须补仅在内存关联请求、响应和入队的测试记录，以及实时多 tenant 定向探针；对外保留聚合计数 |
+
+### 逐请求内存对账
+
+最小补充是为每个逻辑请求在内存保留预期 tenant/location、幂等键哈希、去重标记和响应中的 event/job ID。对 timeout 或 5xx 等无可用回执的请求，在清理前按 tenant、扫码路由及幂等键哈希查询 `scan_request_idempotency`，核实是否已入队。已去重的请求也要核对原 event/job，计数时只计一次创建。数据库侧按 event/job ID 核对 tenant/location、收件快照和 attempt。报告只保留计数，找不到可关联证据的请求记为缺证据。现有容量报告的时间窗和 `valid:201` 总数无法区分下列等量情况。
+
+复制以下 JS 到临时文件并运行 `node <临时文件>.mjs`。样本固定为两个新扫码和一个重复响应。报告示例在内存核对新建响应对应的 job，仅输出断言结果。
+
+```js
+import assert from 'node:assert/strict';
+
+const north = { tenant: 'a', location: 'north', eventId: 'event-1', jobId: 'job-1' };
+const south = { tenant: 'a', location: 'south', eventId: 'event-2', jobId: 'job-2' };
+const responses = [north, south, { ...north, deduplicated: true }];
+
+function report(responses, jobs) {
+  const created = responses.filter((response) => !response.deduplicated);
+  const counts = { created: created.length, missing: 0, duplicate: 0, wrongJob: 0, wrongContext: 0 };
+  for (const response of created) {
+    const matches = jobs.filter((job) => job.eventId === response.eventId);
+    if (matches.length === 0) counts.missing += 1;
+    if (matches.length > 1) counts.duplicate += 1;
+    if (matches.length > 0 && !matches.some((job) => job.jobId === response.jobId)) counts.wrongJob += 1;
+    if (matches.some((job) => job.tenant !== response.tenant || job.location !== response.location)) {
+      counts.wrongContext += 1;
+    }
+  }
+  return counts;
+}
+
+const clean = { created: 2, missing: 0, duplicate: 0, wrongJob: 0, wrongContext: 0 };
+assert.deepEqual(report(responses, [north, south]), clean);
+assert.deepEqual(report(responses, [north, { ...north, jobId: 'extra' }]),
+  { ...clean, missing: 1, duplicate: 1 });
+assert.deepEqual(report(responses, [{ ...north, location: south.location }, { ...south, location: north.location }]),
+  { ...clean, wrongContext: 2 });
+assert.deepEqual(report(responses, [north, { ...south, jobId: 'other' }]), { ...clean, wrongJob: 1 });
+assert.deepEqual(report(responses, [north, { ...south, tenant: 'b' }]), { ...clean, wrongContext: 1 });
+console.log('reconciliation fixtures: 5/5');
+```
 
 记录 `通过 / 失败 / 缺证据 / 未执行`，缺证据项保留在 #152。结果按阶段填入 [#116 结果模板](staging-capacity-result-template.md) 的对应指标，附审批引用、实际 SHA/窗口、场景参数、每项对账计数、停止与低负载回归结果。导出前删除配置中的动作码和标识，禁止附原始响应、凭据、邮箱、正文、姓名、内部 ID 或请求明细。记录未执行档位和测量开销。建议根据证据定位下一步，若 HTTP p95 平稳而队列增长，优先检查 worker 领取速率；若 API 与 DB 等待共同上升，先分解 SQL 和 DB 资源消耗。
 
@@ -243,6 +282,8 @@ FROM sample;
 ## 审批前验证记录
 
 - 在 `backend/` 运行 `npm.cmd run capacity:test`，4/4 通过。覆盖参数阶梯、百分位、动作码轮换与目标/并发配置边界。
-- `npm.cmd run capacity:plan` 使用 `127.0.0.1:3001`。steady 5/10/20 × 120 秒、burst 10/20 × 30 秒、mixed 10 × 60 秒，以及 steady 1 × 30 秒和 1 × 5 秒均返回 `planOnly: true`。离线测试没有启动服务或写数据库。本地服务、备份恢复、fake 契约与负载结果待后续核实。
+- `npm.cmd run capacity:plan` 使用 `127.0.0.1:3001`。steady 5/10/20 × 120 秒、burst 10/20 × 30 秒、mixed 10 × 60 秒，以及 steady 1 × 30 秒和 1 × 5 秒均返回 `planOnly: true`。本地服务、备份恢复和负载结果待后续核实。
 - `docker compose config` 离线解析通过，确认内部网络、无发布端口、loadgen 共享 backend 网络命名空间，以及 Local mock / false 配置。
 - 第二会话 Bash 示例使用内存 fake Docker CLI 离线验证，覆盖按标签唯一定位、采样与只读 SQL 入口、仅停止 backend/loadgen、拒绝零匹配/多匹配/查询失败及重建后的 ID 刷新。实际容器核验仍须在批准窗口内、任何手动 HTTP 前完成。
+- 在 `backend/` 直接使用已有依赖运行 `node node_modules/jest/bin/jest.js --runInBand --no-cache --runTestsByPath test/oci-mail-contract.spec.ts test/mail-job-retry.spec.ts`，两套 38/38 通过。实际运行使用临时 Node 预加载器阻断 socket、HTTP 和 fetch。契约测试断言 fake 429 单次提交返回 `queued / OCI_QUOTA_REJECTED`。另以 fake claim 验证 `retry_count=1` 后可用不同 attempt 再提交，两次 SDK retry 均关闭。重试策略用冻结时钟和预置次数验证 30/120/600 秒退避及第四次失败后终止。Fake timeout（408）和 server error（500）各仅调用一次，进入 `delivery_unknown / PROVIDER_OUTCOME_UNKNOWN`，再处理返回 409 且仍为一次调用。重试策略单独断言 unknown 的 `retry_count=0` 且无调度。双 worker 争抢用例只创建一个 attempt、只调用一次 provider。
+- 上述内存报告示例 5/5 通过。等量样本可识别漏建与重复同时出现、地点互换、错误 job 关联和跨 tenant。验证只使用固定记录，尚缺实际负载器的逐请求采集和持续队列中的逐项故障注入。
