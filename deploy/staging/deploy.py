@@ -1,6 +1,7 @@
 """Manually deploy a prepared, approved synthetic Staging checkout (Python 3.8+)."""
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -17,7 +18,8 @@ REHEARSAL = "deploy/staging/rehearsal/compose.yml"
 SERVICES = {"postgres", "backend", "frontend", "reverse-proxy"}
 SECRETS = ("JWT_SECRET", "REFRESH_TOKEN_SECRET", "AUTH_IDENTITY_HASH_SECRET",
            "PLATFORM_JWT_SECRET", "PLATFORM_REFRESH_TOKEN_SECRET", "PLATFORM_PROVISIONING_SECRET")
-REQUIRED = ("APP_ENV", "TENANT_CONTEXT_ENFORCED", "MAIL_PROVIDER", "REAL_MAIL_SEND_ENABLED",
+REQUIRED = ("APP_ENV", "TENANT_CONTEXT_ENFORCED", "LOG_LEVEL", "MAIL_PROVIDER",
+            "MAIL_MOCK_SEND_RESULT", "REAL_MAIL_SEND_ENABLED",
             "DATABASE_URL", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", *SECRETS)
 RECOVERY = {"approval": "3.1", "checkout": "3.2", "config": "3.3", "caddy": "3.4",
             "build": "3.4", "start": "3.4", "migration": "3.5", "seed": "3.5",
@@ -47,7 +49,7 @@ def checkout(commit):
             "unset Git checkout overrides")
     require(re.fullmatch("[0-9a-f]{40}", commit), "approved full commit required")
     require(command(["git", "rev-parse", "HEAD"], capture=True).strip() == commit, "commit mismatch")
-    require(not command(["git", "status", "--porcelain", "--untracked-files=all"], capture=True),
+    require(not command(["git", "--no-optional-locks", "status", "--porcelain", "--untracked-files=all"], capture=True),
             "checkout has unapproved changes")
     # Ignored files under COPY sources / Caddy bind mounts can also affect the release.
     inputs = ["backend/src", "backend/scripts", "backend/prisma", "frontend/app", "frontend/src",
@@ -65,6 +67,22 @@ def check_db(url, db):
             and unquote(target.username or "") == db["POSTGRES_USER"]
             and unquote(target.password or "") == db["POSTGRES_PASSWORD"],
             "database URL disagrees with approved Compose postgres target")
+
+
+@contextmanager
+def deployment_lock():
+    # The OS releases this lock on process exit, including interrupted deployments.
+    with (ROOT / ".env.deploy-lock").open("a+b") as lock:
+        try:
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise Stopped("unable to acquire deployment lock for this checkout") from None
+        yield
 
 
 def validate(model, approved_db, rehearsal):
@@ -160,6 +178,7 @@ class Deployment:
         model = json.loads(command([*self.compose, "-f", "-", "config", "--format", "json"],
                                    stdin=json.dumps(probe), capture=True))
         validate(model, self.args.database, self.args.rehearsal)
+        self.caddy_image = model["services"]["reverse-proxy"]["image"]
         print("target=synthetic-staging db=approved-compose-postgres mail=mock real_send=false")
 
     def run_compose(self, *args, capture=False):
@@ -170,7 +189,7 @@ class Deployment:
     def caddy(self):
         folder = ROOT / "deploy/staging" / ("rehearsal" if self.args.rehearsal else "caddy")
         command([*self.docker, "run", "--rm", "--network", "none", "--volume", f"{folder}:/etc/caddy:ro",
-                 "caddy:2.11.4-alpine", "caddy", "validate", "--config", "/etc/caddy/Caddyfile",
+                 self.caddy_image, "caddy", "validate", "--config", "/etc/caddy/Caddyfile",
                  "--adapter", "caddyfile"])
 
     def health(self):
@@ -181,25 +200,44 @@ class Deployment:
                              capture=True).strip()
             require(health == "healthy", f"{service} unhealthy")
             print(f"service={service} state=healthy")
+        for path, service in (("/health", "backend"), ("/healthz", "frontend")):
+            if self.args.rehearsal:
+                body = self.run_compose("exec", "-T", "reverse-proxy", "wget", "-qO-",
+                                        "http://127.0.0.1" + path, capture=True)
+            else:
+                # Loopback with the approved SNI/Host and normal certificate verification.
+                body = command(["curl", "--disable", "--noproxy", "*", "--fail", "--silent",
+                                "--max-time", "15", "--resolve", "app.poolducktest.com:443:127.0.0.1",
+                                "https://app.poolducktest.com" + path], capture=True)
+            reply = json.loads(body)
+            require(reply.get("status") == "ok" and reply.get("service") == f"poolduck-mail-{service}",
+                    "proxy health route mismatch")
+            print(f"route={path} result=passed")
 
     def run(self):
         args = self.args
         require(args.approved_synthetic_staging, "synthetic Staging approval required")
-        require(re.fullmatch("[A-Za-z_][A-Za-z0-9_]{0,62}", args.database), "invalid approved database")
+        require(re.fullmatch("[A-Za-z_][A-Za-z0-9_]{0,62}", args.database)
+                and args.database not in {"postgres", "template0", "template1"}, "invalid approved database")
         if args.rehearsal is not None:
             require(re.fullmatch("pd-rehearsal-[a-f0-9]{12}", args.rehearsal), "invalid rehearsal project")
         self.step("checkout", lambda: checkout(args.commit))
         print(f"commit={args.commit}", flush=True)
         self.step("config", self.config)
-        if args.check:
-            return
+        if not args.check:
+            with deployment_lock():
+                self.deploy()
+
+    def deploy(self):
         self.step("caddy", self.caddy)
         self.step("build", lambda: self.run_compose("build", "backend", "frontend"))
         self.step("start", lambda: self.run_compose("up", "-d", "--no-build", "--wait", "--wait-timeout", "240"))
+
         def npm(*args):
             self.run_compose("exec", "-T", "backend", "npm", "run", *args)
+
         self.step("migration", lambda: npm("db:deploy"))
-        if args.seed:
+        if self.args.seed:
             self.step("seed", lambda: npm("staging:seed"))
         else:
             print("stage=seed result=skipped")
@@ -223,10 +261,10 @@ def main():
     deploy = Deployment(parser.parse_args())
     try:
         deploy.run()
-    except (Stopped, OSError, ValueError, KeyError, KeyboardInterrupt) as error:
+    except (Stopped, OSError, ValueError, KeyError, TypeError, AttributeError, KeyboardInterrupt) as error:
         reason = str(error) if isinstance(error, Stopped) else type(error).__name__
         print(f"stage={deploy.stage} result=failed reason={reason} "
-              f"recover=docs/staging-manual.md#{RECOVERY[deploy.stage]}", file=sys.stderr)
+              f"recover=docs/staging-manual.md section={RECOVERY[deploy.stage]}", file=sys.stderr)
         return 130 if isinstance(error, KeyboardInterrupt) else 1
     print("result=passed")
     return 0

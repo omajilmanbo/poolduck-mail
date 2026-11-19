@@ -303,7 +303,6 @@ async function main() {
   }
 
   console.log("Staging synthetic seed completed (3 tenants).");
-
 }
 
 main()

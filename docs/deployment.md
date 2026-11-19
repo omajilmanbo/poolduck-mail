@@ -169,8 +169,7 @@ Local/CI/Staging 合成验证，Production 会拒绝执行。
 
 - 使用独立数据库与邮件沙箱配置
 - cloud-init 只负责安装 Docker/Compose、配置主机用户/目录和基础防火墙，不部署应用
-- 当前由人工批准后，操作者或 Agent 通过 SSH 执行 Compose 部署命令；部署后执行 smoke test
-- 已接受的目标方案是把命令链收敛为幂等部署脚本，触发仍保留人工审批；详见 ADR-005
+- 人工批准主机、合成数据库、完整 SHA 与维护窗口后，操作者或 Agent 通过 SSH 在已准备的 checkout 运行 [Staging 部署脚本](../deploy/staging/deploy.py)。参数、分步接管与回滚见 [Staging 手册第 3 章](staging-manual.md)。
 - 验证订阅、权限、扫码链路
 - Staging 已采用与 Local 相同的容器组基线部署到 OCI 服务器，并通过 override 增加 Caddy HTTPS reverse proxy。
 - Staging 域名和证书由 ADR-012 / Issue #107 落地；备份策略、集中监控与正式 secrets store 仍由独立 Issue 跟进，当前 secrets 位于 VM 的仓库外 `.env`。
@@ -198,25 +197,23 @@ NEXT_PUBLIC_API_BASE_URL=https://app.poolducktest.com
 CORS_ORIGIN=https://app.poolducktest.com
 MAIL_PROVIDER=mock
 MAIL_MOCK_SEND_RESULT=success
+REAL_MAIL_SEND_ENABLED=false
 STAGING_TENANT_DELETE_ENABLED=true
 TENANT_CONTEXT_ENFORCED=true
 ```
 
-`POSTGRES_PASSWORD`, `DATABASE_URL`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, and
-`AUTH_IDENTITY_HASH_SECRET` must be generated on the Staging host or another approved secret store. Do not
-commit or paste those values into docs, issues, or PR descriptions.
+Set `POSTGRES_DB` and `POSTGRES_USER` explicitly. Provision the matching DB password and URL,
+tenant and platform access/refresh secrets, identity hash secret and provisioning secret through
+the approved Staging secret source. The complete required inputs are in section 3.3 of the manual.
 
-Current approved deployment and recovery commands (to be wrapped by the future deployment script):
+From the prepared checkout, use the approved full SHA and database name:
 
 ```bash
-cd /opt/poolduck-mail/app
-git fetch origin
-git checkout main
-git pull --ff-only origin main
-docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
-docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T backend npm run staging:seed
-docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T -e API_BASE_URL=http://reverse-proxy backend npm run smoke:api
+python3 deploy/staging/deploy.py --approved-synthetic-staging --commit "$approved_sha" --database "$approved_db" --check
+python3 deploy/staging/deploy.py --approved-synthetic-staging --commit "$approved_sha" --database "$approved_db" --seed
 ```
+
+Omit `--seed` to keep existing fixtures. The script validates the merged Compose model in memory, builds, starts, applies migrations, checks service and proxy health, and runs the active synthetic tenant's mock API smoke. Keep the stage results and exit code. See the [local rehearsal](testing/staging-deploy-rehearsal.md) for repeat and recovery evidence.
 
 Before `up`, back up the Staging database and validate both the Compose model and Caddyfile. After `up`, verify the HTTPS certificate, HTTP redirect, security headers, `/healthz`, `/health`, API smoke, browser login, and that public ports `3000`, `3001`, and `5432` remain unreachable. Do not run `docker compose down -v`: the Caddy data volume contains the certificate private key and ACME state.
 
@@ -240,7 +237,7 @@ Issue #91 tenant-code cutover and rollback:
    `backend/prisma/rollback/20260728010000_add_tenant_codes.sql`。不得先删除仍被当前应用依赖的列。
 5. 恢复完成后将兼容开关重置为 `false`；不得长期保留双读。
 
-For sandbox/mock failure-path verification, temporarily set `MAIL_MOCK_SEND_RESULT=failure`, recreate Backend, run the smoke test with `API_SMOKE_EXPECT_SEND_STATUS=failed`, then restore `MAIL_MOCK_SEND_RESULT=success`.
+For deployment failure and takeover verification, the local rehearsal interrupts the seed in its own synthetic database and repeats the deployment after removing the interruption.
 
 Issue #58 deployment result for 2026-07-07 is recorded in `docs/testing/staging-smoke-2026-07-07.md`.
 
@@ -303,19 +300,8 @@ docker compose version
 cd /opt/poolduck-mail/app
 if [ ! -d .git ]; then git clone https://github.com/omajilmanbo/poolduck-mail.git .; fi
 git fetch origin
-git checkout main
-git pull --ff-only origin main
-docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
-docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T backend npm run staging:seed
-docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T \
-  -e API_BASE_URL=http://reverse-proxy \
-  -e API_SMOKE_TENANT_CODE=5A6E000001 \
-  -e API_SMOKE_IDENTIFIER=staging-active-operator \
-  -e API_SMOKE_PASSWORD=PoolduckStaging123! \
-  -e API_SMOKE_LOCATION_ID=5A6E0001 \
-  -e 'API_SMOKE_SCAN_CODE=E01K0ABC20001' \
-  -e 'API_SMOKE_UNMAPPED_SCAN_CODE=E01K0ABC29999' \
-  backend npm run smoke:api
+git checkout --detach "$approved_sha"
+# Prepare the approved .env as described below before running section 5.1.
 ```
 
 On OCI Ubuntu 22.04 arm64, cloud-init installs `docker.io` and `docker-compose-v2`. If an older host has Docker but `docker compose version` returns `unknown command`, repair it with:
@@ -360,6 +346,7 @@ NEXT_PUBLIC_API_BASE_URL=https://app.poolducktest.com
 CORS_ORIGIN=https://app.poolducktest.com
 MAIL_PROVIDER=mock
 MAIL_MOCK_SEND_RESULT=success
+REAL_MAIL_SEND_ENABLED=false
 LOG_LEVEL=info
 TENANT_CONTEXT_ENFORCED=true
 ```

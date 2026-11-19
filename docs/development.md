@@ -135,3 +135,7 @@
 - Backend：`npm.cmd test -- test/platform.spec.ts test/auth.spec.ts test/management.spec.ts`
 - Frontend：`npm.cmd test -- --run test/platform.test.tsx`
 - E2E：本地前后端可用后执行 `npm.cmd run test:e2e -- platform-control-plane.spec.ts`
+
+## Staging 部署脚本的本地验证
+
+在仓库根目录运行 `python -B deploy/staging/rehearsal/verify.py` 核对目标保护。增加 `--run` 在全新本机 Compose 项目执行实际部署、重跑、中断与恢复。环境准备、留存断言及记录格式见[隔离演练](testing/staging-deploy-rehearsal.md)。
