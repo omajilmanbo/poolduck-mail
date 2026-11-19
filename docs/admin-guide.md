@@ -69,6 +69,10 @@ Local/CI/Staging 合成账号另用显式 opt-in 的 `platform:seed`；Productio
 - location 额度统计 active、inactive 和 pending deletion，ADR-011 终结清理为 purged 后释放
 - 达到额度时禁止创建新地点；提高额度立即允许后续创建；降低额度不得低于当前计数，也不会隐式
   停用、删除或冻结既有地点
+- 调额返回 409 时，按目标租户内部 ID、时间、操作 `platform.location_limit.update` 和结果 `denied`
+  筛选平台审计，查看固定原因 `PLATFORM_VERSION_CONFLICT` 或 `LOCATION_LIMIT_BELOW_CURRENT_USAGE`。
+  版本冲突时刷新后核对版本，低于用量时先核对尚未终结清理的地点数。逐请求对账与缺失审计的处理见
+  [运维与故障排查手册](operation.md#9-平台地点调额拒绝)。
 - 人工额度不包含价格、付款、账单、proration 或自动扩容；商业化仍由 #102 Future 决策
 
 ## 5. 审计与合规

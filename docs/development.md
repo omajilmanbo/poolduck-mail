@@ -50,6 +50,12 @@
 本地质量门禁命令：
 
 - Backend：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`
+- #209 平台地点调额审计：准备仅绑定 `127.0.0.1` 的一次性 PostgreSQL 16 数据库
+  `poolduck_quota_209`，使用 a052518 的本机合成库空表结构。将 `DATABASE_URL` 指向该库的测试 owner，
+  设置 `APP_ENV=test`、`NODE_ENV=test`、`MAIL_PROVIDER=mock`、`REAL_MAIL_SEND_ENABLED=false`。
+  在 `backend/` 构建后执行 `node scripts/platform-location-limit-audit-test.mjs`。脚本登录并调用调额 API，
+  按请求标识核对审计，在撤销测试角色的审计 INSERT 权限时复测原 409，恢复权限后核对成功记录。
+  执行完毕后销毁该一次性容器和数据库。
 - ADR-023 租户生命周期迁移：在 `APP_ENV=local` 或 `test`、`DATABASE_URL` 指向本机 PostgreSQL 时，
   于 `backend/` 执行 `npm run test:tenant-lifecycle-migration`；脚本仅创建并删除随机命名的合成测试数据库。
 - #160 平台删除事务：在相同本地环境下，于 `backend/` 执行 `npm run test:platform-delete-transaction`；

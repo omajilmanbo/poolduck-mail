@@ -435,7 +435,10 @@ tenant 查询。响应只包含 tenant/subscription/额度/脱敏 manager 摘要
 
 - 入参：正整数 `location_limit`, `version`
 - active/inactive/pending deletion location 均计数，purged 后释放
-- 新额度低于当前计数返回 `LOCATION_LIMIT_BELOW_CURRENT_USAGE`，且不修改既有 location
+- 版本冲突返回 409 `PLATFORM_VERSION_CONFLICT`，新额度低于当前计数返回 409 `LOCATION_LIMIT_BELOW_CURRENT_USAGE`。
+  两种拒绝均保留额度、版本及地点用量。审计存储可写时，各写入一条 `platform.location_limit.update` /
+  `denied` 审计，`metadata.reason` 为对应错误码。拒绝审计沿用由 1–128 个 ASCII 字母、数字、连字符或
+  下划线组成的 `X-Request-Id`，其余情况使用服务端 UUID。审计写入失败时仍返回对应的 409。
 - tenant location 创建达到额度时返回 `LOCATION_LIMIT_REACHED`；创建与调额使用并发安全事务
 
 所有平台写操作必须记录 request ID、目标内部 tenant ID、actor platform admin ID 和结果，不记录
