@@ -6,6 +6,8 @@
 
 同一旧库在三个版本的正常登录和 21 项迁移见[旧租户与登录身份升级](testing/candidate-a02-a03-legacy-login-upgrade-2026-11-20.md)。本机 Caddy 的临时信任链、同源登录与目标环境待验项见 [#185 的固定 HTTPS 报告](https://github.com/omajilmanbo/poolduck-mail/blob/c379d35333e5a9750e18c320b9485d22f0b3cee3/docs/testing/candidate-local-https-2026-11-20.md)。
 
+人员与所属地点的六组删除、恢复及清理场景见 [A12 实测](testing/candidate-a12-person-location-deletion-2026-11-20.md)。Staging 部署脚本的分支演练和固定候选的合成种子到期时间见 [O07／O08 分支证据](testing/business-requirements-matrix.md#deployment-and-seed-branches)。
+
 ## 1. 测试目标
 
 - 覆盖核心业务闭环：登录 → 扫码事件 → 邮件任务
