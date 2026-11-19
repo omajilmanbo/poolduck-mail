@@ -2,6 +2,8 @@
 
 [业务要求与候选验证矩阵](testing/business-requirements-matrix.md)逐项列出规则来源、实现、CI 实际断言、独立补验和剩余缺口。复核候选版本时从该表进入对应测试与验收记录。
 
+候选 `a052518` 的订阅变化、首次领取与取消计数见[订阅与取消补验](testing/candidate-a08-s10-subscription-cancellation-2026-11-20.md)。四图解码、模拟键入、实际提交范围和待决 D16 见[扫码输入补验](testing/candidate-scan-input-2026-11-20.md)。
+
 ## 1. 测试目标
 
 - 覆盖核心业务闭环：登录 → 扫码事件 → 邮件任务
