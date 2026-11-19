@@ -90,6 +90,8 @@ worker 当前以安全聚合日志实现本地/CI 可验证出口：`mail_job.cl
 这些信号必须在同一 UTC 时间窗关联。采集命令、停止条件和脱敏边界见
 [`staging-capacity-runbook.md`](testing/staging-capacity-runbook.md)。
 
+#116 建议先用现有 OCI 主机图表查看负载趋势，配合同一 UTC 窗口的 API/claim p95、积压、DB 等待和容器 I/O 汇总表作为容量看板。运维人员负责采集权限、30 天保留和停止条件，测试负责人记录外部负载机余量、覆盖缺口与结果。按 #39 的运维邮箱路径设计容量告警，具体接收人、值班/升级安排、看板落地和新增费用待人工批准。下节 ADR-020 的邮件异常接收人仅覆盖该决策范围。执行新窗口前由运维核对当期共享免费额度、读取/写入和通知用量。
+
 ## 9. ADR-019 OCI 邮件观测准入
 
 #142 的 OCI `OutboundAccepted`/`OutboundRelayed` 日志、`oci_emaildelivery` 指标、告警接收人、PII 权限与保留期、人工对账及测试步骤见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。用户已批准邮件原始日志保留 90 天及可能费用；用户已指定当前唯一 OCI 用户作为读取人和告警接收人；OCI API 已核验该用户为唯一 ACTIVE 管理员，保守停止规则已批准；两类 90 天日志、通知主题及三条原生告警已应用，订阅为 ACTIVE，指定运维收件人已确认收到合成通知。ADR-020 应用级告警链路已在 mock 模式以无 PII 合成认证失败指标触发并投递到指定邮箱；真实邮件事件仍未验收。本文件前述 Staging 30 天仅为应用日志建议。`sent` 只表示 provider accepted，`delivery_unknown` 不自动重发。
