@@ -78,6 +78,18 @@ seed 数据仅使用 `example.local` 邮箱和固定 UUID，不包含真实客�
 - active `person_code`: `01K0ABC10001`；进入动作码：`E01K0ABC10001`；离开动作码：`X01K0ABC10001`
 - not-mapped 拒绝动作码：`E01K0ABC19999`
 
+### 4.1a 合成订阅跨年回归
+
+`local:seed`、`staging:seed` 和 `platform:seed` 创建 active／trial 订阅时，将结束时间设为执行时刻后 365 天。
+已有 active／trial 合成订阅在剩余期限不超过 30 天时续期，期限充足时保留原结束时间。暂停和过期夹具使用原有固定日期。
+跨年或同一演练中重跑时，核对租户与订阅 ID、计划、开始时间、版本、已有扫码与邮件历史。发生续期时核对新的结束时间。
+
+在隔离 PostgreSQL 上执行 `npm run test:synthetic-subscriptions`，核对原结束时间前 1 毫秒、截止时刻及未来年份。
+回归通过 `LicenseService` 检查四个 active／trial 场景可发送、expired／suspended 场景受阻、无关租户及其订阅行保持原值。
+许可证 API 的通用状态测试使用相对有效期，固定历史截止时刻的测试继续使用独立时钟。
+手工验收时，在合成数据库和 mock provider 上运行本地与 Staging 的 `smoke:api`、平台 `smoke:platform`，并运行本地 Playwright 的 success／failure 两组。
+复核取消任务零次 provider 调用、重扫恰好一次 mock 调用及平台幂等重放。进程内控制订阅时钟即可覆盖跨年，数据库继续为扫码与发信等待期计时。
+
 ### 4.2 API happy path 冒烟
 
 1. 使用默认 sandbox success 启动后端：`npm run start:dev`
