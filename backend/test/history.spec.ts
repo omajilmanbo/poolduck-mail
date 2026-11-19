@@ -304,21 +304,18 @@ describe('Tenant-scoped history APIs', () => {
     prisma.scanEvent.findFirst.mockResolvedValue(scanWithJob);
     prisma.mailJob.findMany.mockResolvedValue([job]);
     prisma.mailJob.findFirst.mockResolvedValue(job);
-    const server = app.getHttpServer();
-    const responses = await Promise.all([
-      request(server).get('/api/scan-events').set('Authorization', auth).expect(200),
-      request(server).get(`/api/scan-events/${scanEventId}`).set('Authorization', auth).expect(200),
-      request(server).get('/api/mail-jobs').set('Authorization', auth).expect(200),
-      request(server).get(`/api/mail-jobs/${mailJobId}`).set('Authorization', auth).expect(200),
-    ]);
+    const http = request(app.getHttpServer());
+    const scanList = await http.get('/api/scan-events').set('Authorization', auth).expect(200);
+    const scanDetail = await http.get(`/api/scan-events/${scanEventId}`).set('Authorization', auth).expect(200);
+    const jobList = await http.get('/api/mail-jobs').set('Authorization', auth).expect(200);
+    const jobDetail = await http.get(`/api/mail-jobs/${mailJobId}`).set('Authorization', auth).expect(200);
 
-    const [scanList, scanDetail, jobList, jobDetail] = responses;
     const common = { mail_job_id: mailJobId, status, error_message: expected };
     expect(scanList.body.items[0].mail_job).toMatchObject(common);
     expect(scanDetail.body.mail_job).toMatchObject(common);
     expect(jobList.body.items[0]).toMatchObject({ ...common, scheduled_at: scheduledAt?.toISOString() ?? null });
     expect(jobDetail.body).toMatchObject({ ...common, scheduled_at: scheduledAt?.toISOString() ?? null });
-    for (const response of responses) {
+    for (const response of [scanList, scanDetail, jobList, jobDetail]) {
       expect(response.text).not.toMatch(/synthetic-recipient@example\.invalid|synthetic-body|raw-provider-marker/);
     }
   });
