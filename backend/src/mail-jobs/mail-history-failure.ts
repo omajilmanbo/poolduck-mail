@@ -10,6 +10,8 @@ export function mailHistoryFailureMessage({ errorMessage, status, scheduledAt }:
       if (status === 'failed') return `${reason}，本次任务已停止重试`;
       return reason;
     }
+    case 'OCI_AUTH_REJECTED':
+      return '系统未通过邮件服务的发信认证，本次任务不会自动重试';
     case 'RECIPIENT_SUPPRESSED':
       return '邮件服务已停止向该收件地址投递，本次任务不会自动重试';
     default:

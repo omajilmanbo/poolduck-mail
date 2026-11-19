@@ -277,10 +277,12 @@ describe('Tenant-scoped history APIs', () => {
     ['queued', 'OCI_QUOTA_REJECTED', '邮件服务因配额或频率限制拒绝了本次发送，等待自动重试'],
     ['processing', 'OCI_QUOTA_REJECTED', '邮件服务因配额或频率限制拒绝了本次发送'],
     ['failed', 'OCI_QUOTA_REJECTED', '邮件服务因配额或频率限制拒绝了本次发送，本次任务已停止重试'],
+    ['failed', 'OCI_AUTH_REJECTED', '系统未通过邮件服务的发信认证，本次任务不会自动重试'],
     ['failed', 'RECIPIENT_SUPPRESSED', '邮件服务已停止向该收件地址投递，本次任务不会自动重试'],
     ['delivery_unknown', 'PROVIDER_OUTCOME_UNKNOWN', '邮件发送失败'],
     ['failed', 'Sandbox provider simulated failure', 'Sandbox provider simulated failure'],
     ['failed', 'OCI_QUOTA_REJECTED: synthetic-recipient@example.invalid synthetic-body raw-provider-marker', '邮件发送失败'],
+    ['failed', 'OCI_AUTH_REJECTED: synthetic-recipient@example.invalid synthetic-body raw-provider-marker', '邮件发送失败'],
     ['failed', '', null],
     ['sent', null, null],
   ] as const)('returns consistent safe reasons for %s with stored reason %s', async (status, errorMessage, expected) => {
@@ -313,8 +315,9 @@ describe('Tenant-scoped history APIs', () => {
     const common = { mail_job_id: mailJobId, status, error_message: expected };
     expect(scanList.body.items[0].mail_job).toMatchObject(common);
     expect(scanDetail.body.mail_job).toMatchObject(common);
-    expect(jobList.body.items[0]).toMatchObject({ ...common, scheduled_at: scheduledAt?.toISOString() ?? null });
-    expect(jobDetail.body).toMatchObject({ ...common, scheduled_at: scheduledAt?.toISOString() ?? null });
+    const jobResult = { ...common, scheduled_at: scheduledAt?.toISOString() ?? null, retry_count: job.retryCount };
+    expect(jobList.body.items[0]).toMatchObject(jobResult);
+    expect(jobDetail.body).toMatchObject(jobResult);
     for (const response of [scanList, scanDetail, jobList, jobDetail]) {
       expect(response.text).not.toMatch(/synthetic-recipient@example\.invalid|synthetic-body|raw-provider-marker/);
     }
