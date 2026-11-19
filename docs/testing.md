@@ -10,6 +10,8 @@
 
 候选的人员码、历史分页及首发撤回验收见[旧人员码回填与双进程创建](testing/candidate-a11-person-code-backfill-2026-11-20.md)、[翻页连续性与筛选重置](testing/candidate-scan-history-continuity-2026-11-20.md)和[无旧镜像的首发撤回](https://github.com/omajilmanbo/poolduck-mail/blob/8b2af737a74c20474a192091f696e87f360e9c3b/docs/testing/first-release-withdrawal-2026-11-20.md)。两个未合并 head 的组合验收见[联合部署与跨年种子报告](testing/joint-deployment-seed-acceptance-2026-11-20.md)。
 
+候选的[单标签页值守续期](testing/candidate-a05-session-renewal-2026-11-20.md)、[满额地点与降额先提交](testing/candidate-platform-location-quota-2026-11-20.md#full-quota-lower-first)和 [#85 应用侧验收](testing/candidate-issue85-application-acceptance-2026-11-20.md)分别记录采样范围及剩余缺口。恢复库已有到期任务时的暂停首启见 [#185 固定手册](https://github.com/omajilmanbo/poolduck-mail/blob/3c0c9e585b909f5822d7d5d3b9f2f18b76ccaa3f/docs/first-production-deployment.md#2-先备份再迁移与启动)。
+
 ## 1. 测试目标
 
 - 覆盖核心业务闭环：登录 → 扫码事件 → 邮件任务
