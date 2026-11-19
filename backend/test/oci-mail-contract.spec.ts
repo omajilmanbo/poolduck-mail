@@ -104,6 +104,76 @@ describe('OCI fake-client send contract (no network)', () => {
   });
 
   it.each([
+    {
+      version: 'v1',
+      subject: 'Original office notice',
+      bodyText: '元の氏名 さんは 20261016090000 に退室しました。',
+    },
+    {
+      version: 'v2',
+      subject: '【元の組織】【元の教室】からのお知らせ-退室',
+      bodyText: [
+        '元の氏名 様',
+        '',
+        '区分：退室',
+        '時刻：2026年10月16日 09:00:00（日本時間）',
+        '',
+        '※このメールは入退室メール送信アプリから自動送信されています。',
+        'お心当たりがない場合は、お手数ですが、このメールを破棄してください。',
+      ].join('\n'),
+    },
+  ])('reuses the persisted $version message on a second provider attempt', async ({ subject, bodyText }) => {
+    const submitEmail = jest.fn()
+      .mockRejectedValueOnce(new common.OciError(
+        429, 'TooManyRequests', 'Synthetic quota rejection', 'request-rejected',
+        'email', 'SubmitEmail', '', '', '',
+      ))
+      .mockResolvedValueOnce(accepted());
+    const { db, service } = setup(submitEmail);
+    const persisted = { id: jobId, toEmail: recipient, subject, body: bodyText };
+    db.mailJob.findFirstOrThrow
+      .mockResolvedValueOnce({
+        ...persisted, retryCount: 0,
+        location: { status: 'active', name: '元の教室' },
+        personMapping: { status: 'active', personName: '元の氏名' },
+      })
+      .mockResolvedValueOnce({
+        ...persisted, retryCount: 1,
+        location: { status: 'active', name: '変更後の教室' },
+        personMapping: { status: 'active', personName: '変更後の氏名' },
+      });
+
+    await expect(service.processQueuedMailJob(tenantId, jobId, null)).resolves.toMatchObject({
+      status: 'queued',
+      retry_count: 1,
+      provider_result: { error_message: 'OCI_QUOTA_REJECTED' },
+    });
+    expect(db.mailJob.update).toHaveBeenCalledWith({
+      where: { id: jobId },
+      data: expect.objectContaining({ status: 'queued', retryCount: 1, scheduledAt: expect.any(Date) }),
+    });
+
+    // The fake database grants a new claim once the retry is due.
+    await expect(service.processQueuedMailJob(tenantId, jobId, null)).resolves.toMatchObject({
+      status: 'sent',
+      retry_count: 1,
+    });
+
+    expect(submitEmail).toHaveBeenCalledTimes(2);
+    const [first, second] = submitEmail.mock.calls.map(([submission]) => submission);
+    expect(second.opcRequestId).not.toBe(first.opcRequestId);
+    expect(second.submitEmailDetails.messageId).not.toBe(first.submitEmailDetails.messageId);
+    for (const submission of [first, second]) {
+      expect(submission.retryConfiguration).toBe(common.NoRetryConfigurationDetails);
+      expect(submission.submitEmailDetails).toMatchObject({
+        recipients: { to: [{ email: recipient }] },
+        subject,
+        bodyText,
+      });
+    }
+  });
+
+  it.each([
     { name: 'suppressed', value: () => ({ ...accepted(), emailSubmittedResponse: { ...accepted().emailSubmittedResponse, suppressedRecipients: [{ email: recipient }] } }), status: 'failed', errorCode: 'RECIPIENT_SUPPRESSED' },
     { name: '429', value: () => new common.OciError(429, 'TooManyRequests', `raw ${recipient} ${body}`, 'request-synthetic', 'email', 'SubmitEmail', '', '', ''), status: 'queued', errorCode: 'OCI_QUOTA_REJECTED' },
     { name: 'quota', value: () => new common.OciError(400, 'QuotaExceeded', `raw ${recipient}`, 'request-synthetic', 'email', 'SubmitEmail', '', '', ''), status: 'queued', errorCode: 'OCI_QUOTA_REJECTED' },
