@@ -52,15 +52,65 @@ sha256sum --check "$archive.sha256"
 ```
 
 3. 把归档恢复到新建空实例，按第 4 节比对数据、角色与授权。确认还原点有效后再继续。托管数据库的全局角色、授权和服务级配置需按目标交付物另行核对。
-4. 固定数据库连接，确认已关闭流量且只有一个迁移执行者。若生产清单提供了同名服务，可按下列顺序执行。后端镜像入口会再次执行 `db:deploy`，第一次成功后应报告零待应用。
+4. **只执行迁移。** 关闭业务入口及直连写入路径，停止所有旧 Backend 和其他消费进程。核对迁移连接与已批准的目标实例、库、备份点一致。只运行一次性迁移命令，不在这一步启动应用。迁移失败时保留原库、备份和 `_prisma_migrations`，记录脱敏错误，在副本验证修复或恢复方案。
 
 ```bash
 "${dc[@]}" run --no-deps --rm backend npm run db:deploy
-"${dc[@]}" up -d --no-build --pull never --wait backend frontend
+```
+
+5. **首个 Backend 启动前核对队列。** 在已核准的目标连接上，用同一只读快照盘点任务和尝试。记录库标识、快照时间和汇总数。若目标或结果无法确认，保持入口关闭、应用停止。
+
+```sql
+BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SELECT current_database(), CURRENT_TIMESTAMP;
+SELECT count(*) AS scans FROM scan_events;
+SELECT status, count(*) AS jobs,
+       count(*) FILTER (WHERE (status = 'waiting' AND send_not_before <= CURRENT_TIMESTAMP)
+                           OR (status = 'queued' AND scheduled_at <= CURRENT_TIMESTAMP)
+                           OR (status = 'queued' AND scheduled_at IS NULL AND send_not_before IS NULL)) AS eligible_now
+FROM mail_jobs GROUP BY status ORDER BY status;
+SELECT count(*) AS attempts,
+       count(*) FILTER (WHERE completed_at IS NULL) AS unfinished,
+       count(*) FILTER (WHERE provider_invoked_at IS NOT NULL
+                          AND completed_at IS NULL) AS invoked_unfinished,
+       count(*) FILTER (WHERE status = 'delivery_unknown'
+                          AND provider_call_closed_at IS NULL) AS unknown_unclosed
+FROM mail_delivery_attempts;
+COMMIT;
+```
+
+   - **首次空库。** 核对迁移前已记录的空库标识，确认迁移后扫码、任务、尝试均为零。负责人确认窗口允许的处理范围及后续接流条件。只获准验证健康时，按下一步暂停自动处理。
+   - **已有或还原的库。** 在受控记录中按任务核对 `waiting.send_not_before`、`queued.scheduled_at`（含可立即领取的任务）、重试次数、`processing`、`delivery_unknown` 及关联尝试。还原库须与快照之后的发送记录、在途结果对账，以免再次提交已投递的任务。负责人明确哪些积压、新任务及重试可处理。自动领取对整个 Backend 生效。只批准部分任务、仍有未核实的调用或缺少对账依据时，维持暂停。
+
+6. **先验证容器，再启动。** 只做健康验收时，在生效清单的 `services.backend.environment` 中显式配置 `MAIL_JOB_PROCESSOR_ENABLED: "false"`。候选基础 Compose 未透传此变量，单改宿主环境或 env 文件不足以暂停。保持所有业务入口、直连和人工发送路径关闭，其他有副作用的定时任务也应按窗口独立核准。该开关只在进程启动时控制自动轮询，不会改写任务状态或禁用手动发送 API。[自动处理器](../backend/src/mail-jobs/mail-job-processor.service.ts) · [手动发送入口](../backend/src/mail-jobs/mail-jobs.controller.ts)
+
+以下 Bash 使用第 1 节的 `dc` 和已核准的 Docker context。先创建容器但保持停止，核对副本数与清单一致，在每个容器上检查开关，再启动同一批容器。运行后从容器内复核环境与健康响应。命令须在 `set -euo pipefail` 下执行。若实际配置或副本状态不符，保持维护并停下全部 Backend。
+
+```bash
+expected=false
+"${dc[@]}" up --no-start --no-deps --force-recreate --no-build --pull never backend
+ids=$("${dc[@]}" ps --all --quiet backend)
+test -n "$ids"
+d=(docker --context "$RELEASE_CONTEXT")
+flag='{{range .Config.Env}}{{if eq . "MAIL_JOB_PROCESSOR_ENABLED=false"}}false{{else if eq . "MAIL_JOB_PROCESSOR_ENABLED=true"}}true{{end}}{{end}}'
+for id in $ids; do
+  test "$("${d[@]}" inspect --format '{{.State.Status}}' "$id")" = created
+  test "$("${d[@]}" inspect --format "$flag" "$id")" = "$expected"
+done
+"${dc[@]}" start --wait backend
+for id in $ids; do
+  "${d[@]}" exec "$id" node -e '
+    if (process.env.MAIL_JOB_PROCESSOR_ENABLED !== process.argv[1]) process.exit(1);
+    fetch("http://127.0.0.1:" + process.env.APP_PORT + "/health")
+      .then(async r => { if (r.status !== 200 || (await r.json()).service !== "poolduck-mail-backend") process.exit(1) })
+      .catch(() => process.exit(1))' "$expected"
+done
 "${dc[@]}" exec -T backend ./node_modules/.bin/prisma migrate status
 ```
 
-5. 迁移失败时保持入口关闭，记录失败版本和脱敏错误。在副本上验证修复或恢复方案。保留原库、备份和 `_prisma_migrations` 证据，避免自动执行 reset 或逐个撤销迁移。
+7. **处理放行与接流分别批准。** 在暂停状态复查原任务状态和尝试数。发送准入、目标库及完整队列范围均获批后，才将清单中的开关改为 `"true"`，把上段 `expected` 改为 `true`，重新执行创建、核对和启动步骤。Backend 可能在首次健康响应之前领取到期任务。对照原任务和尝试记录后，可在入口仍关闭时启动 Frontend，再按第 3 节验收、决定接流。发生异常时按[第 4 节](#4-停止应用回退与数据库恢复)撤回。
+
+**候选首启实测（2026-11-20，日本时间）。** 从固定版本 `a052518` 的合成扫码 201 生成一笔 `waiting` 任务，恢复到另一台全新的本机 PG16 容器。目标后端启动前，任务已到期 1.117 秒、尝试为 0。核实待启动容器和运行中进程的开关均为 `false`，业务入口关闭，容器内部 `/health` 两次返回 200。两次数据库读数相隔 **5.575 秒**，覆盖超过五个默认轮询间隔（每秒一次）。同一扫码和任务内容未变，尝试和调用标记均为 0。单独放行这笔 mock 任务后，用相同镜像重建并核实 `true`，原任务转为 `sent`，有且仅有 1 笔已完成尝试、1 个调用标记，幂等关联仍指向原扫码和任务。两阶段均为 `APP_ENV=local`、mock、真实发送关闭。此前后台完全停机时的两个到期窗口见[首发撤回实测](testing/first-release-withdrawal-2026-11-20.md)。
 
 ### 2.1 首个独立平台管理员
 
@@ -136,7 +186,7 @@ fi
 ```
 
 3. **确认冻结。** 从入口外侧验证首页及写入路径均返回维护状态或连接已关闭。正式验收的写入探针应使用即使误达应用也无法创建业务记录的请求。确认所有 Backend 已退出、编排器不会补起副本，保持原数据库、卷和日志。经受控只读连接按原任务 ID 比对扫码、任务、幂等记录及尝试。用数据库时钟跨过相应的 `send_not_before` 或 `scheduled_at` 再核对尝试数和 `provider_invoked_at` 计数。已有调用、`processing`、`delivery_unknown` 或中断时结果不明的任务，由值班人与 provider 对账后逐项决定，禁止自动重发。禁止用上线前空库覆盖已接收的记录。
-4. **审批恢复。** 先确认故障处置、获批镜像和原库、在途结果、积压清单及可恢复的投递范围。启动 Backend 即可能领取逾期任务，必须在启动前取得恢复处理的批准。先保持入口维护，核对旧任务及尝试的变化，再经批准恢复入口、用获批账号复核原历史。若仍无获批的可运行版本，继续维护并保全数据。演练用历史提交不作为首发回退镜像。[本机首次撤回验收](testing/first-release-withdrawal-2026-11-20.md)
+4. **审批恢复。** 先确认故障处置、获批镜像和原库、在途结果、积压清单及可恢复的投递范围。仅需验证健康时，按[第 2 节](#2-先备份再迁移与启动)保持入口关闭并核实自动处理已暂停。以自动处理开启的配置启动 Backend 前，必须取得恢复处理的批准。先保持入口维护，核对旧任务及尝试的变化，再经批准恢复入口、用获批账号复核原历史。若仍无获批的可运行版本，继续维护并保全数据。演练用历史提交不作为首发回退镜像。[本机首次撤回验收](testing/first-release-withdrawal-2026-11-20.md)
 
 ### 有获批回退镜像或需要恢复数据库
 
