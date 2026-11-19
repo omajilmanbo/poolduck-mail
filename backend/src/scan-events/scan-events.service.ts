@@ -1025,6 +1025,7 @@ export class ScanEventsService {
       id: string;
       status: string;
       sentAt: Date | null;
+      cancelUntil: Date | null;
       errorMessage: string | null;
       locationNameSnapshot: string;
       personNameSnapshot: string;
