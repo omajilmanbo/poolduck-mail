@@ -28,6 +28,14 @@
 
 精确候选的 main push CI 五项成功，含前后端、ADR-017 PostgreSQL release gate 和成功/失败两条 Critical E2E。[CI 44474610784](https://github.com/omajilmanbo/poolduck-mail/actions/runs/44474610784)
 
+### 首个账号的镜像内补验
+
+从同一 SHA 的 Git archive，用同一 Dockerfile 和原 Compose 构建标签重新导出 Backend。Linux 运行 manifest `sha256:23fe7c02f34c662418b51d1c9d202b063c62bc3597cde85492217a258c885d3c` 与 config `sha256:0e3d561ce574e55e940120eddac1e24d3c997da11cc6772ac10b62a26f66da0b` 均匹配首次构建记录。重导出的顶层索引摘要有变化。
+
+- 新建隔离项目、内部网络和空 PG16 卷，数据库与 Backend 均无宿主端口。`APP_ENV=local`、mock/false，无 seed。空库应用 21 项迁移后，平台账号总数与 active 数均为 0。
+- 在运行镜像中核对 `package.json` 的入口为 `npm run prisma:generate && node scripts/platform-admin.mjs`，脚本内容摘要与候选 Git 归档一致。通过 `compose exec -T backend` 的 stdin 输入当次随机合成身份和高熵密码，在 CLI 子进程设置两个环境变量。`npm run platform:admin -- bootstrap` 退出 0。顺序使用同一身份、另一随机口令复跑，退出 1 并提示拒绝。原账号 ID、状态、身份版本、密码哈希不变，active 1，bootstrap 成功审计 1；后续独立 exec 中无这两个输入变量。
+- 这次只验证打包入口和首次初始化。结束时租户、邮件任务和投递尝试均为 0。另一次同候选的本机验收在 [#186 固定提交的报告](https://github.com/omajilmanbo/poolduck-mail/blob/2eb10e17e58a78797b6bc56e7985fd81dcdaa198/docs/testing/candidate-platform-smoke-2026-11-19.md)记录了 CLI 轮换/禁用/恢复、平台登录、人工开通、经理改密后的旧密码 401 / 新密码 201，以及 P03 成功页和 CSV 的 7/7 项浏览器检查。正式 MFA 决策、真实接收人核验与交付由发布负责人在获批窗口确认。
+
 已有 Staging HTTPS、Caddy 与此前部署备份证据使用其他提交。此次覆盖本机 HTTP、Linux 容器、单实例小合成库；正式架构/容量、域名与 TLS、机密存储、告警路由、真实 provider 和灾备时限仍须在对应环境验收。[Staging HTTPS](staging-smoke-2026-07-29.md) · [2026-10-20 部署记录](staging-smoke-2026-10-20-issue168.md) · [ADR-024 验收清单](adr024-release-acceptance.md)
 
 ## 在另一个全新本地项目复现

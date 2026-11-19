@@ -62,6 +62,51 @@ sha256sum --check "$archive.sha256"
 
 5. 迁移失败时保持入口关闭，记录失败版本和脱敏错误。在副本上验证修复或恢复方案。保留原库、备份和 `_prisma_migrations` 证据，避免自动执行 reset 或逐个撤销迁移。
 
+### 2.1 首个独立平台管理员
+
+**停止点。** 发布负责人先确认迁移完成、备份可恢复、后端所连库和镜像摘要与变更单一致。安全负责人须先批准正式控制面的访问范围、MFA 强制时点和账号保管人。决定待定，或决定要求先实施 MFA 而候选尚未具备时，停在初始化之前，保持平台入口关闭。平台身份属于独立的 `platform_admins` 表。[ADR-013](decisions/ADR-013-platform-admin-control-plane-and-manual-tenant-provisioning.md) · [访问评审 #114](https://github.com/omajilmanbo/poolduck-mail/issues/114)
+
+获准的部署运维人员使用第 2 节已核对的数据库连接，只读取账号总数与 active 数：
+
+```bash
+psql -XAt -v ON_ERROR_STOP=1 --dbname="service=$SOURCE_PG_SERVICE" \
+  -c "SELECT count(*), count(*) FILTER (WHERE status='active') FROM platform_admins"
+```
+
+| 总数 / active 数 | 运维操作 |
+|---|---|
+| 0 / 0 | 首次空账号初始化。指定一名执行者，使用下列容器命令执行一次。 |
+| ≥1 / 1 | 跳过 bootstrap，由现有账号保管人登录。若失去访问权，走单独批准的轮换或恢复流程。 |
+| ≥1 / 0、active 多于 1，或结果无法核实 | 停止初始化，核对目标库、历史变更及备份。禁用账号的恢复、密码轮换和会话撤销按[管理员手册 §2](admin-guide.md#2-平台控制面)办理。 |
+
+使用第 1 节已核准的 `dc`，在运行中的 Backend 容器执行。先检查镜像内 CLI 存在，确认工作目录没有会覆盖运行环境的 dotenv 文件。由获准操作者从正式 secrets store 取得平台身份和专用高熵密码（至少 16 字符，单行），在受控终端的隐藏输入提示中输入。以下命令通过标准输入传两行，只在 CLI 子进程中导出 `PLATFORM_ADMIN_EMAIL` 和 `PLATFORM_ADMIN_PASSWORD`；数据库连接沿用已核对的服务配置。运行前关闭终端录制和 shell 跟踪。
+
+```bash
+"${dc[@]}" exec -T backend sh -ec \
+  'test -r scripts/platform-admin.mjs && test ! -e ../.env && test ! -e .env && test ! -e .env.local'
+(
+  set +x
+  IFS= read -rs -p '平台管理员标识: ' admin_identity </dev/tty
+  printf '\n' >/dev/tty
+  IFS= read -rs -p '平台管理员密码: ' admin_pass </dev/tty
+  printf '\n' >/dev/tty
+  printf '%s\n' "$admin_identity" "$admin_pass"
+) | "${dc[@]}" exec -T backend sh -eu -c '
+  IFS= read -r PLATFORM_ADMIN_EMAIL
+  IFS= read -r PLATFORM_ADMIN_PASSWORD
+  export PLATFORM_ADMIN_EMAIL PLATFORM_ADMIN_PASSWORD
+  exec npm run platform:admin -- bootstrap'
+```
+
+成功时 CLI 退出 0。再查 `platform_admins` 应为 1 / 1，核对同一时间、同一管理员内部 ID 的 `platform.admin.bootstrap` 成功审计。候选的 CLI 成功审计缺少 `request_id`，在受控变更记录登记操作人、时间、目标环境和结果。若 CLI 拒绝、退出不明或审计不符，先复核库内状态，勿重复提交或自行轮换。[候选 CLI](../backend/scripts/platform-admin.mjs) · [审计关联 #192](https://github.com/omajilmanbo/poolduck-mail/issues/192)
+
+### 2.2 首次平台登录、人工开通与经理交接
+
+1. **平台账号保管人验证登录。** 经批准的 HTTPS 入口访问 `/platform/login`，使用独立平台身份登录，进入 `/platform`。核对目标环境、访问范围和平台审计；平台会话只用于控制面。获得首个租户的开通授权后才进行下一步。
+2. **平台管理员开通。** 在 `/platform` 核对获批的租户名称、首位 `tenant_manager` 邮箱、初始 `trial` 或 `active`、起止时间（结束晚于开始）及正整数地点额度，提交并确认。系统原子创建租户、订阅及首位经理，生成 `tenant_code` 和临时密码。遇到超时或结果不明，先查租户摘要和平台审计；页面重新提交会生成新幂等键。
+3. **获授权的交付人核验接收人。** 成功区域显示租户名称、`tenant_code`、经理邮箱及临时密码。核对接收人和获批交付渠道后，由专人转交。若使用“下载创建信息 CSV”，按明文凭据受控保管；安全保存后点击“我已安全保存，清除显示”，交付确认后删除临时副本。发布记录只记交接时间、结果和受控工单引用。接收人或渠道未获准时暂停交付。[管理员手册 §2](admin-guide.md#2-平台控制面)
+4. **经理本人完成首登。** 从租户入口 `/` 输入 `tenant_code`、经理邮箱及临时密码，进入 `/change-password` 自行设置新密码，再用新密码登录并核对本租户工作台。由经理确认完成改密和接收，平台运维无需获知新密码。[合成浏览器与 CLI 验收（#186，固定证据版本）](https://github.com/omajilmanbo/poolduck-mail/blob/2eb10e17e58a78797b6bc56e7985fd81dcdaa198/docs/testing/candidate-platform-smoke-2026-11-19.md)
+
 ## 3. 验收与开放流量
 
 1. 在内部验证 PostgreSQL 可用、前后端 healthy。再经批准的正式 HTTPS 入口检查 `/health`、`/healthz`、`/`，验证 TLS、CORS、认证 Cookie 和反向代理路由。无会话访问业务接口应返回 401。
