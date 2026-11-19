@@ -119,6 +119,9 @@ jobs:
       - name: Run ADR-017 database concurrency, SLO and rollback gate
         run: npm --prefix backend run validate:adr017
 
+      - name: Verify scan warnings through the authorized history API
+        run: npm --prefix backend run test:scan-action-history
+
   e2e:
     name: Critical E2E (${{ matrix.mail_result }})
     runs-on: ubuntu-latest
@@ -151,6 +154,8 @@ jobs:
       CORS_ORIGIN: http://localhost:3000
       NEXT_PUBLIC_API_BASE_URL: http://localhost:3001
       MAIL_MOCK_SEND_RESULT: ${{ matrix.mail_result }}
+      MAIL_PROVIDER: mock
+      REAL_MAIL_SEND_ENABLED: 'false'
       E2E_EXPECT_MAIL_STATUS: ${{ matrix.expected_status }}
       PLAYWRIGHT_CHANNEL: chrome
     steps:

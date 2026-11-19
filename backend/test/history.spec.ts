@@ -9,6 +9,8 @@ describe('Tenant-scoped history APIs', () => {
   let app: INestApplication;
   let jwtService: JwtService;
   let prisma: {
+    $transaction: jest.Mock;
+    $queryRaw: jest.Mock;
     user: { findFirst: jest.Mock };
     location: { findFirst: jest.Mock };
     scanEvent: { findMany: jest.Mock; findFirst: jest.Mock };
@@ -30,6 +32,8 @@ describe('Tenant-scoped history APIs', () => {
 
   beforeEach(async () => {
     prisma = {
+      $transaction: jest.fn(async (read: (tx: typeof prisma) => unknown) => read(prisma)),
+      $queryRaw: jest.fn().mockResolvedValue([]),
       user: { findFirst: jest.fn() },
       location: { findFirst: jest.fn() },
       scanEvent: { findMany: jest.fn(), findFirst: jest.fn() },
@@ -188,6 +192,7 @@ describe('Tenant-scoped history APIs', () => {
       .set('Authorization', `Bearer ${token()}`)
       .expect(404);
     expect(response.body).toMatchObject({ code: 'SCAN_EVENT_NOT_FOUND' });
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
     expect(prisma.scanEvent.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -300,6 +305,7 @@ describe('Tenant-scoped history APIs', () => {
       actionSource: 'person_action_code',
       receivedAt: createdAt,
       createdAt,
+      canceledAt: null,
       location: { locationCode: 'A1B2C3D4', name: 'Office A' },
       mailJobs: [
         {
