@@ -106,7 +106,59 @@ networks:
    ```
 
 2. 每条命令须成功。对照主库与恢复库的 tenant、location、person、scan event、mail job 行数和迁移版本。保留 dump 与已验证的恢复库直至回归结束。测试前核对容量样本为 active 50 operators、4,096 persons、1 location；suspended 1 operator、100 persons、1 location。核对邮箱均属于 `example.local`，记录计数。额外的 local seed 含第二个可发信 tenant、独立地点和收件人、未分配给其 operator 的地点，以及 suspended 探针账号。基准期内只允许本计划操作，涉及同一个人时保留至少 10.5 秒冷却。生成的 `E`/`X` 动作符合 ADR-022，负载器逐池切换动作；低负载单档可能只覆盖 `E`，另用探针覆盖 `X`。
-3. 执行 `"${C[@]}" exec -T backend npm run smoke:api`，确认登录、历史、取消后无 attempt、重扫后 `sent`，并记录空队列起点。用两个 active tenant 的不同 operator session 分别向各自授权地点发请求，交叉提交对方地点和未分配地点（均为 `404 LOCATION_NOT_FOUND`），无 session 预期 401。同一授权地点提交其他 tenant 的合法人员码，预期 `404 SCAN_CODE_NOT_MAPPED`。混合档的 suspended 请求预期 `403 SUBSCRIPTION_NOT_SENDABLE`。可用 `docs/api.md` 的接口及 [现有 smoke 请求](../../backend/scripts/api-smoke-test.mjs) 编写该子窗口的命令，只记录断言计数。当前 `person_code` 全局唯一，使用独立映射、目标互换和错误地点测试隔离。
+3. 先完成下文的第二会话无 HTTP 核验。随后执行 `"${C[@]}" exec -T backend npm run smoke:api`，确认登录、历史、取消后无 attempt、重扫后 `sent`，并记录空队列起点。用两个 active tenant 的不同 operator session 分别向各自授权地点发请求，交叉提交对方地点和未分配地点（均为 `404 LOCATION_NOT_FOUND`），无 session 预期 401。同一授权地点提交其他 tenant 的合法人员码，预期 `404 SCAN_CODE_NOT_MAPPED`。混合档的 suspended 请求预期 `403 SUBSCRIPTION_NOT_SENDABLE`。可用 [API 契约](../api.md) 及 [现有 smoke 请求](../../backend/scripts/api-smoke-test.mjs) 编写该子窗口的命令，只记录断言计数。当前 `person_code` 全局唯一，使用独立映射、目标互换和错误地点测试隔离。
+
+## 第二会话监控与停机核验
+
+在同一台本机打开独立 Bash 会话。操作者只提供 `TEST_CONTEXT` 和 `RUN_ID` 两个值。值守人用自己的本地 Docker 权限执行以下命令。容器 ID 在每次操作前按项目和服务标签重新查询，候选同时包含运行中和已停止的容器。找不到或多于一个便停止核验并通知操作者。
+
+```bash
+# 在第二会话将两个占位符替换为本次值
+TEST_CONTEXT='<已批准的本地 Docker context>'
+RUN_ID='<本次 issue152-YYYYMMDDhhmmss>'
+endpoint=$(docker context inspect "$TEST_CONTEXT" --format '{{.Endpoints.docker.Host}}') || exit 1
+[[ "$endpoint" == unix:///* && "$RUN_ID" =~ ^issue152-[0-9]{14}$ ]] || exit 1
+D=(docker --context "$TEST_CONTEXT")
+
+container_id() {
+  local service="$1" id
+  case "$service" in postgres|backend|loadgen) ;; *) return 2 ;; esac
+  id=$("${D[@]}" ps --all --quiet --no-trunc \
+    --filter "label=com.docker.compose.project=$RUN_ID" \
+    --filter "label=com.docker.compose.service=$service") || return 1
+  if [[ ! "$id" =~ ^[0-9a-f]{64}$ ]]; then
+    printf 'Expected one container for %s/%s\n' "$RUN_ID" "$service" >&2
+    return 1
+  fi
+  printf '%s\n' "$id"
+}
+
+project_stats() {
+  local postgres_id backend_id loadgen_id
+  postgres_id=$(container_id postgres) && backend_id=$(container_id backend) &&
+    loadgen_id=$(container_id loadgen) || return 1
+  "${D[@]}" stats --no-stream "$postgres_id" "$backend_id" "$loadgen_id"
+}
+
+project_stop() {
+  local service="$1" id
+  case "$service" in backend|loadgen) ;; *) return 2 ;; esac
+  id=$(container_id "$service") || return 1
+  "${D[@]}" stop -t 1 "$id"
+}
+
+start_queue_watch() {
+  local id
+  id=$(container_id postgres) || return 1
+  "${D[@]}" exec -it "$id" psql -X -U capacity152 -d capacity152
+}
+```
+
+第一笔手动 HTTP 请求之前完成以下核验。此时 loadgen 容器只运行 `sleep`，回归、预登录和负载器尚未启动。
+
+1. 执行 `project_stats`，确认三个容器均能采样。单独执行 `start_queue_watch`，运行下文查询至少两次并确认空队列及采样时间递增，使用 `Ctrl+C` 结束采样，再输入 `\q` 退出。
+2. 记录 `container_id loadgen`，执行 `project_stop loadgen`。重新查询 ID，并执行 `id=$(container_id loadgen) && "${D[@]}" inspect --format '{{.State.Status}}' "$id"`，预期 `exited`。保持 PostgreSQL 和 backend 运行。
+3. 操作者在准备会话用 `"${C[@]}" up -d --no-deps --force-recreate loadgen` 重建。值守人复查 `container_id loadgen` 与 `project_stats`，确认新 ID 唯一、可采样，且旧 ID 已退出项目。本轮后端在 failure 阶段计划重建，每次恢复后重新运行 `project_stats` 获取当前容器。若任何核验失败，保持 loadgen 停止，查明原因后重做核验再进入 smoke。
 
 ## 单档执行与停止
 
@@ -141,13 +193,13 @@ steady/mixed 使用默认 1,000 ms，burst 使用默认 0 ms。切换 failure �
 | 任一采样 backlog ≥2,500、最老已到期 job 等待 >120 秒、5 秒内新 job >500，或最后一个请求结束后 180 秒未排空 | 停止负载并进入恢复。baseline/mixed 要求 claim p95 ≤2 秒、p99 ≤5 秒，且无持续增长积压；burst 单列延迟和清空秒数，按峰值及恢复上限判断 |
 | DB lock waiter 或未授予锁连续两次采样非零，连接达到 `max_connections` 的 80%，主机可用内存 <1 GiB、运行盘 ≥80%，或主机/负载器 CPU ≥90% 持续 30 秒 | 停止负载并检查饱和位置；采样中断亦停止升档 |
 
-紧急停止使用独立监控会话停止本项目 `loadgen`（`"${C[@]}" stop -t 1 loadgen`），确认在途 HTTP 结束。健康的 worker 可继续处理合成积压；若发现隔离或安全断言失败，则停止本项目 `backend` 和 loadgen，保留数据库，复核后才能恢复。故障窗口的预期 `queued` 单独计时，180 秒恢复要求从最后一次计划重试成为 due 起算；窗口截止仍未清空则记失败。
+紧急停止在第二会话执行 `project_stop loadgen`，确认在途 HTTP 结束。健康的 worker 可继续处理合成积压。若发现隔离或安全断言失败，另执行 `project_stop backend` 并保留数据库，复核后才能恢复。若第二会话无法唯一定位，立即通知操作者在准备会话使用本项目 Compose 执行停机。故障窗口的预期 `queued` 单独计时，180 秒恢复要求从最后一次计划重试成为 due 起算；窗口截止仍未清空则记失败。
 
 需要回退数据时，停止 loadgen 与 backend，保留原库供脱敏诊断。核对已还原的 `capacity152_restore` 仍符合备份行数，设置 `CAPACITY_DB_NAME=capacity152_restore`（导出给 Compose）和 `BURST_MOCK_RESULT=success`，用相同候选重建 backend，在恢复库运行 health 和低负载 smoke。回退后停止本轮升档；恢复库 smoke 记在恢复栏，原窗口的结果仍按原库证据判定。禁止重排或改写 job/attempt，并保持 `delivery_unknown` 的人工处置规则。正常回归或故障处置结束后执行 `"${C[@]}" down`。操作者核对本次项目/卷标识后再撤销本次卷，仅保留脱敏汇总并按 Local 保留期处理临时数据和密码。
 
 ## 指标、对账与验收边界
 
-在独立监控会话执行 `"${C[@]}" exec postgres psql -X -U capacity152 -d capacity152`，粘贴以下只读查询。每秒刷新，`new_jobs_5s` 为滚动窗口，`backlog` 与 `oldest_due_seconds` 用于判停。该专用库内无其他流量，只读结果不含记录标识。
+在第二会话执行 `start_queue_watch`，粘贴以下只读查询。每秒刷新，`new_jobs_5s` 为滚动窗口，`backlog` 与 `oldest_due_seconds` 用于判停。该专用库内只有测试流量，只读结果仅含时间和聚合计数。监控窗口运行中可以按 `Ctrl+C` 结束采样，输入 `\q` 后执行停机。也可用相同的两个值在另一个 Bash 中提前备好停机命令。
 
 ```sql
 WITH sample AS (SELECT clock_timestamp() AT TIME ZONE 'UTC' AS utc_now),
@@ -172,7 +224,7 @@ FROM sample;
 \watch 1
 ```
 
-- 每 5 秒记录 UTC、容器 CPU/内存/IO、宿主 CPU/可用内存/磁盘、PostgreSQL 活跃连接与等待（`pg_stat_activity` 按 `wait_event_type` 聚合，`pg_locks` 统计未授予，不导出 SQL 文本），阶段前后核对 restart/OOM。Linux 宿主可参考 [#116 采样脚本](../../deploy/staging/capacity-monitor.sh)，其采集当前默认 Docker context 的所有容器，专用 context 应显式用 `docker --context "$TEST_CONTEXT" stats --no-stream` 采集经项目标签核对的容器。负载启动前至排空后持续采样。
+- 每 5 秒记录 UTC、容器 CPU/内存/IO、宿主 CPU/可用内存/磁盘、PostgreSQL 活跃连接与等待（`pg_stat_activity` 按 `wait_event_type` 聚合，`pg_locks` 统计未授予，不导出 SQL 文本），阶段前后核对 restart/OOM。容器使用 `project_stats` 采集当前项目，可参考 [#116 采样脚本](../../deploy/staging/capacity-monitor.sh) 的 Linux 宿主指标。它读取默认 Docker context 的所有容器。负载启动前至排空后持续采样。
 - 记录每档 HTTP 请求数、完成 RPS、预期/意外比例、P50/P95/P99、状态和超时/断线/5xx。用同一连接按 DB 时间读取 `mail_jobs`：每 5 秒统计新建数、`waiting/queued/processing` 总数与最老已到期年龄；按 `mail_delivery_attempts.completed_at/status/error_code` 聚合完成和失败分类；记录从最后一次请求结束至首次 backlog 为 0 的耗时。建议队列安全采样 1 秒，资源趋势采样 5 秒。结果注明队列峰值为观测峰值，等待时间从 `send_not_before` 或本次重试 `scheduled_at` 到领取计算。用 [容量报告脚本](../../backend/scripts/capacity-db-report.mjs) 在 `backend` 容器内设置 `CAPACITY_RUN_STARTED_AT` 和 `CAPACITY_RUN_FINISHED_AT` 运行 `npm run capacity:report`，分别在停止和排空后读同一阶段、每个涉及的 tenant。报告 `mail_jobs_per_second` 是创建率。脚本给出查询时积压、最终 `claimed_at` 与初始 `send_not_before` 的差值和瞬时 DB 等待；重试后的单次等待应从 attempt 时序另查。
 - 对账使用隔离的子窗口，在放行前与排空后一致地取 DB 快照，用 `scan_events`、`mail_jobs` 和 `mail_delivery_attempts` 的计数差，加 DB 时钟记录阶段边界。对每个新 event 断言恰有一个 job，核对 event、job、person、location 与 attempt 的 tenant/location 归属，以及不可变 `to_email` 是否等于对应合成映射（阶段中禁止修改映射）。对所有 attempt 核查 `provider_invoked_at >= send_not_before`，已取消 job 必须零 attempt。检查新 job 总数等于各终态数与 backlog 之和。对定向探针在内存中核对响应 ID、`deduplicated` 与 job 归属，只输出计数。任何缺行或多行需解释到具体原因，阶段聚合相等仍需核对逐请求结果。
 - 批准后在采样窗口外执行 `"${C[@]}" exec -T backend node scripts/adr017-release-validation.mjs`。镜像已有编译产物，[ADR-017 验证脚本](../../backend/scripts/adr017-release-validation.mjs) 会连接项目 PostgreSQL 并创建自己的临时库来验证截止边界、争抢、订阅状态矩阵和 stale claim 恢复。另在低负载扫描同一合成人员，在 10 秒内同动作换 key 应返回同一 event/job，换动作应为 `409 SCAN_ACTION_CONFLICT`，跨过边界用新 key 应建新 job；相同 key / 相同请求重放须保持原 ID。截止前取消必须成功且零 attempt，截止后应拒绝取消。数据库脚本模拟尚未调用的 stale claim 恢复和已调用未确认的 `delivery_unknown`，后者无自动重发。failure 子窗口重建后端以验证进程重启后的 `queued` 恢复。
@@ -193,3 +245,4 @@ FROM sample;
 - 在 `backend/` 运行 `npm.cmd run capacity:test`，4/4 通过。覆盖参数阶梯、百分位、动作码轮换与目标/并发配置边界。
 - `npm.cmd run capacity:plan` 使用 `127.0.0.1:3001`。steady 5/10/20 × 120 秒、burst 10/20 × 30 秒、mixed 10 × 60 秒，以及 steady 1 × 30 秒和 1 × 5 秒均返回 `planOnly: true`。离线测试没有启动服务或写数据库。本地服务、备份恢复、fake 契约与负载结果待后续核实。
 - `docker compose config` 离线解析通过，确认内部网络、无发布端口、loadgen 共享 backend 网络命名空间，以及 Local mock / false 配置。
+- 第二会话 Bash 示例使用内存 fake Docker CLI 离线验证，覆盖按标签唯一定位、采样与只读 SQL 入口、仅停止 backend/loadgen、拒绝零匹配/多匹配/查询失败及重建后的 ID 刷新。实际容器核验仍须在批准窗口内、任何手动 HTTP 前完成。
