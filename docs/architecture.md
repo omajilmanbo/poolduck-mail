@@ -6,7 +6,7 @@
 - 后端：NestJS（Node.js 20 LTS，REST API）
 - 数据库：PostgreSQL 16 + Prisma
 - 认证：JWT（access + refresh）+ RBAC
-- 邮件服务：当前 Staging 运行时仍使用 Mock Provider；ADR-019 的 OCI HTTPS adapter、结果分类和节流已部署，目标容器的 Instance Principal 身份获取通过，但 #141 的 SubmitEmail 权限效果及负面权限仍未验证。真实发信仍关闭。
+- 邮件服务：Staging 默认使用 mock。ADR-019 的 OCI HTTPS adapter 使用 Instance Principal。历史预检已验证目标容器获取实例身份。2026-10-16 的受控单封验证了当次 HTTPS `SubmitEmail` 正向效果，随后回滚 mock。#141 的非目标身份和 sender 的拒绝效果待验证。[验收证据](oci-mail-staging-readiness.md)
 
 ### 1.1 Local 容器运行拓扑（Issue #60）
 
