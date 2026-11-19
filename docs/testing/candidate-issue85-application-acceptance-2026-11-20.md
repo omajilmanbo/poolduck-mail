@@ -40,3 +40,11 @@
 | #218 提交 `d2375a7` | 四类 HTTP 读取及实际工作台均验证三种提示。配额拒绝显示等待自动重试，约 30.17 秒后同一任务成功。永久发信认证拒绝仅 1 次尝试、无排期，操作员会话继续有效。停止投递仅 1 次尝试、无排期，提示独立可区分。 |
 
 `d2375a7` 本机后端 284 项、前端 73 项通过。验收使用本机 fake OCI 客户端，真实发送为零。该提交首轮 GitHub CI 四项通过。Critical E2E 的 mock 成功模式 9/10，取消后退出重登时等待租户码输入框超时。同一提交复跑后五项通过。分支待独立审查及合并。[修复提交](https://github.com/omajilmanbo/poolduck-mail/commit/d2375a77111ba8ab7e22b2d57a9e0ba54553cffb) · [#218 验收正文](https://github.com/omajilmanbo/poolduck-mail/pull/218) · [第二次 CI](https://github.com/omajilmanbo/poolduck-mail/actions/runs/44626762941/attempts/2) · [失败作业](https://github.com/omajilmanbo/poolduck-mail/actions/runs/44626762941/job/135924670074)
+
+<a id="local-combination-checks"></a>
+
+## 两组局部组合验证
+
+#188 `3443fa0`、#218 `d2375a7`、#220 `45da26c` 在隔离副本中进行局部组合。保留同一历史快照、数据库时间采样及安全错误投影。扫码、历史与导出后端 62/62，历史页面前端 19/19，PostgreSQL 的 `test:scan-action-history` 均通过。[#220 兼容性记录](https://github.com/omajilmanbo/poolduck-mail/pull/220) · [#188](https://github.com/omajilmanbo/poolduck-mail/pull/188)
+
+#218 `d2375a7` 与 #202 `e5ea9b9` 的组合树为 `088982cec4c8d6f58f9ea49f045cadc16aeb691a`，按两个固定提交独立重算一致。两种 mock Critical E2E 各 10/10。本机范围为所列组合及测试，待实际合并提交复验。[#218](https://github.com/omajilmanbo/poolduck-mail/pull/218) · [#202](https://github.com/omajilmanbo/poolduck-mail/pull/202)

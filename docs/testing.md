@@ -12,7 +12,7 @@
 
 候选的[单标签页值守续期](testing/candidate-a05-session-renewal-2026-11-20.md)、[满额地点与降额先提交](testing/candidate-platform-location-quota-2026-11-20.md#full-quota-lower-first)和 [#85 应用侧验收](testing/candidate-issue85-application-acceptance-2026-11-20.md)分别记录采样范围及剩余缺口。恢复库已有到期任务时的暂停首启见 [#185 固定手册](https://github.com/omajilmanbo/poolduck-mail/blob/3c0c9e585b909f5822d7d5d3b9f2f18b76ccaa3f/docs/first-production-deployment.md#2-先备份再迁移与启动)。
 
-[六类未映射扫码的数据库验收](testing/candidate-s04-unmapped-scan-rejection-2026-11-20.md)逐次核对拒绝与零写入。[#217／#218 的版本对照](testing/candidate-issue85-application-acceptance-2026-11-20.md#safe-failure-branch)记录安全失败原因的展示。[发布分支与合成提交的 CI 对照](testing/release-ci-185-189-2026-11-20.md)记录原远端检查与合成测试结果。 [多节点偏钟下的取消倒计时](testing/candidate-s11-multi-node-countdown-2026-11-20.md)记录界面提示与数据库截止的差异。
+[六类未映射扫码的数据库验收](testing/candidate-s04-unmapped-scan-rejection-2026-11-20.md)逐次核对拒绝与零写入。[#217／#218 的版本对照](testing/candidate-issue85-application-acceptance-2026-11-20.md#safe-failure-branch)记录安全失败原因的展示。[发布分支与合成提交的 CI 对照](testing/release-ci-185-189-2026-11-20.md)记录原远端检查与合成测试结果。 [多节点偏钟下的取消倒计时](testing/candidate-s11-multi-node-countdown-2026-11-20.md)记录基线的提示偏差及修复分支的数据库时间结果。 #185 当前提交的通知草稿见[首发说明与通知](https://github.com/omajilmanbo/poolduck-mail/blob/4459ebb06f1e5a790ed8d729739a4cf7facdf93f/docs/first-production-deployment.md#31-首发发布说明与通知草稿)。 [H01 旧记录兼容验收](testing/candidate-legacy-scan-history-2026-11-20.md)记录迁移前后的名称和已删地点读取。 [损坏归档中止与恢复](testing/restore-failure-rehearsal-2026-11-20.md)记录校验门禁、事务回滚和换新实例验证。
 
 ## 1. 测试目标
 
