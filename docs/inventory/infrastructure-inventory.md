@@ -21,7 +21,7 @@
 | Mail Provider | 邮件发送能力 | mock provider | mock（当前）；OCI HTTPS 待 #141–#145 | TBD（正式链路） | region / sender compartment / approved sender（值不入仓库） | `docs/oci-mail-staging-readiness.md` | 人工指定 | 精确 IAM 已应用但运行时权限未验收；真实发送未启用 |
 | Log & Monitoring | 日志、指标、告警 | 本地日志 | 容器聚合日志；OCI Email Domain 两类日志、三条原生告警和通知订阅 ACTIVE；应用级告警待完成 | 集中日志、指标、告警（TBD） | Email Domain / log group / 90 天保留 / 唯一 OCI 管理员 | `docs/oci-mail-staging-readiness.md` | 人工指定 | OCI 原始日志含收件 PII |
 | Backup | 备份与恢复 | 可选（本地快照） | 备份策略（TBD） | 备份策略（TBD） | schedule / retention / storage | `docs/inventory/` | 人工指定 | 不记录真实存储凭据 |
-| Deployment Method | 发布方式 | 手工启动（dev） | cloud-init 仅做 bootstrap；人工批准后由操作者/Agent 执行 Compose Runbook，目标为幂等部署脚本 | CI/CD（TBD） | workflow name / runner / approval | `docs/inventory/` | 人工指定 | ADR-005；`workflow_dispatch` 尚未实施 |
+| Deployment Method | 发布方式 | 手工启动（dev） | cloud-init 做 bootstrap，人工批准后运行 `deploy/staging/deploy.py`，分步接管见 [Staging 手册](../staging-manual.md) | CI/CD（TBD） | workflow name / runner / approval | `docs/inventory/` | 人工指定 | ADR-005；`workflow_dispatch` 尚未实施 |
 | DNS & TLS | 域名与证书 | N/A | `app.poolducktest.com` / Caddy / Let's Encrypt HTTP-01 | TBD | domain / cert source / expiry owner | `docs/inventory/` | 人工指定 | ADR-012；Caddy `/data` 持久化证书和 ACME 状态 |
 
 ## 3. 变更记录建议

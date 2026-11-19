@@ -1,0 +1,21 @@
+# Only loaded by --rehearsal with a dedicated project. Paths resolve from the repo root.
+services:
+  postgres:
+    container_name: ${COMPOSE_PROJECT_NAME}-postgres
+    ports: !reset []
+  backend:
+    container_name: ${COMPOSE_PROJECT_NAME}-backend
+    ports: !reset []
+    environment:
+      OCI_MAIL_APP_ALERTS_ENABLED: "false"
+  frontend:
+    container_name: ${COMPOSE_PROJECT_NAME}-frontend
+    ports: !reset []
+  reverse-proxy:
+    container_name: ${COMPOSE_PROJECT_NAME}-proxy
+    ports: !reset []
+    volumes:
+      - ./deploy/staging/rehearsal:/etc/caddy:ro
+networks:
+  default:
+    internal: true
