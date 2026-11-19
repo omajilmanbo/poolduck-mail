@@ -89,10 +89,14 @@ def verify(run):
     # Keep .env correct and exercise the merged backend model (no daemon actions).
     override = root / "docker-compose.staging.yml"
     original = override.read_text(encoding="utf-8")
-    for key, value in (("MAIL_PROVIDER", "oci_email_delivery_https"), ("REAL_MAIL_SEND_ENABLED", "true"),
-                       ("DATABASE_URL", "postgresql://synthetic@external.invalid:5432/other")):
-        override.write_text(original.replace("    environment:\n", f'    environment:\n      {key}: "{value}"\n', 1),
-                            encoding="utf-8")
+    faults = {
+        "MAIL_PROVIDER": ('    environment:\n', '    environment:\n      MAIL_PROVIDER: oci_email_delivery_https\n'),
+        "REAL_MAIL_SEND_ENABLED": ('    environment:\n', '    environment:\n      REAL_MAIL_SEND_ENABLED: "true"\n'),
+        "DATABASE_URL": ('    environment:\n', '    environment:\n      DATABASE_URL: postgresql://external.invalid/other\n'),
+        "postgres-volume": ('\nvolumes:\n', '\nvolumes:\n  postgres-data:\n    name: unrelated-synthetic-volume\n'),
+    }
+    for key, (before, after) in faults.items():
+        override.write_text(original.replace(before, after, 1), encoding="utf-8")
         deploy("dirty-checkout", [*args, "--check"], 1, "checkout has unapproved changes")
         call(["git", "-c", "user.name=Rehearsal", "-c", "user.email=synthetic@example.invalid",
               "commit", "--quiet", "-am", "Isolated negative Compose fixture"], root)

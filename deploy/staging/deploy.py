@@ -104,6 +104,25 @@ def validate(model, approved_db, rehearsal):
                 and inputs[key] != "poolduck_local_password", f"example value in {key}")
     for url in (inputs["DATABASE_URL"], backend["DATABASE_URL"]):
         check_db(url, db)
+    project = rehearsal or "poolduck-mail-staging"
+    network = model["networks"]["default"]
+    require(model["name"] == project and network["name"] == project + "_default"
+            and not network.get("external"), "unexpected project network")
+    for service in ("backend", "postgres"):
+        require(set(services[service]["networks"]) == {"default"} and not services[service].get("extra_hosts"),
+                "unexpected database network path")
+    for name in ("postgres-data", "caddy-data", "caddy-config"):
+        volume = model["volumes"][name]
+        require(volume["name"] == project + "_" + name and not volume.get("external")
+                and not volume.get("driver_opts"), "unexpected persistent volume")
+    mounts = services["postgres"]["volumes"]
+    require(len(mounts) == 1 and mounts[0]["type"] == "volume" and mounts[0]["source"] == "postgres-data"
+            and mounts[0]["target"] == "/var/lib/postgresql/data", "unexpected postgres data mount")
+    caddy_dir = ROOT / "deploy/staging" / ("rehearsal" if rehearsal else "caddy")
+    mounts = services["reverse-proxy"]["volumes"]
+    require(len(mounts) == 3 and any(m["type"] == "bind" and m["target"] == "/etc/caddy"
+            and m.get("read_only") and Path(m["source"]).resolve() == caddy_dir for m in mounts),
+            "unexpected Caddy configuration mount")
     for service in ("backend", "frontend"):
         build = services[service]["build"]
         require(Path(build["context"]).resolve() == ROOT / service
@@ -121,13 +140,10 @@ def validate(model, approved_db, rehearsal):
             require(ports and all(p.get("host_ip") == "127.0.0.1" for p in ports),
                     "internal service must bind loopback")
     if rehearsal:
-        require(model["networks"]["default"].get("internal") is True
+        require(network.get("internal") is True
                 and backend["OCI_MAIL_APP_ALERTS_ENABLED"] == "false", "rehearsal network or metrics")
         for service in services.values():
             require(service["container_name"].startswith(rehearsal + "-"), "shared container name")
-        for volume in model["volumes"].values():
-            require(not volume.get("external") and volume["name"].startswith(rehearsal + "_"),
-                    "shared volume")
 
 
 class Deployment:
@@ -182,6 +198,7 @@ class Deployment:
         print("target=synthetic-staging db=approved-compose-postgres mail=mock real_send=false")
 
     def run_compose(self, *args, capture=False):
+        checkout(self.args.commit)
         require(hashlib.sha256((ROOT / ".env").read_bytes()).digest() == self.env_digest,
                 ".env changed during deployment")
         return command([*self.compose, *args], capture=capture)
