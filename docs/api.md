@@ -294,7 +294,11 @@ ADR-017 当前契约：
 - 出参：`mail_job_id`, `action`, `status`, `created_at`, `sent_at`, `error_message`, `retry_count`, `scheduled_at`, `context`, `scan_event`
 - `context` 返回发送时固化的 `tenant_name`, `location_name`, `person_name`, `person_code`, `snapshot_source`；后续改名不改写历史
 - `scan_event` 返回 `action`, `action_source`；旧数据为 `unknown` / `legacy_unknown`
-- 安全边界：不返回 `to_email`、邮件正文或 provider secret；不受控的 provider 错误统一为安全说明
+- `error_message` 是安全展示文本。
+  - `OCI_QUOTA_REJECTED` 显示配额或频率限制，任务为 `queued` 且有 `scheduled_at` 时提示等待自动重试，为 `failed` 时提示已停止重试。
+  - `OCI_AUTH_REJECTED` 显示系统未通过邮件服务的发信认证，本次任务不会自动重试。
+  - `RECIPIENT_SUPPRESSED` 显示邮件服务已停止向该收件地址投递，本次任务不会自动重试。
+- 无原因时返回 `null`，保留现有 `Sandbox provider simulated failure` 文本。其余原因统一为“邮件发送失败”。响应不包含完整收件地址、正文、provider secret 或原始 provider 错误。
 
 ### GET `/api/scan-events/{id}`
 - 说明：查询单条扫码记录（含关联邮件任务状态）
@@ -303,6 +307,7 @@ ADR-017 当前契约：
 - 租户边界：仅使用 JWT 中的 `tenant_id`；其他 tenant 的 ID 统一返回 `SCAN_EVENT_NOT_FOUND`
 - location 授权：operator 只能查询已分配 location 的记录；撤销后单条与列表查询立即不可见
 - 出参：`scan_event_id`, `location_id`, `location_name`, `person_code`, `person_name`, `scan_code`, `scan_type`, `action`, `action_source`, `received_at`, `status`, `mail_job`；关联 `mail_job` 同时返回固化的 `action`
+- 列表和详情中 `mail_job.error_message` 的安全展示规则与邮件任务列表和详情一致。
 
 ### GET `/api/scan-events`
 - 查询：`location_id`, `status`, `created_from`, `created_to`, `cursor`, `limit`（默认 25，最大 100）
