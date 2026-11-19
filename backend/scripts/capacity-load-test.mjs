@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import {
+  captureScan,
+  readReconciliationEvidence,
+  reconciliationDatabaseUrl,
+  reconciliationStart,
+  reconcileScans,
+} from "./capacity-reconcile.mjs";
 
 const DEFAULT_STEPS = "1,5,10,20,40,50";
 
@@ -100,6 +107,16 @@ function readPassword(env) {
 }
 
 function safeConfiguration(config) {
+  if (config.reconcile) {
+    const {
+      scenario, baseUrl, steps, stepSeconds, thinkTimeMs, timeoutMs, maxUnexpectedRate,
+      p95LimitMs, personCount, personReuseMs, planOnly, reconcile,
+    } = config;
+    return {
+      scenario, baseUrl, steps, stepSeconds, thinkTimeMs, timeoutMs, maxUnexpectedRate,
+      p95LimitMs, personCount, personReuseMs, planOnly, reconcile,
+    };
+  }
   const safe = { ...config };
   delete safe.password;
   return safe;
@@ -120,6 +137,7 @@ async function request(config, path, options = {}) {
   try {
     const response = await fetch(`${config.baseUrl}${path}`, {
       ...options,
+      redirect: config.reconcile ? "error" : "follow",
       signal: AbortSignal.timeout(config.timeoutMs),
       headers: {
         "content-type": "application/json",
@@ -202,7 +220,7 @@ function summarize(step, records, startedAt, finishedAt) {
   };
 }
 
-async function runStep(config, step, activeCookies, suspendedCookie, sequenceState) {
+async function runStep(config, step, activeCookies, suspendedCookie, sequenceState, evidence) {
   const startedAt = Date.now();
   const stopAt = startedAt + config.stepSeconds * 1_000;
   const records = [];
@@ -229,11 +247,12 @@ async function runStep(config, step, activeCookies, suspendedCookie, sequenceSta
         if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
         sequenceState.personLastUsedAt.set(personOffset, Date.now());
       }
+      const key = randomUUID();
       const result = await request(config, "/api/scan-events", {
         method: "POST",
         headers: {
           cookie,
-          "Idempotency-Key": randomUUID(),
+          "Idempotency-Key": key,
         },
         body: JSON.stringify({ location_id: locationCode, scan_code: scanCode }),
       });
@@ -241,7 +260,14 @@ async function runStep(config, step, activeCookies, suspendedCookie, sequenceSta
         (kind === "valid" && result.status === 201) ||
         (kind === "unmapped" && result.status === 404 && result.body?.code === "SCAN_CODE_NOT_MAPPED") ||
         (kind === "suspended" && result.status === 403 && result.body?.code === "SUBSCRIPTION_NOT_SENDABLE");
-      records.push({ kind, expected, ...result });
+      const { status, durationMs, timedOut } = result;
+      records.push({ kind, expected, status, durationMs, timedOut });
+      if (evidence) {
+        evidence.push(captureScan({
+          key, location: locationCode, kind, expected, result,
+          tenant: isSuspended ? config.suspendedTenantCode : config.tenantCode,
+        }));
+      }
       const recent = records.slice(-50);
       const severe = recent.filter(
         (record) => record.timedOut || record.status >= 500 || record.status === 0,
@@ -267,8 +293,26 @@ async function runStep(config, step, activeCookies, suspendedCookie, sequenceSta
   return summary;
 }
 
-export async function main(env = process.env) {
+async function withReconciliationDatabase(connectionString, operation) {
+  const { Client } = await import("pg");
+  const database = new Client({ connectionString, connectionTimeoutMillis: 5_000, query_timeout: 30_000 });
+  try {
+    await database.connect();
+    return await operation(database);
+  } finally {
+    await database.end().catch(() => {});
+  }
+}
+
+function reportReconciliation(result) {
+  console.log(JSON.stringify({ event: "capacity_reconcile.complete", ...result }));
+  return result.status === "passed" ? 0 : result.status === "failed" ? 1 : 2;
+}
+
+export async function main(env = process.env, reconcile = process.argv.includes("--reconcile")) {
   const config = loadConfiguration(env);
+  const databaseUrl = reconcile ? reconciliationDatabaseUrl(env, config) : null;
+  if (reconcile) config.reconcile = true;
   if (config.planOnly) {
     console.log(JSON.stringify({ event: "capacity_load.plan", config: safeConfiguration(config) }, null, 2));
     return;
@@ -291,11 +335,21 @@ export async function main(env = process.env) {
       ? await login(config, config.suspendedTenantCode, config.suspendedIdentifier)
       : "";
 
+  let databaseStartedAt;
+  const evidence = reconcile ? [] : null;
+  if (reconcile) {
+    try {
+      databaseStartedAt = await withReconciliationDatabase(databaseUrl, reconciliationStart);
+    } catch {
+      return reportReconciliation({ status: "incomplete", request_count: 0, reason: "database_preflight_failed" });
+    }
+  }
+
   const runStartedAt = new Date().toISOString();
   const sequenceState = { value: 0, personLastUsedAt: new Map() };
   const steps = [];
   for (const step of config.steps) {
-    const result = await runStep(config, step, activeCookies, suspendedCookie, sequenceState);
+    const result = await runStep(config, step, activeCookies, suspendedCookie, sequenceState, evidence);
     steps.push(result);
     console.log(JSON.stringify({ event: "capacity_load.step", ...result }));
     if (!result.slo_pass) break;
@@ -313,11 +367,27 @@ export async function main(env = process.env) {
       2,
     ),
   );
+  if (reconcile) {
+    try {
+      const databaseEvidence = await withReconciliationDatabase(
+        databaseUrl, (database) => readReconciliationEvidence(database, evidence, databaseStartedAt),
+      );
+      return reportReconciliation(reconcileScans(evidence, databaseEvidence));
+    } catch {
+      return reportReconciliation({
+        status: "incomplete", request_count: evidence.length, reason: "database_evidence_unavailable",
+      });
+    }
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((error) => {
-    console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
-  });
+  main()
+    .then((exitCode) => {
+      if (exitCode !== undefined) process.exitCode = exitCode;
+    })
+    .catch((error) => {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
+    });
 }
