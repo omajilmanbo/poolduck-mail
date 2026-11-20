@@ -71,7 +71,7 @@ worker 当前以安全聚合日志实现本地/CI 可验证出口：`mail_job.cl
 
 在候选 `a052518` 上，Staging Caddy 将 `/api/*` 转发给 Backend，#116 的延迟与超时计数来自压测客户端。邮件 worker、#142 的 OCI 指标及 #126 的扫码拒绝各有独立范围。#227 在 Backend 的现有 Nest Logger 增加 `api.minute`，供本机按进程复核两个 API 阈值。
 
-本机启动 Backend 时显式传入 `API_METRICS_ENABLED=true` 即开始观测。默认关闭，取消该变量或改为 `false` 后重启即停用。启用时，每个进入 Backend `/api` 前缀的请求，从 CORS、解析请求体与鉴权之前开始，以单调时钟计至 HTTP 响应的 `finish`（数据交给底层系统）。每次完成按最终状态计一次，含预检、解析失败、未匹配路由和权限拒绝。分母排除健康探针 `/health`、代理自行产生的错误，以及完成前断开的连接。这个口径衡量服务端处理时间，客户端收到响应的时间另见 #116。
+直接启动 Backend 进程时，显式传入 `API_METRICS_ENABLED=true` 即开始观测。默认关闭，取消该变量或改为 `false` 后重启进程即停用。启用时，每个进入 Backend `/api` 前缀的请求，从 CORS、解析请求体与鉴权之前开始，以单调时钟计至 HTTP 响应的 `finish`（数据交给底层系统）。每次完成按最终状态计一次，含预检、解析失败、未匹配路由和权限拒绝。分母排除健康探针 `/health`、代理自行产生的错误，以及完成前断开的连接。这个口径衡量服务端处理时间，客户端收到响应的时间另见 #116。
 
 每个进程从启用时起按 60 秒分桶，按**完成时刻**归入左闭右开区间。每个已结束的桶最多一条日志。聚合事件仅使用下表字段，省略 §3 的逐请求关联信息。请求与响应内容、原始 URL、凭据、身份和业务资源均不进入观测数据。
 
@@ -85,6 +85,48 @@ worker 当前以安全聚合日志实现本地/CI 可验证出口：`mail_job.cl
 看到 `requests > 0` 且 `serverErrors = 0` 可确认本分钟观测到零个 5xx。空桶表示观测开启、本分钟没有完成请求，错误率和 p95 均无样本。停用、日志丢失或进程退出都可能导致缺行。若定时器与响应回调同时延迟并跨过整分钟，只发布已有桶，跳过的分钟留缺口并重置连续窗口。重启会丢弃尚未结束的桶并重新预热。核对时只使用同一进程、同一次运行的连续记录。多进程的起点可能不同，分别判读，不能跨进程拼接连续分钟或平均 p95。
 
 **本机复验。** 在已安装锁定依赖的 `backend/` 下执行 `npm test -- --runTestsByPath test/api-metrics.spec.ts`。夹具在本机回环地址启动 AppModule，使用 mock 邮件和数据库替身。启用、显式关闭和未配置时均应收到 201、401、503、404、400、204，登出均清除两枚 Cookie。开启时首条记录应为 `requests=6, serverErrors=1, over2s=1`，关闭时无该事件。固定时钟用例另核对 9 次请求、5xx 比例 1/20 与 1/21、p95 恰为 2 秒与连续超过 2 秒十分钟，以及缺样与重启。目标环境采集、通知送达和恢复仍须分别验收。
+
+#### 本机 Compose 的启用与撤回
+
+标准 `docker-compose.yml` 未将此开关映射进容器。即便在宿主环境或项目 `.env` 中设置为 `true`，Backend 仍按默认值关闭。要传入开关，可在仓库根目录用 PowerShell 创建临时 overlay。下例沿用本机项目 `poolduck-mail-local` 和它的 `.env`。如启动时指定了其他项目名或环境文件，在 `$base` 中填入原值，启用和撤回都复用它。
+
+```powershell
+$base = @('-p', 'poolduck-mail-local', '--env-file', '.env', '-f', './docker-compose.yml')
+$overlay = (New-TemporaryFile).FullName
+@'
+services:
+  backend:
+    environment:
+      API_METRICS_ENABLED: "true"
+'@ | Set-Content -LiteralPath $overlay -Encoding ascii
+$enabled = $base + @('-f', $overlay)
+
+function Show-ApiMetricsFlag([string[]]$composeArgs) {
+    $config = docker compose @composeArgs config --format json | Out-String | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) { throw 'Compose config failed' }
+    foreach ($service in 'backend', 'frontend') {
+        $flag = $config.services.$service.environment.PSObject.Properties['API_METRICS_ENABLED']
+        $value = if ($flag) { $flag.Value } else { '<unset>' }
+        "$service API_METRICS_ENABLED=$value"
+    }
+}
+Show-ApiMetricsFlag $base     # backend=<unset>，frontend=<unset>
+Show-ApiMetricsFlag $enabled  # backend=true，frontend=<unset>
+```
+
+预检只输出两个服务的该字段，无需 Docker 引擎。仅复验配置时，`--env-file` 可指向一个空文件，检查完后用 `Remove-Item -LiteralPath $overlay` 清理。实际启用时用项目原有环境文件执行上面的预检，核对结果与注释一致，确认本机已有包含 #227 的 Backend 镜像且 PostgreSQL 已就绪，然后只重建 Backend 容器。环境变量在创建容器时生效。
+
+```powershell
+docker compose @enabled up -d --no-deps --no-build --pull never --force-recreate backend
+```
+
+撤回时先确认基础配置下两项均为 `<unset>`，再用同一项目和基础文件重建 Backend，成功后删除临时 overlay。
+
+```powershell
+Show-ApiMetricsFlag $base
+docker compose @base up -d --no-deps --no-build --pull never --force-recreate backend
+if ($LASTEXITCODE -eq 0) { Remove-Item -LiteralPath $overlay }
+```
 
 ## 6. 响应与责任
 
