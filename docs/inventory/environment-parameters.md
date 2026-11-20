@@ -28,6 +28,7 @@
 | OCI_EMAIL_FROM_ADDRESS | approved sender | 空 | `no-reply@mail.poolducktest.com` 已在 OCI `ACTIVE`，真实发送未批准 | TBD | No | 非登录凭据；不得提前启用 |
 | OCI_EMAIL_MESSAGE_ID_DOMAIN | Message-ID domain | 空 | 已批准 `mail.poolducktest.com`；真实模式仍关闭 | TBD | No | 与发件子域一致 |
 | LOG_LEVEL | 日志级别 | `debug` | `info` | `info` | No | 按环境调整 |
+| API_METRICS_ENABLED | Backend API 每分钟聚合日志 | 默认关闭，显式 `true` 启用 | 未配置 | 未配置 | No | 启停需重启 Backend，口径见[可观测性策略 §5.1](../observability.md#51-api-5xx-与-p95-的本机核验) |
 | CORS_ORIGIN | CORS 白名单 | `http://localhost:3000` | `https://app.poolducktest.com` | `TBD` | No | 禁止通配 origin |
 | TENANT_CONTEXT_ENFORCED | 租户上下文强制开关 | `true` | `true` | `true` | No | 避免跨租户访问 |
 

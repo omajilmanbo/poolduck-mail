@@ -47,6 +47,8 @@
 
 完整测试分层、异常矩阵和历史验证记录见 `docs/testing.md` 与 `docs/testing/`。
 
+本机 API 状态与延迟验收使用回环 HTTP 和固定时钟，命令与预期计数见[可观测性策略 §5.1](observability.md#51-api-5xx-与-p95-的本机核验)。
+
 本地质量门禁命令：
 
 - Backend：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`
