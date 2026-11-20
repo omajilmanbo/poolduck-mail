@@ -1,0 +1,54 @@
+# #225 · Node.js 24 与 22 的本机兼容性回执
+
+**决策用途**　为首次生产部署选择 Node 主版本。项目负责人通过 D20 选择 A（24）或 B（22）。正式候选为 `origin/main@a05251897d7fc11d96114606bcaa1807dd96af55`，Git tree 为 `93ab3e15fddc235b46fbb7a17997a46c8818b03a`。[Proposed ADR-030](../decisions/ADR-030-node-runtime-major.md)
+
+## 输入与复验方法
+
+- 本机 Docker Desktop 4.90.0、Engine 29.7.2，平台 `linux/amd64`。首轮两组均使用 Windows 自动换行的归档。复核重建了同 SHA-256 的首轮归档，逐个比较 329 个文件，唯一差异为 LF 转 CRLF。两份锁文件的 JSON 完全相同，含版本、解析地址和完整性字段。应用结果与原始字节复核分列如下。
+- 原始字节复核用 `git -c core.autocrlf=false archive --format=zip a052518`，对全部 329 个文件按 Git blob 算法回查 tree。两组导出后，分别只替换前后端 Dockerfile 的 deps 和 runtime 的基础镜像主版本，共四处。其余字节逐项相同。后端锁文件 SHA-256 为 `fe9578ffe0f21dcef43ed37a0902928debb7ef749809c4963aaeaefccc250b70`，前端为 `849b06d82f8af67c87ee1742a89106e9d719f291939eb54b6d5a6839f61c8670`。
+- 各服务从临时上下文执行 `docker build --no-cache --platform=linux/amd64`，沿用 Dockerfile 的 `npm ci --no-audit --no-fund` 和 `npm run build`；前端构建参数为 `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001`。测试容器使用各自构建镜像中的 node_modules，复制冻结测试源码后分别运行 `npm test`、`npm run typecheck`、`npm run lint`。
+- 每组通过独立 Compose 项目启动 `postgres:16`、后端与前端。运行镜像按摘要指定，只连接内部网络，宿主端口映射为零。先查空库，再以镜像默认命令执行 `npm run db:deploy` 和 `npm run start`。用 `npm run local:seed` 写入合成数据，运行 `npm run smoke:api`，按数据库记录核对任务、调用、取消时间窗和 mock 回执。
+
+## 首轮构建与应用结果
+
+| 项目 | Node 24 | Node 22 |
+| --- | --- | --- |
+| Node / npm | 24.22.3 / 11.19.1 | 22.23.5 / 10.9.9 |
+| 安装和前后端构建 | 后端 697 包，Prisma Client 7.8.0、TypeScript 编译成功；前端 350 包，Next.js 16.2.6 生成 13/13 个静态页面 | 相同 |
+| 后端 Jest / 前端 Vitest | 30 套 273 项 / 9 个文件 72 项通过 | 相同 |
+| 类型检查与 lint | 后端、前端各两项均退出 0 | 相同 |
+| PG16 启动与迁移 | 16.16；空库 0 张业务表，21/21 个迁移名称匹配源码 | 相同 |
+| 登录与授权 | 后端健康 200，操作员登录 201，可发送订阅及授权地点列表均 200，地点数 1 | 相同 |
+| 拒绝路径 | 跨租户地点 404 `LOCATION_NOT_FOUND`；授权地点未映射动作码 404 `SCAN_CODE_NOT_MAPPED`。两者各新增 0 次扫码、任务和调用 | 相同 |
+| 授权扫码与取消 | 扫码 201 → waiting，窗口内取消 200 → canceled，尝试 0，provider 调用 0 | 相同 |
+| 再次授权扫码与 mock | 新幂等键扫码 201 → waiting → sent；尝试 1，准确匹配的 sandbox 回执 1，提前领取 0；扫码和任务历史详情均 200 | 相同 |
+| 结束状态 | 前端首页与健康 200，三个服务 healthy，重启 0 次；专属容器、卷、网络清理完成 | 相同 |
+
+两版安装日志的 `EBADENGINE` 均为零。npm 11 提示后端四个、前端两个包的生命周期脚本尚未配置 `allowScripts`，涉及 `@nestjs/core`、`@prisma/engines`、`argon2`、`prisma`、`esbuild`、`sharp`。当前构建与合成流程通过。两组仅使用 mock，实际投递为零。
+
+## 镜像身份
+
+以下值为 SHA-256 摘要。两轮使用相同的官方基础镜像。首轮以所列前后端镜像运行了上表全部检查。
+
+| 镜像 | Node 24 | Node 22 |
+| --- | --- | --- |
+| `node:<major>-bookworm-slim` | `dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54` | `e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee` |
+| 首轮后端 | `a23bb40bd4ab489ac68b47715a9c85db420c96dca0f18ad8689d2f5b6988760d` | `b4565a0e0f410839b68b689f597104ae3a4f6124c0d9cc1ba947c91002ffb6a7` |
+| 首轮前端 | `3c75b8259cf3ec7636ead181a90156c026d2d01bd8a22a8ab95d8d6d6af1d785` | `d1128249bcdb515c6407c937a73d5fa7bb111251826edf774c62a5a834e8612e` |
+| Git 原始字节后端 | `59bc850c54cd11fa2c92e9aa1ef335f09b37363054a8a98100a386785e5f4d1d` | `5362d7a2b5c6ed1f58443ddd099599be434939485793b9a67d0012459c4d72eb`（仅确认生成 manifest） |
+| Git 原始字节前端 | `ad2650b999abcb4f13e4d317809fc7e971a34a14f800469b8f316b8c80ec6de7` | `80cae3bff4ac454f88b3e80ff11f800012e6ea0372ac5afd2c6bf5efcd2b11d5` |
+| `postgres:16` | `3950ad7c3148ca2175ef1b6c36c9efbf78957ae8fbe8b3a5d7c35af50500382f` | 同左 |
+
+## Git 原始字节复核与缺口
+
+四份构建日志均记录了锁定依赖安装、后端 Prisma/TypeScript 或前端 Next.js 编译成功。24 的两份镜像和 22 的前端镜像完成导出并取得退出码 0。22 后端已生成并标记 manifest，最后一条日志是运行镜像解包，未取得成功退出码。
+
+此时宿主 C 盘可用空间降至 0，Docker Desktop 的 WSL 探测返回 `HCS_E_CONNECTION_TIMEOUT`。暂停第二轮并终止本轮构建和验收客户端。该轮两版均缺镜像内锁文件的独立回读、单测、类型检查、lint、PG16 迁移和 HTTP 冒烟的成功回执。缺口发生在本机存储与镜像运行环节，首轮已通过的测试及其摘要见上表。Docker 未返回可用的峰值空间测量，正式实施时需在空间充足的 runner 上按目标架构复验。
+
+本机证据包 `issue-225-runtime-receipts.zip` SHA-256 为 `a75c9cb4325c1f2aa926192a35b25c953388535ae3ed3f4db1bfa7015416cfc9`。其中 `first/` 含构建与测试日志、进程退出码、PG16 启动与 API/数据库回执，`git-blobs/` 含逐文件复核、第二轮构建日志与原始字节比对，`historical-node20/` 保存既有回执。包内 `SHA256SUMS` 可逐文件核验。
+
+## Node 20 历史对照与适用范围
+
+既有 `full24-clean-build/verified-receipt.json` 的源码是 24 个 PR 的冻结组合 `b1aca63c2cbd0a3477b4ebcded2afb58dd5b163e`。它与正式候选共享两份 Dockerfile、两份锁文件及两份 .dockerignore 的 Git blob，后端 package.json 的 scripts 有差异。原始 Node 20.20.2 / npm 10.8.2 构建、21 项迁移及合成 mock 冒烟通过，后端安装报告 `@prisma/streams-local@0.1.2` 要求 Node ≥22。该轮基础镜像摘要为 `2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0`，本次复用了历史回执。
+
+本机矩阵覆盖 Linux amd64、空 PG16 和合成 API 流程。完整 GitHub Actions、浏览器 E2E、实际部署宿主及发布批准留到 ADR 接受后的独立实施。编号核对覆盖 68 个远端分支、本地 Git 历史和 worktree 文件。远端最高为 ADR-024，本地已有 025、026、027、029，故使用 030。
