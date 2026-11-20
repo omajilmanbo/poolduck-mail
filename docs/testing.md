@@ -22,6 +22,8 @@
 
 [地点授权、订阅指引与历史补验](testing/candidate-workbench-ui-2026-11-20.md)记录固定候选的 16 地点弹窗、订阅联系提示缺口及数据库停启前后的授权历史。[24 PR 本机冻结组合](testing/candidate-workbench-ui-2026-11-20.md#local-24-pr-combination)记录两组关键 E2E 和邮箱表单补验。
 
+[恢复写入截止复核](testing/candidate-a12-person-location-deletion-2026-11-20.md#restore-write-deadline)记录正式候选缺口、独立修复 CI 与 25 PR 本机后端验证。[原始镜像构建与冒烟](testing/candidate-workbench-ui-2026-11-20.md#original-dockerfile-smoke)记录 24 PR 组合的无缓存构建、实际镜像启动及运行时待决项。
+
 ## 1. 测试目标
 
 - 覆盖核心业务闭环：登录 → 扫码事件 → 邮件任务

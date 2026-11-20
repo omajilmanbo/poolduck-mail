@@ -30,3 +30,22 @@
 四组恢复请求同清理调用实际重叠约 3.3、5.1、5.9、9.5 ms。HTTP 到达时，窗口已经确定为开放或关闭。截止前 1 ms 和恰好截止的精确结果来自清理器输入。请求在截止前开始、因等待数据库锁而在截止后才提交的次序仍待实测。此次也未计时 14 个自然日、周期调度唤醒或浏览器倒计时。
 
 历史对账仅覆盖仍有效租户且未满独立保留期限的记录。当前对象的 14 天恢复期及墓碑遵循 ADR-011，历史的销毁期限遵循 ADR-024。[ADR-011](../decisions/ADR-011-person-and-location-delayed-deletion.md) · [ADR-024](../decisions/ADR-024-business-record-retention-and-destruction.md) · [地点额度补验](candidate-platform-location-quota-2026-11-20.md)
+
+<a id="restore-write-deadline"></a>
+
+## 恢复写入时的截止复核
+
+正式候选 `main@a052518` 的地点和人员恢复在更新前读取 PostgreSQL 时间，最终更新沿用该值。Accepted ADR-011 要求在写入时按数据库时间判定，恰好到期即拒绝。[ADR-011](../decisions/ADR-011-person-and-location-delayed-deletion.md) · [缺陷 #224](https://github.com/omajilmanbo/poolduck-mail/issues/224)
+
+未合并的 #226 在 `363583f70442f7f5f53b85577320de9bced06e11` 让最终更新读取 PostgreSQL UTC 实际时间，仍为待删除且严格早于 `purge_after` 时恢复原状态。该提交的 GitHub CI 五项通过，PostgreSQL 16 发布门禁实际执行了 ADR-011 恢复专项。[修复 PR](https://github.com/omajilmanbo/poolduck-mail/pull/226) · [分支 CI](https://github.com/omajilmanbo/poolduck-mail/actions/runs/44653533534)
+
+本机 25 PR 冻结组合 `17f5facdadd2b0157624e156d0949e162c8ef517` 在独立 PostgreSQL 16.16 上验证。后端构建成功，Jest 30 套、307/307 通过，以下两个仓库专项均退出 0。[恢复专项入口](https://github.com/omajilmanbo/poolduck-mail/blob/363583f70442f7f5f53b85577320de9bced06e11/backend/scripts/location-person-restore-test.mjs) · [离线完整性独立 PR](https://github.com/omajilmanbo/poolduck-mail/pull/212) · [矩阵 O02](business-requirements-matrix.md#O02)
+
+```sh
+npm --prefix backend run build
+npm --prefix backend test
+npm --prefix backend run test:location-person-restore
+npm --prefix backend run test:offline-integrity
+```
+
+组合的补充只读检查在 UTC 使用固定输入核对最终更新采用的时间条件。截止前 1 ms 允许，恰好截止及截止后 1 ms 均拒绝。恢复专项另用合成 HTTP 流程复核启用和停用状态恢复、旧行与拒绝审计、权限拒绝及零邮件副作用。

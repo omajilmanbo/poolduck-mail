@@ -45,3 +45,22 @@
 - 前端单测 83/83 通过，lint、typecheck 与帮助同步检查通过。
 - 两组 mock 模式各用一套 PostgreSQL 16.16，各应用 21 项迁移。Playwright 关键用例各 17/17 通过，退出码均为 0，无失败、跳过或重试后通过。通过项包括订阅暂停、授权历史、退出重登及先前超时的人员编辑。
 - 两组另用正常界面验证邮箱表单。人员邮箱置空时表单阻止提交，保存请求为 0，重读仍为原值。操作员可选邮箱清空后保存返回 200，刷新与重新打开表单均保持为空。[操作员邮箱规则](../admin-guide.md) · [订阅限制 A08](business-requirements-matrix.md#A08)
+
+<a id="original-dockerfile-smoke"></a>
+
+### 24 PR 原始 Dockerfile 构建与镜像冒烟
+
+另一次本机验收使用相同冻结组合 `b1aca63c2cbd0a3477b4ebcded2afb58dd5b163e` 的独立干净检出。前后端 Dockerfile 与正式候选逐字节一致，两端以 Node.js 20.20.2 无缓存构建，退出码均为 0。实际启动这两张新镜像，后端在空 PostgreSQL 16.16 库应用 21 项迁移，前端首页及前后端探活均返回 200。[矩阵 O08](business-requirements-matrix.md#O08)
+
+合成 seed 和仓库 API 冒烟均退出 0。另核对无授权地点及未映射码均拒绝、无新增任务。一笔授权扫码在窗口内取消，零投递尝试。另一笔进入已发送状态并核对到一次 mock 回执，两笔均可从历史读回。真实投递为零。
+
+使用仓库开发指南的隔离合成配置，启用 mock 并关闭真实发送。原始 Dockerfile 构建和仓库冒烟可按以下命令复验。后端镜像启动时会运行 `npm run db:deploy`。[本地开发与验证](../development.md)
+
+```sh
+docker compose build --no-cache backend frontend
+docker compose up -d --no-build
+docker compose exec backend npm run local:seed
+docker compose exec backend npm run smoke:api
+```
+
+现行运行时 Node.js 20 的上游支持已于 2026-04-30 结束。首次生产部署采用的受支持主版本仍待决定。[Node.js 官方发布计划](https://github.com/nodejs/Release/blob/main/schedule.json#L109-L115) · [运行时决定 #225](https://github.com/omajilmanbo/poolduck-mail/issues/225)
