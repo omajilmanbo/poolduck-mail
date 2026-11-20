@@ -20,6 +20,8 @@
 
 [双设备短时断网与透明续期](testing/candidate-a05-session-renewal-2026-11-20.md#two-device-offline)记录正式候选恢复联网后由用户刷新触发的结果。[23 PR 本机冻结组合关键 E2E](testing/local-23-pr-e2e-2026-11-20.md)记录独立构建、两套迁移和两种模拟投递结果。
 
+[地点授权、订阅指引与历史补验](testing/candidate-workbench-ui-2026-11-20.md)记录固定候选的 16 地点弹窗、订阅联系提示缺口及数据库停启前后的授权历史。[24 PR 本机冻结组合](testing/candidate-workbench-ui-2026-11-20.md#local-24-pr-combination)记录两组关键 E2E 和邮箱表单补验。
+
 ## 1. 测试目标
 
 - 覆盖核心业务闭环：登录 → 扫码事件 → 邮件任务
