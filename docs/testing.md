@@ -18,6 +18,8 @@
 
 [Worker 进程中断](testing/candidate-m05-worker-restart-2026-11-20.md)记录两种调用边界和实际恢复。[平台审计旧游标空页](testing/candidate-platform-audit-p06-cleared-page-2026-11-20.md)记录清理后的浏览器提示。[加密归档独立取钥](testing/encrypted-restore-rehearsal-2026-11-20.md)记录失败停止与旧版本恢复。
 
+[双设备短时断网与透明续期](testing/candidate-a05-session-renewal-2026-11-20.md#two-device-offline)记录正式候选恢复联网后由用户刷新触发的结果。[23 PR 本机冻结组合关键 E2E](testing/local-23-pr-e2e-2026-11-20.md)记录独立构建、两套迁移和两种模拟投递结果。
+
 ## 1. 测试目标
 
 - 覆盖核心业务闭环：登录 → 扫码事件 → 邮件任务
