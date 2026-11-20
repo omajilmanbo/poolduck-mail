@@ -122,6 +122,51 @@ describe('Tenant-scoped history APIs', () => {
     }
   });
 
+  it.each(['list', 'detail'])('samples the database clock after the final %s read', async (endpoint) => {
+    const row = scanRow(scanEventId, 'waiting');
+    const deadline = row.mailJobs[0].cancelUntil.getTime();
+    let wallTime = deadline - 2;
+    const readRow = () => {
+      wallTime = deadline - 1;
+      return row;
+    };
+    prisma.scanEvent.findMany.mockImplementation(() => [readRow()]);
+    prisma.scanEvent.findFirst.mockImplementation(readRow);
+
+    // PostgreSQL pins CURRENT_TIMESTAMP at BEGIN. In autocommit each statement starts a transaction.
+    function readClock(sql: string, transactionStart = wallTime) {
+      switch (sql.trim().toLowerCase()) {
+        case 'select current_timestamp as now': return [{ now: new Date(transactionStart) }];
+        case 'select clock_timestamp() as now': return [{ now: new Date(wallTime) }];
+        default: throw new Error('Unexpected database clock query');
+      }
+    }
+    prisma.$queryRawUnsafe.mockImplementation(readClock);
+    Object.assign(prisma, {
+      $transaction: (read: (tx: unknown) => Promise<unknown>) => {
+        const transactionStart = wallTime;
+        return read({
+          ...prisma,
+          $queryRawUnsafe: (sql: string) => readClock(sql, transactionStart),
+          // With predecessor history enabled, this read completes after the same deadline.
+          $queryRaw: () => { wallTime = deadline + 1; return []; },
+        });
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .get(endpoint === 'list' ? '/api/scan-events' : `/api/scan-events/${scanEventId}`)
+      .set('Authorization', `Bearer ${token()}`).expect(200);
+    const item = endpoint === 'list' ? response.body.items[0] : response.body;
+    expect(item).toMatchObject({
+      scan_event_id: scanEventId,
+      mail_status: 'waiting',
+      cancel_until: new Date(deadline).toISOString(),
+      server_time: new Date(wallTime).toISOString(),
+      can_cancel: wallTime < deadline,
+    });
+  });
+
   it('combines location, status, date, limit and stable cursor pagination', async () => {
     prisma.location.findFirst.mockResolvedValue({
       id: locationId,
