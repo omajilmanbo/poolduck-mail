@@ -24,6 +24,8 @@
 
 [恢复写入截止复核](testing/candidate-a12-person-location-deletion-2026-11-20.md#restore-write-deadline)记录正式候选缺口、独立修复 CI 与 25 PR 本机后端验证。[原始镜像构建与冒烟](testing/candidate-workbench-ui-2026-11-20.md#original-dockerfile-smoke)记录 24 PR 组合的无缓存构建、实际镜像启动及运行时待决项。
 
+[O06 API 分钟观测与 26 PR 本机验收](testing/local-26-pr-api-metrics-2026-11-20.md)记录独立修复分支的阈值测试、冻结组合的 PostgreSQL 窗口对账及两种 mock 浏览器结果。
+
 ## 1. 测试目标
 
 - 覆盖核心业务闭环：登录 → 扫码事件 → 邮件任务
