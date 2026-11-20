@@ -50,6 +50,7 @@
 本地质量门禁命令：
 
 - Backend：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`
+- ADR-011 地点和人员恢复：将 `APP_ENV` 设为 `test`，`DATABASE_URL` 指向本机 PostgreSQL 16，在 `backend/` 运行 `npm run test:location-person-restore`。脚本创建临时数据库，以固定时刻验证截止边界，并用合成账号验证恢复 API、审计和零邮件副作用，结束后删除临时库。
 - ADR-023 租户生命周期迁移：在 `APP_ENV=local` 或 `test`、`DATABASE_URL` 指向本机 PostgreSQL 时，
   于 `backend/` 执行 `npm run test:tenant-lifecycle-migration`；脚本仅创建并删除随机命名的合成测试数据库。
 - #160 平台删除事务：在相同本地环境下，于 `backend/` 执行 `npm run test:platform-delete-transaction`；
