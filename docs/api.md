@@ -152,8 +152,7 @@ ADR-017 当前契约：
 - 权限：已登录用户（`tenant_manager` / `operator`）
 - 订阅要求：无（仅用于页面初始化）
 - location 授权：`tenant_manager` 返回本 tenant 全部 location；`operator` 只返回显式分配的 location。无 assignment 时返回空数组
-- 管理页可传 `include_deleted=true` 查看尚在 14 天恢复期内的地点；普通调用排除
-  `pending_delete` / `purged`
+- `tenant_manager` 可传 `include_deleted=true` 查看待删除地点，包括已到期、仍在等待清理的地点。默认排除 `pending_delete` 和 `purged`。
 - 出参：`[{ location_id, location_code, location_name, type, is_active, deletion_status, deleted_at, purge_after }]`；`location_id` 与 `location_code` 均返回 8 位公开业务 ID，`type` 固定为 `location`，不返回内部 UUID
 - 错误：未认证时返回 `UNAUTHORIZED`
 
@@ -163,8 +162,7 @@ ADR-017 当前契约：
 - 权限：已登录用户（`tenant_manager` / `operator`）
 - 订阅要求：无（仅用于映射预加载）
 - location 授权：`operator` 必须已被显式分配该 location；未分配、伪造或跨 tenant 的 `location_id` 与不存在地点统一返回 `LOCATION_NOT_FOUND`
-- 管理页可传 `include_deleted=true` 查看尚在恢复期内的人员；普通调用排除
-  `pending_delete` / `purged`
+- 在有权访问的地点内，`include_deleted=true` 会列出待删除人员，包括已到期、仍在等待清理的人员。默认排除 `pending_delete` 和 `purged`。
 - 出参：`[{ person_id, person_code, person_name, scan_code, email_masked, is_active, deletion_status, deleted_at, purge_after }]`；`person_id` 与兼容字段 `scan_code` 当前均返回 `person_code`，不返回内部 UUID
 - 隐私：不返回完整邮箱地址
 - 人员读取与写入路径统一执行 operator-location 门禁；客户端提交的 location 参数不能扩大权限
@@ -177,7 +175,7 @@ ADR-017 当前契约：
 - `DELETE /api/locations/{location_id}/people/{person_id}`：软停用，历史保留
 - `POST /api/locations/{location_id}/people/{person_id}/reactivate`：重新启用已停用人员；地点本身必须 active，人员 ID 与历史关联不变
 - `POST /api/locations/{location_id}/people/{person_id}/delete`：安排 14 天后终结删除并立即停止业务使用
-- `POST /api/locations/{location_id}/people/{person_id}/restore`：期限内恢复为删除前的 active/inactive 状态；到期返回 `DELETION_RESTORE_EXPIRED`
+- `POST /api/locations/{location_id}/people/{person_id}/restore`：所属地点须启用且调用者具有地点权限。最终更新时 PostgreSQL 的 UTC 时间严格早于 `purge_after` 才恢复删除前的 active/inactive 状态。待删除人员恰好到期或已过期时返回 `409 DELETION_RESTORE_EXPIRED`，已恢复或已终结清理时返回 `404 PERSON_MAPPING_NOT_FOUND`。
 - 生成规则：前 7 位为 Unix 秒、后 5 位为安全随机值；数据库唯一冲突最多重试 5 次，耗尽返回 `PERSON_CODE_GENERATION_EXHAUSTED`
 
 ### 地点写接口
@@ -187,7 +185,7 @@ ADR-017 当前契约：
 - `DELETE /api/locations/{location_id}`：仅 `tenant_manager`，软停用
 - `POST /api/locations/{location_id}/reactivate`：仅 `tenant_manager`，重新启用已停用地点
 - `POST /api/locations/{location_id}/delete`：仅 `tenant_manager`，安排 14 天后终结删除；立即终止 queued 邮件
-- `POST /api/locations/{location_id}/restore`：仅 `tenant_manager`，期限内恢复删除前状态；到期返回 `DELETION_RESTORE_EXPIRED`
+- `POST /api/locations/{location_id}/restore`：仅本租户 `tenant_manager`。最终更新时 PostgreSQL 的 UTC 时间严格早于 `purge_after` 才恢复删除前的 active/inactive 状态。待删除地点恰好到期或已过期时返回 `409 DELETION_RESTORE_EXPIRED`，已恢复或已终结清理时返回 `404 LOCATION_NOT_FOUND`。
 - DELETE 为软停用；停用后拒绝新扫描与人员映射写入，并把该地点 queued 邮件安全终止为 failed/`LOCATION_INACTIVE`
 - 终结清理由幂等后台任务按数据库时间执行：当前 PII 被匿名化、地点 assignments 被撤销；既有历史快照不因地点终结而改写，仍按 ADR-024 的正常一年期限独立销毁
 - location ID 冲突最多重试 5 次，耗尽返回 `LOCATION_CODE_GENERATION_EXHAUSTED`；不存在、跨 tenant 或 operator 未授权统一返回 `LOCATION_NOT_FOUND`

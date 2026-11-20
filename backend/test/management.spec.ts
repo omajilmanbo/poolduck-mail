@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -23,14 +24,12 @@ describe('Location and person mapping management', () => {
       count: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
-      updateMany: jest.Mock;
     };
     locationLegacyIdentifier: { findFirst: jest.Mock };
     personMapping: {
       findFirst: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
-      updateMany: jest.Mock;
     };
     mailJob: { updateMany: jest.Mock };
     auditLog: { create: jest.Mock };
@@ -58,14 +57,12 @@ describe('Location and person mapping management', () => {
         count: jest.fn().mockResolvedValue(0),
         create: jest.fn(),
         update: jest.fn(),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       locationLegacyIdentifier: { findFirst: jest.fn().mockResolvedValue(null) },
       personMapping: {
         findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       mailJob: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
       auditLog: { create: jest.fn().mockResolvedValue(undefined) },
@@ -333,19 +330,7 @@ describe('Location and person mapping management', () => {
       locationCode: 'ABCD1234',
       status: 'active',
     });
-    prisma.personMapping.findFirst
-      .mockResolvedValueOnce({
-        id: personId,
-        personCode,
-        status: 'inactive',
-      })
-      .mockResolvedValueOnce({
-        ...personRow('pending_delete'),
-        id: personId,
-        personCode,
-        deletedFromStatus: 'inactive',
-        purgeAfter,
-      });
+    prisma.personMapping.findFirst.mockResolvedValue({ id: personId, personCode, status: 'inactive' });
     prisma.personMapping.update
       .mockResolvedValueOnce({
         ...personRow('pending_delete'),
@@ -376,6 +361,9 @@ describe('Location and person mapping management', () => {
       }),
     );
 
+    prisma.$queryRaw
+      .mockResolvedValueOnce([{ id: personId }])
+      .mockResolvedValueOnce([personRow('inactive')]);
     const restored = await request(app.getHttpServer())
       .post(`/api/locations/ABCD1234/people/${personCode}/restore`)
       .set('Authorization', `Bearer ${token('operator')}`)
@@ -385,23 +373,14 @@ describe('Location and person mapping management', () => {
       is_active: false,
       deletion_status: null,
     });
-    expect(prisma.personMapping.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          status: 'pending_delete',
-          purgeAfter: { gt: deletedAt },
-        }),
-        data: {
-          status: 'inactive',
-          deletedAt: null,
-          purgeAfter: null,
-          deletedFromStatus: null,
-        },
-      }),
-    );
+    const [, lock, update] = prisma.$queryRaw.mock.calls.map(([sql]) => (sql as Prisma.Sql).text);
+    expect(lock).toContain('FOR UPDATE OF p');
+    expect(update).toContain('UPDATE person_mappings');
+    expect(update).toContain("clock_timestamp() AT TIME ZONE 'UTC'");
+    expect(update).toContain('purge_after > write_clock.utc_now');
   });
 
-  it('allows only tenant_manager to schedule a location deletion and rejects restore at the deadline', async () => {
+  it('allows only tenant_manager to schedule a location deletion and reports an expired restore when the conditional write returns no row', async () => {
     authenticate('operator');
     await request(app.getHttpServer())
       .post('/api/locations/ABCD1234/delete')
@@ -411,19 +390,7 @@ describe('Location and person mapping management', () => {
     authenticate('tenant_manager');
     const deletedAt = new Date('2026-07-28T00:00:00.000Z');
     const purgeAfter = new Date('2026-08-11T00:00:00.000Z');
-    prisma.location.findFirst
-      .mockResolvedValueOnce({
-        id: locationId,
-        locationCode: 'ABCD1234',
-        status: 'active',
-      })
-      .mockResolvedValueOnce({
-        id: locationId,
-        locationCode: 'ABCD1234',
-        status: 'pending_delete',
-        deletedFromStatus: 'active',
-        purgeAfter: deletedAt,
-      });
+    prisma.location.findFirst.mockResolvedValue(locationRow('active'));
     prisma.location.update.mockResolvedValue({
       ...locationRow('pending_delete'),
       deletedAt,
@@ -448,6 +415,7 @@ describe('Location and person mapping management', () => {
       }),
     );
 
+    prisma.$queryRaw.mockResolvedValueOnce([{ id: locationId }]).mockResolvedValueOnce([]);
     const expired = await request(app.getHttpServer())
       .post('/api/locations/ABCD1234/restore')
       .set('Authorization', `Bearer ${token('tenant_manager')}`)
@@ -455,6 +423,11 @@ describe('Location and person mapping management', () => {
     expect(expired.body).toMatchObject({
       code: 'DELETION_RESTORE_EXPIRED',
     });
+    const [, lock, update] = prisma.$queryRaw.mock.calls.map(([sql]) => (sql as Prisma.Sql).text);
+    expect(lock).toContain('FOR UPDATE');
+    expect(update).toContain('UPDATE locations');
+    expect(update).toContain("clock_timestamp() AT TIME ZONE 'UTC'");
+    expect(update).toContain('purge_after > write_clock.utc_now');
   });
 
   function authenticate(role: string) {
