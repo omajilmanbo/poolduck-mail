@@ -134,6 +134,8 @@ platform token 调用租户业务 API、tenant token 调用上述平台 API 时�
 > 仍由服务端数据库时间和持久化状态决定。
 > 创建响应的 `server_time` 与 `received_at` 来自同一创建事务的 PostgreSQL 时间；取消成功响应的
 > `server_time` 也来自取消事务，不使用浏览器或应用节点时间决定权限。
+> 扫码历史列表的同一页共用一次 PostgreSQL 时间采样，详情在读取时重新采样。两者都用返回的
+> `server_time` 判断 `can_cancel`：仅当任务处于 `waiting` 且采样时间严格早于库内 `cancel_until` 时为 true。
 
 ADR-017 当前契约：
 
