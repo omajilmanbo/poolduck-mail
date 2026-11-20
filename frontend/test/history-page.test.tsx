@@ -20,6 +20,64 @@ describe('history workspace', () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([
+    ['expired', 'operator', '订阅已过期', '租户管理员'],
+    ['suspended', 'tenant_manager', '订阅已暂停', '平台运营'],
+  ] as const)('shows %s subscription guidance for %s and keeps authorized history visible', async (
+    status, role, reason, contact,
+  ) => {
+    vi.stubGlobal('fetch', createWorkspaceFetch({ items: [historyItem('sent')], next_cursor: null }, {
+      role,
+      getLicense: () => licenseResponse(status, false),
+    }));
+    render(<HomePage />);
+
+    await waitFor(() => expect(screen.getByTestId('license-status').textContent).toBe(status));
+    expect(screen.getByText(`${reason}，扫码与发送入口已禁用。请联系${contact}处理订阅状态。`)).not.toBeNull();
+    expect((screen.getByTestId('scan-code-input') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByTestId('scan-submit') as HTMLButtonElement).disabled).toBe(true);
+    const history = screen.getByRole('table', { name: '扫码记录' });
+    expect(await within(history).findByRole('cell', { name: 'History Person' })).not.toBeNull();
+  });
+
+  it.each(['trial', 'active'])('allows scan entry for a sendable %s subscription', async (status) => {
+    vi.stubGlobal('fetch', createWorkspaceFetch({ items: [], next_cursor: null }, {
+      getLicense: () => licenseResponse(status, true),
+    }));
+    render(<HomePage />);
+
+    await waitFor(() => expect(screen.getByTestId('license-status').textContent).toBe(status));
+    const input = screen.getByTestId('scan-code-input') as HTMLInputElement;
+    expect(input.disabled).toBe(false);
+    fireEvent.change(input, { target: { value: 'E01K0ABC80001' } });
+    expect((screen.getByTestId('scan-submit') as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText(/扫码与发送入口已禁用|处理订阅状态/)).toBeNull();
+  });
+
+  it('keeps scan disabled while the subscription status is loading', async () => {
+    vi.stubGlobal('fetch', createWorkspaceFetch({ items: [], next_cursor: null }, {
+      getLicense: () => new Promise<Response>(() => {}),
+    }));
+    render(<HomePage />);
+
+    expect(await screen.findByText('loading')).toBe(screen.getByTestId('license-status'));
+    expect((screen.getByTestId('scan-code-input') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByTestId('scan-submit') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText(/扫码与发送入口已禁用|处理订阅状态/)).toBeNull();
+  });
+
+  it('shows the connection error when the subscription status request fails', async () => {
+    vi.stubGlobal('fetch', createWorkspaceFetch({ items: [], next_cursor: null }, {
+      getLicense: () => Promise.reject(new TypeError('Failed to fetch')),
+    }));
+    render(<HomePage />);
+
+    expect(await screen.findByText(/无法连接后端 API/)).not.toBeNull();
+    expect((screen.getByTestId('scan-code-input') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByTestId('scan-submit') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText(/扫码与发送入口已禁用|处理订阅状态/)).toBeNull();
+  });
+
   it('loads persisted history after restoring a session', async () => {
     vi.stubGlobal('fetch', createWorkspaceFetch({ items: [historyItem('sent')], next_cursor: null }));
     render(<HomePage />);
@@ -114,7 +172,7 @@ describe('history workspace', () => {
       'fetch',
       createWorkspaceFetch(
         { items: [historyItem('waiting')], next_cursor: null },
-        new TypeError('Failed to fetch'),
+        { cancelError: new TypeError('Failed to fetch') },
       ),
     );
     render(<HomePage />);
@@ -161,7 +219,7 @@ describe('history workspace', () => {
         items: [namedHistoryItem(requests.length)],
         next_cursor: url.searchParams.has('cursor') ? null : 'older',
       };
-    }, undefined, [locationId, secondLocation]);
+    }, { locationIds: [locationId, secondLocation] });
     vi.stubGlobal('fetch', fetchMock);
     render(<HomePage />);
 
@@ -296,13 +354,22 @@ function createWorkspaceFetch(
     | { status: number }
     | TypeError
     | ((url: URL) => { items: ScanHistoryItem[]; next_cursor: string | null } | { status: number } | TypeError),
-  cancelError?: TypeError,
-  locationIds = [locationId],
+  {
+    cancelError,
+    locationIds = [locationId],
+    getLicense = () => licenseResponse('active', true),
+    role = 'operator',
+  }: {
+    cancelError?: TypeError;
+    locationIds?: string[];
+    getLicense?: () => Response | Promise<Response>;
+    role?: 'operator' | 'tenant_manager';
+  } = {},
 ) {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith('/api/auth/me')) {
-      return jsonResponse({ user: { user_id: 'user-1', tenant_code: '10CA000001', email: 'operator@example.local', role: 'operator' } });
+      return jsonResponse({ user: { user_id: 'user-1', tenant_code: '10CA000001', email: 'operator@example.local', role } });
     }
     if (url.endsWith('/api/auth/refresh')) {
       if (typeof history !== 'function' && !(history instanceof TypeError) && 'status' in history) {
@@ -311,14 +378,7 @@ function createWorkspaceFetch(
       return jsonResponse({ expires_in: 900, user: {} });
     }
     if (url.endsWith('/api/license/check')) {
-      return jsonResponse({
-        status: 'active',
-        plan: 'mvp',
-        end_at: '2026-12-31T00:00:00.000Z',
-        expired_at: '2026-12-31T00:00:00.000Z',
-        grace_period: null,
-        can_send: true,
-      });
+      return getLicense();
     }
     if (url.endsWith('/api/locations')) {
       return jsonResponse(locationIds.map((id, index) => ({
@@ -366,6 +426,17 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'content-type': 'application/json' },
+  });
+}
+
+function licenseResponse(status: string, canSend: boolean) {
+  return jsonResponse({
+    status,
+    plan: 'mvp',
+    end_at: '2026-12-31T00:00:00.000Z',
+    expired_at: '2026-12-31T00:00:00.000Z',
+    grace_period: null,
+    can_send: canSend,
   });
 }
 
