@@ -1,6 +1,31 @@
 # #225 · Node.js 24 与 22 的本机兼容性回执
 
-**决策用途**　为首次生产部署选择 Node 主版本。项目负责人通过 D20 选择 A（24）或 B（22）。正式候选为 `origin/main@a05251897d7fc11d96114606bcaa1807dd96af55`，Git tree 为 `93ab3e15fddc235b46fbb7a17997a46c8818b03a`。[Proposed ADR-030](../decisions/ADR-030-node-runtime-major.md)
+**2026-11-24 结论**　Node 24.22.3 和 22.23.5 均通过冻结候选的 Git 原始字节复验。两版各通过 345 项单测、21 项 PG16 迁移、授权扫码、取消及 mock 发送，双向切换后均可回读原任务。候选提交为 `a05251897d7fc11d96114606bcaa1807dd96af55`，Git tree 为 `93ab3e15fddc235b46fbb7a17997a46c8818b03a`。D20 的主版本选择仍由项目负责人决定。[Proposed ADR-030](../decisions/ADR-030-node-runtime-major.md)
+
+## 11 月 24 日 · 镜像恢复与运行验收
+
+重启后在本机 `desktop-linux`、Engine 29.9.3、Compose 5.7.0、`linux/amd64` 上复验。重新导出候选的 329 个文件，逐个匹配原 Git blob。两个 Dockerfile 的实验副本各仅替换两处 Node 基础镜像主版本。四个 `:git-blobs` 标签的索引摘要均匹配 11 月 20 日的构建日志。
+
+| 服务 | 重启后从原索引读取的结果 | 本次实际运行摘要（SHA-256） |
+| --- | --- | --- |
+| Node 22 后端 | 原镜像断网、只读启动成功，63 个随镜像发布的源码文件与 Git 原件匹配。`docker image save --platform linux/amd64` 退出 0，核验 13 个层、Linux manifest 和配置共 15 个 blob，合计 197,287,791 字节。 | `5362d7a2b5c6ed1f58443ddd099599be434939485793b9a67d0012459c4d72eb` |
+| Node 22 前端 | 本地快照内的包清单和锁文件均为 0 字节，原归档内两者匹配 Git。用原层恢复后，23 个源码文件与 Git 匹配，另核对 Next.js BUILD_ID。 | `11079fdf930ac9c182661c5a58c84f02202abd656858120715c8a3b5d1e25a28` |
+| Node 24 后端 | 两个清单同为空文件。校验归档后重新加载原索引仍复现；用原层恢复后，63 个源码文件与 Git 匹配，另核对编译入口 `dist/main.js`。 | `bdffb3f8377d0c74f371c55c18799ad04ef51267ce5d95e8cd14da6aaa4cec74` |
+| Node 24 前端 | 两个清单同为空文件。用原层恢复后，23 个源码文件与 Git 匹配，另核对 Next.js BUILD_ID。 | `c0a1534cd4a2142bf01c6d4fd68dad6f5a6667c4537a5173335f824f5e939ffa` |
+
+后三个原标签在探针中均报 `ERR_INVALID_PACKAGE_CONFIG`。其归档的压缩层、Linux manifest 和配置均通过摘要校验。恢复时只在原层序列前加入一个零文件的空 tar，使 Docker 重新解包到新快照。全部原层及其顺序、应用启动配置和依赖沿用原工件，运行摘要按表中记录。归档与实际运行容器中的对应源码及编译产物均逐文件匹配。本轮没有重新下载包或编译应用。
+
+| 检查 | Node 22 / npm 10.9.9 | Node 24 / npm 11.19.1 |
+| --- | --- | --- |
+| 断网运行 `npm test` | 后端 Jest 30 套、273 项；前端 Vitest 9 个文件、72 项。均退出 0 | 同左 |
+| 两端运行 `npm run typecheck`、`npm run lint` | 四条命令均退出 0 | 同左 |
+| 空库启动 | PG 16.16，public 表计数 0；按默认命令迁移并启动。日志与数据库逐名匹配 21/21 项迁移，首页及前后端健康端点均 200 | 同左 |
+| 运行 `npm run local:seed`、`npm run smoke:api` | 均退出 0。操作员登录 201、授权地点 1 个；跨租户地点及未映射码均 404，新增任务 0。合法扫码 201，取消 200，尝试 0；再次扫码 201，唯一一次 mock 尝试成功，提前领取 0 | 同左 |
+| 成对切换前后端 | 22 → 24 成功 | 24 → 22 成功 |
+
+每组使用全新的 PG16 卷、专属内部网络、零宿主端口，启用 mock 且关闭真实发送。切换时先确认两笔合成任务均已终结，再仅重建前后端容器。两次均保留各自的同一数据库容器和卷，迁移日志显示待执行项 0。重新登录 201，两份列表及四个详情均 200。切换前后两笔扫码、两笔任务、一条尝试和 21 项迁移的数据库行数及内容指纹相同。三个服务均 healthy，重启数均为 0。
+
+两个项目结束后容器、卷和网络均为 0。已回收 11 月 20 日四个停用的 `:trial` 标签。四份原始 OCI 归档、恢复脚本及新旧摘要保存在本机。运行回执包 `issue-225-git-blob-runtime-20261124.zip` 的 SHA-256 为 `a6372c65ce62ea5d999795ced4cf6d37aa38a840f45186073f334616fb2ffdc6`。包内 `verified.json` 汇总两组结果，`22-backend-export.json` 保存导出证明，`22-smoke.json` 与 `24-smoke.json` 保存启动、迁移、HTTP、切换和清理记录；`SHA256SUMS` 可独立核验。
 
 ## 输入与复验方法
 
@@ -35,15 +60,15 @@
 | `node:<major>-bookworm-slim` | `dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54` | `e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee` |
 | 首轮后端 | `a23bb40bd4ab489ac68b47715a9c85db420c96dca0f18ad8689d2f5b6988760d` | `b4565a0e0f410839b68b689f597104ae3a4f6124c0d9cc1ba947c91002ffb6a7` |
 | 首轮前端 | `3c75b8259cf3ec7636ead181a90156c026d2d01bd8a22a8ab95d8d6d6af1d785` | `d1128249bcdb515c6407c937a73d5fa7bb111251826edf774c62a5a834e8612e` |
-| Git 原始字节后端 | `59bc850c54cd11fa2c92e9aa1ef335f09b37363054a8a98100a386785e5f4d1d` | `5362d7a2b5c6ed1f58443ddd099599be434939485793b9a67d0012459c4d72eb`（仅确认生成 manifest） |
+| Git 原始字节后端 | `59bc850c54cd11fa2c92e9aa1ef335f09b37363054a8a98100a386785e5f4d1d` | `5362d7a2b5c6ed1f58443ddd099599be434939485793b9a67d0012459c4d72eb` |
 | Git 原始字节前端 | `ad2650b999abcb4f13e4d317809fc7e971a34a14f800469b8f316b8c80ec6de7` | `80cae3bff4ac454f88b3e80ff11f800012e6ea0372ac5afd2c6bf5efcd2b11d5` |
 | `postgres:16` | `3950ad7c3148ca2175ef1b6c36c9efbf78957ae8fbe8b3a5d7c35af50500382f` | 同左 |
 
-## Git 原始字节复核与缺口
+## 11 月 20 日 · Git 原始字节复核中断记录
 
 四份构建日志均记录了锁定依赖安装、后端 Prisma/TypeScript 或前端 Next.js 编译成功。24 的两份镜像和 22 的前端镜像完成导出并取得退出码 0。22 后端已生成并标记 manifest，最后一条日志是运行镜像解包，未取得成功退出码。
 
-此时宿主 C 盘可用空间降至 0，Docker Desktop 的 WSL 探测返回 `HCS_E_CONNECTION_TIMEOUT`。暂停第二轮并终止本轮构建和验收客户端。该轮两版均缺镜像内锁文件的独立回读、单测、类型检查、lint、PG16 迁移和 HTTP 冒烟的成功回执。缺口发生在本机存储与镜像运行环节，首轮已通过的测试及其摘要见上表。Docker 未返回可用的峰值空间测量，正式实施时需在空间充足的 runner 上按目标架构复验。
+当时宿主 C 盘可用空间降至 0，WSL 探测返回 `HCS_E_CONNECTION_TIMEOUT`，因此终止构建和验收客户端。11 月 20 日的 Node 22 后端构建退出码仍未知。11 月 24 日用原索引重新取得导出和运行回执，并完成两版锁文件回读、单测、类型检查、lint、PG16 迁移及 HTTP 冒烟。正式实施时仍须在目标架构上验证最终提交。
 
 本机证据包 `issue-225-runtime-receipts.zip` SHA-256 为 `a75c9cb4325c1f2aa926192a35b25c953388535ae3ed3f4db1bfa7015416cfc9`。其中 `first/` 含构建与测试日志、进程退出码、PG16 启动与 API/数据库回执，`git-blobs/` 含逐文件复核、第二轮构建日志与原始字节比对，`historical-node20/` 保存既有回执。包内 `SHA256SUMS` 可逐文件核验。
 
