@@ -414,19 +414,30 @@ export function createApiClient(config: ApiClientConfig = {}) {
     return payload as T;
   }
 
-  async function download(path: string, filename: string) {
+  async function download(
+    path: string,
+    filename: string,
+    checkForEmpty = false,
+  ): Promise<'empty' | 'downloaded'> {
     let response = await fetch(`${baseUrl}${path}`, { credentials: 'include' });
     if (response.status === 401) {
       const refreshed = await fetch(`${baseUrl}/api/auth/refresh`, { method: 'POST', credentials: 'include' });
       if (refreshed.ok) response = await fetch(`${baseUrl}${path}`, { credentials: 'include' });
     }
     if (!response.ok) throw new ApiError('导出失败', response.status);
-    const url = URL.createObjectURL(await response.blob());
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    const blob = await response.blob();
+    // The workspace CSVs have a fixed, single-line header followed by data rows.
+    const empty = checkForEmpty && !(await blob.text()).trimEnd().includes('\n');
+    const url = URL.createObjectURL(blob);
+    try {
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+    return empty ? 'empty' : 'downloaded';
   }
 
   return {
@@ -474,8 +485,8 @@ export function createApiClient(config: ApiClientConfig = {}) {
       request<LocationItem>(`/api/locations/${encodeURIComponent(locationId)}/restore`, { method: 'POST' }),
     getAuditLogs: (params = '') => request<AuditLogResponse>(`/api/audit-logs${params ? `?${params}` : ''}`),
     exportAuditLogs: (params: string) => download(`/api/audit-logs/export?${params}`, 'audit-logs.csv'),
-    exportScanEvents: (params: string) => download(`/api/scan-events/export?${params}`, 'scan-events.csv'),
-    exportMailJobs: (params: string) => download(`/api/mail-jobs/export?${params}`, 'mail-jobs.csv'),
+    exportScanEvents: (params: string) => download(`/api/scan-events/export?${params}`, 'scan-events.csv', true),
+    exportMailJobs: (params: string) => download(`/api/mail-jobs/export?${params}`, 'mail-jobs.csv', true),
     createScanEvent: (
       token: string,
       locationId: string,
