@@ -8,7 +8,7 @@
 
 | 检查 | 通过条件 | 不通过时 |
 |---|---|---|
-| 版本与容器 | 目标 commit 已记录；Backend healthy；当前仍为 mock/false | 停止，不切换 |
+| 版本与容器 | 目标 commit 已记录；Backend healthy；已核对实际生效配置为 mock/false | 停止，不切换 |
 | 代码与数据 | #136–#140 测试通过；迁移已审核；当次数据库备份可读取；待发任务及 Staging 人员地址范围已由操作者核查 | 停止，修复并重查；不在记录中列出邮箱 |
 | 发件身份 | 预定 region 的 Email Domain、DKIM、approved sender 为 ACTIVE；SPF 唯一，DKIM CNAME 与 DMARC 可解析 | 停止，不更换发件身份绕过问题 |
 | IAM | Dynamic Group 仅匹配目标 VM；policy 仅覆盖预定 sender/domain/compartment；容器能取得 Instance Principal；无宽泛邮件管理权限 | 停止，不临时授予 `manage email-family` |

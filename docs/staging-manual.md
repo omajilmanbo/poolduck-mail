@@ -8,12 +8,12 @@
 - 当前默认部署触发：人工批准后，由操作者或 Agent 通过 SSH 执行 Compose 命令链。
 - 目标部署入口：独立、幂等的 Staging 部署脚本；脚本实现前继续使用本文 Runbook。
 - 当前默认数据库：Staging VM 内 PostgreSQL 16。
-- 当前唯一可启动邮件 provider：`mock`（实现类名为 SandboxMailProvider；`sandbox` 不是配置值）。
+- 常规部署与 smoke 使用 `mock`。`sandbox` 不是有效的 selector。
 - 当前禁止事项：真实客户数据、生产数据库快照、生产密钥、真实 Gmail/Workspace/SMTP 凭据、OAuth refresh token。
 
 如果本手册中的任何确认项无法完成，停止部署或 CI/CD 实施，并按“阻塞项报告模板”记录。
 
-ADR-019 的 OCI HTTPS 真实发送操作入口见 [OCI Staging 执行卡](oci-mail-staging-operator-runbook.md)，详细依据见 [准入参考](oci-mail-staging-readiness.md)。本地代码已接通 OCI selector，目标 Staging 已以 mock 部署；真实切换须完成全部预检并另获新窗口批准。本文一般部署与 smoke 继续使用 `MAIL_PROVIDER=mock`。
+2026-10-16 的 Staging OCI HTTPS 单封和回滚仅覆盖当次获批窗口。常规部署和 smoke 前核对目标环境生效的 `MAIL_PROVIDER=mock` 与 `REAL_MAIL_SEND_ENABLED=false`。真实切换须按 [OCI Staging 执行卡](oci-mail-staging-operator-runbook.md) 完成当次预检并另获批准。历史依据见 [准入参考](oci-mail-staging-readiness.md)，排障与重试规则见 [运维手册](operation.md#2-邮件发送失败)。
 
 ## 2. 人工确认步骤
 
@@ -451,7 +451,7 @@ echo | openssl s_client -connect app.poolducktest.com:443 -servername app.pooldu
 - [ ] `app.poolducktest.com` 的 DNS、有效证书和 HTTP→HTTPS 跳转已确认。
 - [ ] Secrets 存放位置已确认，且未写入仓库。
 - [ ] Staging DB 独立，不含真实客户数据。
-- [ ] `MAIL_PROVIDER=mock`；真实 OCI 模式仅按 #145 的另行批准流程。
+- [ ] 常规部署已核对目标环境实际生效的 `MAIL_PROVIDER=mock` 与 `REAL_MAIL_SEND_ENABLED=false`。真实 OCI 窗口须按 [执行卡](oci-mail-staging-operator-runbook.md) 独立批准。
 - [ ] 发布触发方式已人工确认。
 - [ ] Smoke test 已执行或明确记录为实现未完成。
 - [ ] 公网仅可达 Caddy 的 TCP `80`/`443`；`3000`、`3001`、`5432` 不可达，SSH 仍限制为管理员 CIDR。
