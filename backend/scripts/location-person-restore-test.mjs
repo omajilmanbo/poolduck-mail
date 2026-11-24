@@ -3,16 +3,52 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { mock } from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 import argon2 from 'argon2';
 import { Client } from 'pg';
 import request from 'supertest';
 
 assert(['test', 'local'].includes(process.env.APP_ENV), 'Local/CI only');
 const databaseUrl = new URL(process.env.DATABASE_URL);
+assert(['postgres:', 'postgresql:'].includes(databaseUrl.protocol), 'PostgreSQL URL required');
 assert(['localhost', '127.0.0.1'].includes(databaseUrl.hostname), 'Local PostgreSQL only');
+assert(['', '?schema=public'].includes(databaseUrl.search), 'Only the public test schema is supported');
+databaseUrl.search = '';
 databaseUrl.pathname = '/postgres';
 const admin = new Client({ connectionString: databaseUrl.href });
 const database = 'restore_' + randomUUID().replaceAll('-', '');
+
+// Keep the fixture's key-share lock until PostgreSQL has actually observed the restore
+// waiting before the cutoff and measured a time after it. The observer never changes the row.
+async function observeWaitAndRelease(reader, deadline) {
+  const sampleWait = async () => {
+    const { rows: [sample] } = await reader.query(`
+      SELECT extract(epoch FROM ($1::timestamptz - clock_timestamp()))::float8 * 1000 AS remaining_ms,
+        (
+          SELECT DISTINCT pid FROM pg_locks
+          WHERE NOT granted AND pg_backend_pid() = ANY(pg_blocking_pids(pid))
+        ) AS waiter
+    `, [deadline]);
+    return sample;
+  };
+  try {
+    let start = await sampleWait();
+    while (start.waiter === null && start.remaining_ms > 0) {
+      await delay(20);
+      start = await sampleWait();
+    }
+    assert(start.waiter !== null && start.remaining_ms > 0, 'Expected a database lock wait before expiry');
+    await reader.query(`
+      SELECT pg_sleep(greatest(0, extract(epoch FROM ($1::timestamptz - clock_timestamp())))::float8 + 0.025)
+    `, [deadline]);
+    const end = await sampleWait();
+    assert(end.waiter === start.waiter && end.remaining_ms < 0, 'Expected the same request still waiting after expiry');
+    return { beforeMs: Math.round(start.remaining_ms), afterMs: Math.round(-end.remaining_ms) };
+  } finally {
+    await reader.query('ROLLBACK');
+  }
+}
+
 await admin.connect();
 try {
   await admin.query(`CREATE DATABASE "${database}"`);
@@ -121,18 +157,56 @@ try {
         assert.equal((await actor.agent.post(route + '/restore').expect(404)).body.code, missing);
       }
 
+      if (type === 'location') await actor.agent.post(route + '/reactivate').expect(201);
       await actor.agent.post(route + '/delete').expect(201);
-      const expired = await model.update({ where, data: {
-        deletedAt: new Date('2001-01-01T00:00:00Z'), purgeAfter: new Date('2001-01-15T00:00:00Z'),
-      } });
+      const reader = new Client({ connectionString: databaseUrl.href });
+      await reader.connect();
+      let expired;
+      let timing;
+      try {
+        const [window] = await db.$queryRaw`
+          SELECT date_trunc('milliseconds', clock_timestamp()) + interval '2 seconds' AS deadline
+        `;
+        expired = await model.update({ where, data: {
+          deletedAt: new Date(window.deadline.getTime() - 14 * 86_400_000), purgeAfter: window.deadline,
+        } });
+        assert.equal(expired.status, 'pending_delete');
+        assert.equal(expired.deletedFromStatus, type === 'location' ? 'active' : 'inactive');
+        await reader.query('BEGIN');
+        const fixtureRead = type === 'location'
+          ? 'SELECT id FROM locations WHERE tenant_id = $1 AND id = $2 FOR KEY SHARE'
+          : 'SELECT id FROM person_mappings WHERE tenant_id = $1 AND id = $2 FOR KEY SHARE';
+        assert.equal((await reader.query(fixtureRead, [tenant.id, row.id])).rowCount, 1);
+        const [response, observed] = await Promise.all([
+          actor.agent.post(route + '/restore'),
+          observeWaitAndRelease(reader, window.deadline),
+        ]);
+        assert.equal(response.status, 409);
+        assert.equal(response.body.code, 'DELETION_RESTORE_EXPIRED');
+        assert.deepEqual(await model.findUniqueOrThrow({ where }), expired);
+        timing = observed;
+      } finally {
+        await reader.end();
+      }
+      const auditWhere = { tenantId: tenant.id, actorUserId: actor.user.id, resourceType: type, resourceId: code };
+      const expiredAudit = { ...auditWhere, action: type + '.restore_expired' };
+      assert.equal(await db.auditLog.count({ where: { ...expiredAudit, result: 'denied' } }), 1);
+      assert.deepEqual(await db.mailJob.findMany(), [historicalMail]);
+      assert.equal(await db.mailDeliveryAttempt.count(), 0);
+      assert.equal(send.mock.callCount(), 0);
+      console.log(`${type}: waiting ${timing.beforeMs} ms before deadline, lock held ${timing.afterMs} ms past it; `
+        + `409, pending_delete (was ${expired.deletedFromStatus}), one denied audit, one unchanged job, zero attempts/calls.`);
+
+      // A fresh request after expiry receives the same error before the purge worker runs.
       const rejection = await actor.agent.post(route + '/restore').expect(409);
       assert.equal(rejection.body.code, 'DELETION_RESTORE_EXPIRED');
       assert.deepEqual(await model.findUniqueOrThrow({ where }), expired);
-      const auditWhere = { tenantId: tenant.id, actorUserId: actor.user.id, resourceType: type, resourceId: code };
-      const denied = await db.auditLog.findMany({ where: { ...auditWhere, action: type + '.restore_expired' } });
-      assert.equal(denied.length, 1);
-      assert.equal(denied[0].result, 'denied');
-      assert.deepEqual(denied[0].metadataJson, type === 'location' ? {} : { location_id: location.locationCode });
+      const denied = await db.auditLog.findMany({ where: expiredAudit });
+      assert.equal(denied.length, 2);
+      for (const event of denied) {
+        assert.equal(event.result, 'denied');
+        assert.deepEqual(event.metadataJson, type === 'location' ? {} : { location_id: location.locationCode });
+      }
       const successes = await db.auditLog.findMany({ where: { ...auditWhere, action: type + '.restored' } });
       assert.equal(successes.length, type === 'location' ? 3 : 2);
       for (const success of successes) {

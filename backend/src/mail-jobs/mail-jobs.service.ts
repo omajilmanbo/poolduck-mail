@@ -15,6 +15,7 @@ import { PrismaService } from '../prisma.service';
 import { MailProvider, MailProviderSendResult } from './mail-provider.types';
 import { MAIL_PROVIDER_CONFIG_TOKEN, MAIL_PROVIDER_TOKEN, MailProviderConfig } from './mail-provider.config';
 import { createAttemptMessageId } from './mail-message-id';
+import { mailHistoryFailureMessage } from './mail-history-failure';
 import { OciMailRateLimiter } from './oci-mail-rate-limiter';
 import { ExportMailJobsDto, ListMailJobsDto } from './dto';
 import {
@@ -591,7 +592,7 @@ export class MailJobsService {
       status: row.status,
       created_at: row.createdAt.toISOString(),
       sent_at: row.sentAt?.toISOString() ?? null,
-      error_message: this.safeFailureMessage(row.errorMessage),
+      error_message: mailHistoryFailureMessage(row),
       retry_count: row.retryCount,
       scheduled_at: row.scheduledAt?.toISOString() ?? null,
       cancel_until: row.cancelUntil?.toISOString() ?? null,
@@ -639,15 +640,6 @@ export class MailJobsService {
         error_message: errorMessage,
       },
     };
-  }
-
-  private safeFailureMessage(message: string | null): string | null {
-    if (!message) {
-      return null;
-    }
-    return message === 'Sandbox provider simulated failure'
-      ? message
-      : '邮件发送失败';
   }
 
   private encodeCursor(createdAt: Date, id: string) {

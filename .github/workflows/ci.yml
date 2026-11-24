@@ -107,6 +107,9 @@ jobs:
       - name: Install backend
         run: npm --prefix backend ci
 
+      - name: Verify synthetic subscriptions across New Year and reseeding
+        run: npm --prefix backend run test:synthetic-subscriptions
+
       - name: Verify ADR-023 tenant lifecycle migration and guarded rollback
         run: npm --prefix backend run test:tenant-lifecycle-migration
 

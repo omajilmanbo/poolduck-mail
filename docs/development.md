@@ -50,9 +50,14 @@
 本地质量门禁命令：
 
 - Backend：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`
-- ADR-011 地点和人员恢复：将 `APP_ENV` 设为 `test`，`DATABASE_URL` 指向本机 PostgreSQL 16，在 `backend/` 运行 `npm run test:location-person-restore`。脚本创建临时数据库，以固定时刻验证截止边界，并用合成账号验证恢复 API、审计和零邮件副作用，结束后删除临时库。
+- ADR-011 地点和人员恢复：将 `APP_ENV` 设为 `test`，`DATABASE_URL` 指向本机 PostgreSQL 16，在 `backend/` 运行 `npm run test:location-person-restore`。脚本在临时库中用固定时刻验证截止边界，再分别观察一个授权恢复请求在截止前后等待同一把锁，核对拒绝审计、原状态和邮件计数，结束后删除临时库。
+- #139 全局预约验收：准备一次性本机 PG16，设置 `APP_ENV=test`、`DATABASE_URL` 指向其回环地址，账号须可创建数据库。在 `backend/` 执行 `npm run test:oci-pacing-pg16`。脚本迁移并清理自己的随机数据库，邮件调用只进入内存 fake。[断言和结果](testing/local-oci-pacing-2026-11-19.md)
+- #209 平台地点调额审计：[初始化一次性 PostgreSQL 16 夹具并执行 HTTP 与 SQL 对账](#8-平台地点调额审计本机验收)。
 - ADR-023 租户生命周期迁移：在 `APP_ENV=local` 或 `test`、`DATABASE_URL` 指向本机 PostgreSQL 时，
   于 `backend/` 执行 `npm run test:tenant-lifecycle-migration`；脚本仅创建并删除随机命名的合成测试数据库。
+- 合成订阅：在 `APP_ENV=local` 或 `test`、`DATABASE_URL` 指向本机 PostgreSQL 时，于 `backend/` 执行
+  `npm run test:synthetic-subscriptions`。连接字符串仅接受本机回环地址和可选的 `?schema=public`。
+  脚本在随机命名的临时数据库中运行三个种子脚本，验证旧记录续期、跨年与重复执行，完成后删除该数据库。
 - #160 平台删除事务：在相同本地环境下，于 `backend/` 执行 `npm run test:platform-delete-transaction`；
   脚本只在随机命名的临时数据库中验证并发重放、订阅更新竞态与失败回滚，完成后删除该数据库。
 - #161 平台恢复事务：在相同本地环境下，于 `backend/` 执行 `npm run test:platform-restore-transaction`；
@@ -129,10 +134,54 @@
 - 合成 seed：仅 Local/CI/Staging 可显式设置 `PLATFORM_SYNTHETIC_SEED=true`、
   `.example.local` 邮箱和运行时测试密码，再执行 `npm.cmd run platform:seed`
 - Production 会拒绝合成 seed；CLI 与 seed 均不输出邮箱、密码、token 或哈希
-- UI：`http://localhost:3000/platform/login`；租户登录仍为 `http://localhost:3000/`
+- UI：`http://localhost:3000/platform/login`；租户登录仍为 `http://localhost:3000/`。
+- 本地浏览器跨端口访问时，前端页面来源须匹配后端的 `CORS_ORIGIN`（默认
+  `http://localhost:3000`），前端的 `NEXT_PUBLIC_API_BASE_URL` 默认指向 `http://localhost:3001`。
+  使用 `APP_ENV=local`、`MAIL_PROVIDER=mock` 和 `REAL_MAIL_SEND_ENABLED=false` 启动后，
+  控制台应显示“模拟发信（mock）”和“当前环境未开放租户删除”。
 
 聚焦验证：
 
 - Backend：`npm.cmd test -- test/platform.spec.ts test/auth.spec.ts test/management.spec.ts`
 - Frontend：`npm.cmd test -- --run test/platform.test.tsx`
-- E2E：本地前后端可用后执行 `npm.cmd run test:e2e -- platform-control-plane.spec.ts`
+- UI E2E（模拟 API）：Frontend 可用后执行 `npm.cmd run test:e2e -- platform-control-plane.spec.ts`。
+- 真实跨端口读取按[验证指南](testing.md#412-issue-195-本地跨端口平台状态)检查。
+
+## 8. 平台地点调额审计本机验收
+
+在仓库根目录打开 PowerShell。将 `$quotaSource` 设为与当前分支数据库结构相同的本机合成 PG16
+容器名，例如按第 2 节初始化的本地 Compose PostgreSQL。准备过程仅从源读取结构，跳过表数据、
+所有权、权限和 Prisma 迁移历史。目标是名称为 `poolduck_quota_209` 的一次性空库。
+
+```powershell
+$quotaSource = '替换为本机合成 PostgreSQL 容器名'
+$quotaSchema = @(docker exec $quotaSource sh -c 'exec pg_dump --schema-only --no-owner --no-privileges --exclude-table=public._prisma_migrations --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"')
+if ($LASTEXITCODE -ne 0 -or !$quotaSchema) { throw '无法读取本机合成库结构' }
+
+docker run --detach --rm --name poolduck-quota-209-pg --publish 127.0.0.1::5432 --env POSTGRES_USER=quota_owner --env POSTGRES_PASSWORD=synthetic-quota-owner --env POSTGRES_DB=poolduck_quota_209 --tmpfs /var/lib/postgresql/data:rw postgres:16
+if ($LASTEXITCODE -ne 0) { throw '一次性 PostgreSQL 容器启动失败' }
+```
+
+等待下一条命令显示 `accepting connections`，再装载结构。
+
+```powershell
+docker exec poolduck-quota-209-pg pg_isready -h 127.0.0.1 -U quota_owner -d poolduck_quota_209
+$quotaSchema | docker exec -i poolduck-quota-209-pg psql -X --single-transaction -v ON_ERROR_STOP=1 -U quota_owner -d poolduck_quota_209
+if ($LASTEXITCODE -ne 0) { throw '测试库结构装载失败' }
+$quotaAddress = docker port poolduck-quota-209-pg 5432/tcp
+if ($LASTEXITCODE -ne 0 -or $quotaAddress -notmatch '^127\.0\.0\.1:\d+$') { throw '未取得本机回环端口' }
+$env:DATABASE_URL = "postgresql://quota_owner:synthetic-quota-owner@$quotaAddress/poolduck_quota_209"
+$env:APP_ENV = 'test'
+$env:NODE_ENV = 'test'
+$env:MAIL_PROVIDER = 'mock'
+$env:REAL_MAIL_SEND_ENABLED = 'false'
+Set-Location backend
+npm.cmd run build
+if ($LASTEXITCODE -ne 0) { throw 'Backend 构建失败' }
+node scripts/platform-location-limit-audit-test.mjs
+```
+
+连接 URL 必须显式指定 `127.0.0.1` 和发布端口，且没有查询串或片段。脚本创建合成管理员及测试角色，
+通过调额 HTTP 接口按请求标识核对审计，再撤销该角色的审计 INSERT 权限复测两个原 409。恢复权限后
+核对成功调额的唯一审计。结束后执行 `docker stop poolduck-quota-209-pg` 回收容器和临时数据库。
+用 `npm test -- platform-location-limit-audit-config.spec.ts` 单独验证连接护栏，测试替换连接方法且不打开网络连接。
