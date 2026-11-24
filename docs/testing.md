@@ -1,5 +1,31 @@
 # 测试策略（MVP）
 
+[业务要求与候选验证矩阵](testing/business-requirements-matrix.md)逐项列出规则来源、实现、CI 实际断言、独立补验和剩余缺口。截至 2026-11-24 以 `main@807ead7` 核对合并状态。历史 CI、分支与本机测试保留各自版本和环境，实际 Staging 的待验项见 [O07](testing/business-requirements-matrix.md#O07) 和 [O08](testing/business-requirements-matrix.md#O08)。
+
+候选 `a052518` 的订阅变化、首次领取与取消计数见[订阅与取消补验](testing/candidate-a08-s10-subscription-cancellation-2026-11-20.md)。四图解码、模拟键入、实际提交范围和待决 D16 见[扫码输入补验](testing/candidate-scan-input-2026-11-20.md)。
+
+同一旧库在三个版本的正常登录和 21 项迁移见[旧租户与登录身份升级](testing/candidate-a02-a03-legacy-login-upgrade-2026-11-20.md)。本机 Caddy 的临时信任链、同源登录与目标环境待验项见 [#185 的固定 HTTPS 报告](https://github.com/omajilmanbo/poolduck-mail/blob/c379d35333e5a9750e18c320b9485d22f0b3cee3/docs/testing/candidate-local-https-2026-11-20.md)。
+
+人员与所属地点的六组删除、恢复及清理场景见 [A12 实测](testing/candidate-a12-person-location-deletion-2026-11-20.md)。Staging 部署脚本的分支演练和固定候选的合成种子到期时间见 [O07／O08 分支证据](testing/business-requirements-matrix.md#deployment-and-seed-branches)。
+
+候选的人员码、历史分页及首发撤回验收见[旧人员码回填与双进程创建](testing/candidate-a11-person-code-backfill-2026-11-20.md)、[翻页连续性与筛选重置](testing/candidate-scan-history-continuity-2026-11-20.md)和[无旧镜像的首发撤回](https://github.com/omajilmanbo/poolduck-mail/blob/8b2af737a74c20474a192091f696e87f360e9c3b/docs/testing/first-release-withdrawal-2026-11-20.md)。两个未合并 head 的组合验收见[联合部署与跨年种子报告](testing/joint-deployment-seed-acceptance-2026-11-20.md)。
+
+候选的[单标签页值守续期](testing/candidate-a05-session-renewal-2026-11-20.md)、[满额地点与降额先提交](testing/candidate-platform-location-quota-2026-11-20.md#full-quota-lower-first)和 [#85 应用侧验收](testing/candidate-issue85-application-acceptance-2026-11-20.md)分别记录采样范围及剩余缺口。恢复库已有到期任务时的暂停首启见 [#185 固定手册](https://github.com/omajilmanbo/poolduck-mail/blob/3c0c9e585b909f5822d7d5d3b9f2f18b76ccaa3f/docs/first-production-deployment.md#2-先备份再迁移与启动)。
+
+[六类未映射扫码的数据库验收](testing/candidate-s04-unmapped-scan-rejection-2026-11-20.md)逐次核对拒绝与零写入。[#217／#218 的版本对照](testing/candidate-issue85-application-acceptance-2026-11-20.md#safe-failure-branch)记录安全失败原因的展示。[发布分支与合成提交的 CI 对照](testing/release-ci-185-189-2026-11-20.md)记录原远端检查与合成测试结果。 [多节点偏钟下的取消倒计时](testing/candidate-s11-multi-node-countdown-2026-11-20.md)记录基线的提示偏差及修复分支的数据库时间结果。 #185 当前提交的通知草稿见[首发说明与通知](https://github.com/omajilmanbo/poolduck-mail/blob/4459ebb06f1e5a790ed8d729739a4cf7facdf93f/docs/first-production-deployment.md#31-首发发布说明与通知草稿)。 [H01 旧记录兼容验收](testing/candidate-legacy-scan-history-2026-11-20.md)记录迁移前后的名称和已删地点读取。 [损坏归档中止与恢复](testing/restore-failure-rehearsal-2026-11-20.md)记录校验门禁、事务回滚和换新实例验证。
+
+[Chrome 夏令时单日筛选](testing/candidate-scan-history-dst-2026-11-20.md)记录固定候选的洛杉矶切换日。[22 PR 本机组合验收](testing/local-22-pr-validation-2026-11-20.md)记录两版组合的慢读取、浏览器、部署与恢复结果。
+
+[Worker 进程中断](testing/candidate-m05-worker-restart-2026-11-20.md)记录两种调用边界和实际恢复。[平台审计旧游标空页](testing/candidate-platform-audit-p06-cleared-page-2026-11-20.md)记录清理后的浏览器提示。[加密归档独立取钥](testing/encrypted-restore-rehearsal-2026-11-20.md)记录失败停止与旧版本恢复。
+
+[双设备短时断网与透明续期](testing/candidate-a05-session-renewal-2026-11-20.md#two-device-offline)记录正式候选恢复联网后由用户刷新触发的结果。[23 PR 本机冻结组合关键 E2E](testing/local-23-pr-e2e-2026-11-20.md)记录独立构建、两套迁移和两种模拟投递结果。
+
+[地点授权、订阅指引与历史补验](testing/candidate-workbench-ui-2026-11-20.md)记录固定候选的 16 地点弹窗、订阅联系提示缺口及数据库停启前后的授权历史。[24 PR 本机冻结组合](testing/candidate-workbench-ui-2026-11-20.md#local-24-pr-combination)记录两组关键 E2E 和邮箱表单补验。
+
+[恢复写入截止复核](testing/candidate-a12-person-location-deletion-2026-11-20.md#restore-write-deadline)记录正式候选缺口、独立修复 CI 与 25 PR 本机后端验证。[原始镜像构建与冒烟](testing/candidate-workbench-ui-2026-11-20.md#original-dockerfile-smoke)记录 24 PR 组合的无缓存构建、实际镜像启动及当时的运行时支持状态。
+
+[O06 API 分钟观测与 26 PR 本机验收](testing/local-26-pr-api-metrics-2026-11-20.md)记录独立修复分支的阈值测试、冻结组合的 PostgreSQL 窗口对账及两种 mock 浏览器结果。
+
 ## 1. 测试目标
 
 - 覆盖核心业务闭环：登录 → 扫码事件 → 邮件任务
