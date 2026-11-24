@@ -33,9 +33,12 @@ Poolduck Mail 是面向企业客户的 Web SaaS。用户使用扫码枪提交条
 
 ## 当前产品状态
 
-MVP 核心业务链路已完成本地和 Staging 冒烟验证；当前实现还包含自动邮件任务处理、地点/人员停用与
-14 天可恢复删除、operator 地点权限、租户内审计与历史导出，以及 HttpOnly Cookie 会话。
-OCI Email Delivery 已在 Staging 完成一次受控单封验证，随后恢复 mock。生产发信、备份恢复、监控与正式对外发布仍需独立验收。
+MVP 核心业务链路在 2026-11-19 至 11-20 以历史候选 `a052518` 完成本机合成验证。2026-10-20，
+OCI Staging 当时部署的 `158eeea` 通过 mock 冒烟，覆盖扫码、取消和再次扫码后的模拟发送。[本机验收](docs/testing/business-requirements-matrix.md) · [Staging 冒烟记录](docs/testing/staging-smoke-2026-10-20-issue168.md)
+
+当前实现包含自动邮件任务处理、地点/人员停用与 14 天可恢复删除、operator 地点权限、租户内审计与历史导出，以及 HttpOnly Cookie 会话。
+
+2026-10-16，OCI Staging 在获批窗口内以 `45fbaf9` 为起点完成一次 OCI Email Delivery 受控单封验证，确认收件后当次恢复 mock 并关闭真实发送。截至 2026-11-24，实际 Staging 的运行版本、发信模式及核心冒烟结果仍待核对。生产发信、备份恢复、监控与正式对外发布另行验收。[受控单封记录](docs/testing/staging-oci-mail-single-send-2026-10-16.md) · [Staging 准入说明](docs/oci-mail-staging-readiness.md)
 
 ## MVP 边界
 
