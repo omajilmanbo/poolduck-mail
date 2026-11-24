@@ -81,7 +81,12 @@ describe('management pages', () => {
       expect.stringContaining('/api/locations'),
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ location_name: 'Tokyo' }) }),
     ));
-    fireEvent.click(screen.getByRole('button', { name: '重新启用' }));
+    const reactivate = await waitFor(() => {
+      const button = screen.getByRole<HTMLButtonElement>('button', { name: '重新启用' });
+      expect(button.disabled).toBe(false);
+      return button;
+    });
+    fireEvent.click(reactivate);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/locations/A1B2C3D4/reactivate'),
       expect.objectContaining({ method: 'POST' }),

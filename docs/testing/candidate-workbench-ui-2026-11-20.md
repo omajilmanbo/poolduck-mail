@@ -1,6 +1,6 @@
 # 候选地点授权、订阅提示与历史读取补验
 
-2026-11-20（日本时间），正式候选为 `main@a05251897d7fc11d96114606bcaa1807dd96af55`。各项合成验收注明对应的正式候选、独立修复分支或本机冻结组合。
+2026-11-20（日本时间），当时的正式候选为 `main@a05251897d7fc11d96114606bcaa1807dd96af55`。各项合成验收注明对应的正式候选、独立修复分支或本机冻结组合。
 
 <a id="location-dialog"></a>
 
@@ -17,9 +17,11 @@
 
 ## 订阅过期或暂停后的联系指引
 
-正式候选显示扫码与发送入口禁用，缺少功能需求要求的联系指引。[功能需求 §3.3.9](https://github.com/omajilmanbo/poolduck-mail/blob/a05251897d7fc11d96114606bcaa1807dd96af55/docs/requirements.md#L210-L214) · [A08](business-requirements-matrix.md#A08) · [缺陷 #222](https://github.com/omajilmanbo/poolduck-mail/issues/222)
+历史候选 `a052518` 显示扫码与发送入口禁用，缺少功能需求要求的联系指引。[功能需求 §3.3.9](https://github.com/omajilmanbo/poolduck-mail/blob/a05251897d7fc11d96114606bcaa1807dd96af55/docs/requirements.md#L210-L214) · [A08](business-requirements-matrix.md#A08) · [缺陷 #222](https://github.com/omajilmanbo/poolduck-mail/issues/222)
 
-未合并的 [PR #223](https://github.com/omajilmanbo/poolduck-mail/pull/223) 在提交 `6138421` 为过期与暂停分别显示原因，并指引操作员联系租户管理员、租户管理员联系平台运营。该提交的 GitHub CI 五项通过。PR 正文另记录独立本机 Chrome 的 mock 成功组为 9/10，暂停提示、授权历史和跨租户拒绝通过。人员编辑的姓名更新等待超时已在正式基线用受控人员详情延迟复现。[修复分支 CI](https://github.com/omajilmanbo/poolduck-mail/actions/runs/44649707804) · [人员编辑 #201](https://github.com/omajilmanbo/poolduck-mail/issues/201)
+实测时的独立 [PR #223](https://github.com/omajilmanbo/poolduck-mail/pull/223) 在提交 `6138421` 为过期与暂停分别显示原因，并指引操作员联系租户管理员、租户管理员联系平台运营。该提交的 GitHub CI 五项通过。PR 正文另记录独立本机 Chrome 的 mock 成功组为 9/10，暂停提示、授权历史和跨租户拒绝通过。人员编辑的姓名更新等待超时已在当时基线用受控人员详情延迟复现。[修复分支 CI](https://github.com/omajilmanbo/poolduck-mail/actions/runs/44649707804) · [人员编辑 #201](https://github.com/omajilmanbo/poolduck-mail/issues/201)
+
+2026-11-24，#223 已合入 [`4f2c4d5`](https://github.com/omajilmanbo/poolduck-mail/commit/4f2c4d513d004285cd29b030c4854ea5d8397f50)。[A08 记录合并后规则](business-requirements-matrix.md#A08)。
 
 高权限账号定期复核是管理员的人工职责，订阅到期前的通知由平台运营发给业务负责人。商业订阅概览与产品内续订提醒按 #83 延后，自动续订同属 ADR-009 延期范围。[管理员手册第 62–68 行](https://github.com/omajilmanbo/poolduck-mail/blob/a05251897d7fc11d96114606bcaa1807dd96af55/docs/admin-guide.md#L62-L68) · [#83](https://github.com/omajilmanbo/poolduck-mail/issues/83) · [ADR-009](../decisions/ADR-009-defer-commercial-billing-from-mvp.md)
 
@@ -40,7 +42,7 @@
 
 ## 24 PR 本机冻结组合
 
-本节对应本机合成提交 `b1aca63c2cbd0a3477b4ebcded2afb58dd5b163e`。正式候选仍为 `main@a052518`，[#223 的 GitHub CI](https://github.com/omajilmanbo/poolduck-mail/actions/runs/44649707804)对应独立提交 `6138421`。
+本节对应本机合成提交 `b1aca63c2cbd0a3477b4ebcded2afb58dd5b163e`。比较基线为当时的 `main@a052518`，[#223 的 GitHub CI](https://github.com/omajilmanbo/poolduck-mail/actions/runs/44649707804)对应独立提交 `6138421`。
 
 - 前端单测 83/83 通过，lint、typecheck 与帮助同步检查通过。
 - 两组 mock 模式各用一套 PostgreSQL 16.16，各应用 21 项迁移。Playwright 关键用例各 17/17 通过，退出码均为 0，无失败、跳过或重试后通过。通过项包括订阅暂停、授权历史、退出重登及先前超时的人员编辑。
@@ -63,4 +65,4 @@ docker compose exec backend npm run local:seed
 docker compose exec backend npm run smoke:api
 ```
 
-现行运行时 Node.js 20 的上游支持已于 2026-04-30 结束。首次生产部署采用的受支持主版本仍待决定。[Node.js 官方发布计划](https://github.com/nodejs/Release/blob/main/schedule.json#L109-L115) · [运行时决定 #225](https://github.com/omajilmanbo/poolduck-mail/issues/225)
+这次原始镜像仍为 Node.js 20，其上游支持已于 2026-04-30 结束。2026-11-24 合入的 ADR-030 采用 Node.js 24 LTS，#230 的工件实施与实际 Staging 验收分开记录。[官方发布计划](https://github.com/nodejs/Release/blob/main/schedule.json#L109-L115) · [ADR-030](../decisions/ADR-030-node-runtime-major.md) · [Staging 证据](business-requirements-matrix.md#O07)

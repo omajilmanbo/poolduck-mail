@@ -55,7 +55,7 @@ Windows，Docker Desktop Linux 引擎 29.7.2，容器 Node 20.20.2、PostgreSQL 
 | 浏览器路由仅对下一次请求返回 503 | 下载 0 个文件，出现 1 次未处理的 Promise 拒绝“导出失败” | 下载 0 个文件，出现 1 次未处理的 Promise 拒绝“导出失败” |
 | 503 后直接再次点击同一按钮 | 按钮仍可用，HTTP 200，恢复下载 1 行表头、0 行数据 | 按钮仍可用，HTTP 200，恢复下载 1 行表头、0 行数据 |
 
-空结果和 503 后，页面可见文案及 `alert`、`status` 均与点击前相同。两种成功下载均有 UTF-8 BOM。[#190](https://github.com/omajilmanbo/poolduck-mail/issues/190)独立跟踪导出空结果及失败缺少反馈。核对时，[PR #191](https://github.com/omajilmanbo/poolduck-mail/pull/191)的[五项 CI](https://github.com/omajilmanbo/poolduck-mail/actions/runs/44512950595)通过，修复尚未合并。候选 `a052518` 上的表现仍以上表为准。D09 单独处理按钮的导出范围。
+空结果和 503 后，页面可见文案及 `alert`、`status` 均与点击前相同。两种成功下载均有 UTF-8 BOM。[#190](https://github.com/omajilmanbo/poolduck-mail/issues/190)独立跟踪导出空结果及失败缺少反馈。历史补验时，[PR #191](https://github.com/omajilmanbo/poolduck-mail/pull/191)的[五项 CI](https://github.com/omajilmanbo/poolduck-mail/actions/runs/44512950595)通过，当时修复尚未合并。2026-11-24，#191 已合入 [`ba70c9d`](https://github.com/omajilmanbo/poolduck-mail/commit/ba70c9d9514e6b6e58a05b5f09daf3569b7c149f)，历史表仍对应 `a052518`。D09 单独处理按钮的导出范围。
 
 当次仅运行仓库的基础种子和临时浏览器驱动 `node history-lab/check-feedback.cjs`。该驱动与临时 Compose 配置均未提交。后台 Chrome、Node 及 Playwright 的版本同前，脚本退出 0，耗时约 1.7 秒。扫码、邮件任务和发送尝试均为 0。清理后确认实验容器、网络和数据库卷均无残留。
 
