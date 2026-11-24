@@ -105,7 +105,7 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #225 | 工程改进 | Node.js 主版本与 Staging 工件晋级 | 24 与 22 均通过[本地复验](testing/issue-225-node-runtime-2026-11-20.md)，实施与实际 Staging 验收分别跟踪 | 负责人于 2026-11-24 批准 D20 A，采用 Node 24。[ADR-030](decisions/ADR-030-node-runtime-major.md) |
 | #170 | 工程改进 | 为 ADR-024 的一年记录销毁建立到期索引、外键矩阵和安全迁移 | 本地实现；合成数据库迁移验收待审核 | 是，涉及数据迁移 |
 | #176 | 运维 | 完成 ADR-024 的销毁发布验收、告警与文档对齐 | 文档、计数工具与合成验收矩阵本地准备；PostgreSQL 端到端验收待执行 | 是，生产启用须人工审核 |
-| #116 | 运维 | 测量 OCI Always Free 单机的最大可持续并发扫码发信容量，并检讨低成本性能监控方案 | 2026-09-24 steady/burst/mixed-success 已完成：端到端上限 20 并发、约 19 次有效扫码/秒；provider-failure 与常驻告警落地待后续 Issue | 是，告警接收方、worker 扩容方案与 provider-failure 窗口仍需人工批准 |
+| #116 | 运维 | Staging 单机扫码容量与低成本监控 | 9 月 24 日 mock/success 实测 20 并发、19.211 次有效扫码/秒；[九项验收复核](testing/staging-capacity-result-2026-09-24.md)记录历史 I/O、负载机余量和次要瓶颈归因缺口，TSV 窗口汇总已用合成样本验证 | 是，provider-failure 及补测窗口、容量告警接收人/值班和新增费用待批准 |
 | #141 | 基础设施 | 为 Staging Compute 配置最小范围的 Instance Principal 发信权限 | 仓库已复核最小授权声明；历史预检已验证容器身份，#145 受控单封已验证当次正向 SubmitEmail；非目标身份和 sender 的拒绝效果待验证，凭据边界仅完成相关源码复核。保持开放。见 [准入清单第 2 节](oci-mail-staging-readiness.md) | 是，后续真实发信窗口独立批准 |
 | #142 | 运维 | 建立 OCI Email Domain 投递日志、指标、告警和人工对账路径 | 90 天日志、九条告警与订阅已应用，合成告警已送达，受控单封出现 accept/relay；合并与验收待 PR | 是，日志与告警责任已确认 |
 | #143 | 工程改进 | 对齐 OCI provider 的环境、部署、运维和测试文档 | 执行卡及详细参考已人工审阅，单封与回滚验证完成；本地修订待 PR | 是，后续真实窗口另批 |
