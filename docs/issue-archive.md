@@ -146,3 +146,9 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 ## 6. 历史编号说明
 
 ADR-004 的 Follow-up 保留了 ADR 编写时的旧编号映射。后续实际拆分为 #20 CI、#21 数据库迁移、#26 sandbox mail provider、#33 认证与租户上下文。当前 Scope 始终以 GitHub Issue 为准。
+
+## 7. 缺陷
+
+| Issue | 摘要 | 阶段备注 | 人工确认 |
+|---|---|---|---|
+| [#222](https://github.com/omajilmanbo/poolduck-mail/issues/222) | 在工作台的订阅过期或暂停提示中补充联系管理员的指引 | 实时状态见 GitHub | 合并须经独立审查 |
