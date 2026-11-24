@@ -1,12 +1,13 @@
 FROM node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS base
 
-FROM base AS deps
-
 WORKDIR /app
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates openssl \
+  && openssl version \
   && rm -rf /var/lib/apt/lists/*
+
+FROM base AS deps
 
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
@@ -22,11 +23,6 @@ RUN npm run build
 FROM base AS runtime
 
 ENV NODE_ENV=production
-WORKDIR /app
-
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates openssl \
-  && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules

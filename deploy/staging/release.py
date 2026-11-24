@@ -37,6 +37,10 @@ def check_image(image, service, revision, node, platform):
                     "--read-only", "--entrypoint=node", image, "--version")
     if actual != "v" + node:
         raise ValueError(f"{service}: expected Node {node}, got {actual}")
+    if service == "backend":
+        # Prisma migrations need the OpenSSL shared libraries in the unpacked image.
+        output("docker", "run", "--rm", "--pull=never", "--network=none",
+               "--read-only", "--entrypoint=openssl", image, "version")
 
 
 def prepare(folder, revision, node, platform):
