@@ -180,6 +180,7 @@ export default function HomePage() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [loginFormReady, setLoginFormReady] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [license, setLicense] = useState<LicenseCheck | null>(null);
   const [locations, setLocations] = useState<LocationItem[]>([]);
@@ -309,6 +310,7 @@ export default function HomePage() {
   );
 
   useEffect(() => {
+    setLoginFormReady(true);
     api.getMe().then((response) => {
       const session = 'cookie-session';
       setToken(session);
@@ -514,6 +516,7 @@ export default function HomePage() {
                 tenant_code
                 <input
                   data-testid="tenant-code-input"
+                  disabled={!loginFormReady}
                   name="organization"
                   autoCapitalize="characters"
                   autoComplete="organization"
@@ -533,6 +536,7 @@ export default function HomePage() {
                 用户名/邮箱
                 <input
                   data-testid="identifier-input"
+                  disabled={!loginFormReady}
                   type="text"
                   name="username"
                   autoComplete="username"
@@ -547,6 +551,7 @@ export default function HomePage() {
                 password
                 <input
                   data-testid="password-input"
+                  disabled={!loginFormReady}
                   type="password"
                   autoComplete="current-password"
                   value={password}
@@ -565,7 +570,7 @@ export default function HomePage() {
               <button
                 data-testid="login-submit"
                 type="submit"
-                disabled={loginLoading}
+                disabled={!loginFormReady || loginLoading}
                 className="w-full rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 {loginLoading ? '登录中' : '进入工作台'}
