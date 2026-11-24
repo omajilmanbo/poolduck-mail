@@ -19,6 +19,7 @@ async function login(page: Page, input: {
 }
 
 test('MVP GUI: login, rejected/mapped scan, history refresh, and sandbox result', async ({ page }) => {
+  test.setTimeout(60_000);
   await login(page, {
     tenantCode: activeTenantCode,
     identifier: 'local-operator',
@@ -65,6 +66,17 @@ test('MVP GUI: login, rejected/mapped scan, history refresh, and sandbox result'
     .filter({ hasText: '01K0ABC10001' })
     .first();
   await expect(persistedHistoryRow).toContainText('Local Recipient');
+
+  // The first job has passed its grace period. The same code now creates a second event.
+  await page.getByTestId('scan-code-input').fill('E01K0ABC10001');
+  await page.getByTestId('scan-submit').click();
+  await expect(page.getByRole('status')).toContainText('本次已记录为进入');
+  await expect(persistedHistoryRow).toContainText('连续进入，可能漏扫或选错动作码。');
+  await persistedHistoryRow.getByText('前一次有效扫码').click();
+  await expect(persistedHistoryRow.locator('time')).toBeVisible();
+  await persistedHistoryRow.getByTestId('scan-cancel').click();
+  await expect(persistedHistoryRow.getByTestId('mail-status')).toHaveText('已取消');
+  await expect(persistedHistoryRow.getByText('前一次有效扫码')).toHaveCount(0);
 });
 
 test('history API does not allow a tenant token to select another tenant location', async ({ request }) => {
@@ -110,6 +122,7 @@ test('ADR-017 cancellation survives refresh/relogin and treats a network failure
   await page.reload();
   await expect(page.getByTestId('mail-status').first()).toHaveText('已取消');
   await page.getByRole('button', { name: '退出' }).click();
+  await expect(page.getByTestId('tenant-code-input')).toBeVisible();
   await login(page, {
     tenantCode: activeTenantCode,
     identifier: 'local-operator',
@@ -125,13 +138,17 @@ test('ADR-017 cancellation survives refresh/relogin and treats a network failure
 });
 
 test('MVP GUI blocks scan entry for suspended subscriptions', async ({ page }) => {
+  const historyResponse = page.waitForResponse((response) =>
+    response.url().includes('/api/scan-events?') && response.request().method() === 'GET');
   await login(page, {
     tenantCode: suspendedTenantCode,
     identifier: 'suspended-operator',
   });
 
   await expect(page.getByTestId('license-status')).toHaveText('suspended');
-  await expect(page.getByText('订阅状态不可发送，扫码与发送入口已禁用。')).toBeVisible();
+  expect((await historyResponse).ok()).toBe(true);
+  await expect(page.getByRole('table', { name: '扫码记录' })).toBeVisible();
+  await expect(page.getByText('订阅已暂停，扫码与发送入口已禁用。请联系租户管理员处理订阅状态。')).toBeVisible();
   await expect(page.getByTestId('scan-code-input')).toBeDisabled();
   await expect(page.getByTestId('scan-submit')).toBeDisabled();
 });
@@ -160,10 +177,17 @@ test('operator can create, edit, deactivate and reactivate a person mapping', as
   expect((await downloadPromise).suggestedFilename()).toBe(`${personCode}-action-codes.zip`);
   await codeDialog.getByRole('button', { name: '关闭' }).click();
 
+  const nameInput = page.getByLabel('姓名');
   await row.getByRole('button', { name: '编辑' }).click();
-  await page.getByLabel('姓名').fill(updatedPersonName);
+  await expect(nameInput).toHaveValue(personName);
+  await nameInput.fill(updatedPersonName);
   await page.getByRole('button', { name: '保存' }).click();
-  await expect(page.getByText(updatedPersonName)).toBeVisible();
+  const updatedNameCell = page
+    .getByRole('row').filter({ hasText: personCode })
+    .getByRole('cell', { name: updatedPersonName, exact: true });
+  await expect(updatedNameCell).toBeVisible();
+  await page.reload();
+  await expect(updatedNameCell).toBeVisible();
 
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('row').filter({ hasText: personCode }).getByRole('button', { name: '停用' }).click();
@@ -309,4 +333,16 @@ test('tenant_manager assigns and revokes operator location access from user mana
   });
   await expect(page.getByTestId('location-select')).toContainText('Local Office');
   await expect(page.getByTestId('location-select')).not.toContainText('Local School');
+});
+
+test.describe('initial tenant login form', () => {
+  test.use({ javaScriptEnabled: false });
+
+  test('inputs and submit are disabled before the browser attaches input handlers', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByTestId('tenant-code-input')).toBeDisabled();
+    await expect(page.getByTestId('identifier-input')).toBeDisabled();
+    await expect(page.getByTestId('password-input')).toBeDisabled();
+    await expect(page.getByTestId('login-submit')).toBeDisabled();
+  });
 });

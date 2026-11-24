@@ -12,7 +12,7 @@
 - npm 10+
 - Docker / Docker Compose（Local PostgreSQL 16 与本地应用容器组）
 - PostgreSQL 16（Local 由 `docker-compose.yml` 提供；Staging/Production 数据库与 secrets 策略仍需按对应 Issue 明确）
-- MVP 阶段邮件 provider 使用 sandbox/mock（不接入真实邮件发送）
+- Local 与常规 Staging 部署使用 mock。Staging OCI HTTPS 真实发信仅用于独立批准的窗口。
 
 ## 3. 环境变量
 
@@ -38,7 +38,7 @@
   `AUTH_LOGIN_MAX_PER_COMPOSITE`
 - `MAIL_PROVIDER`
 - `REAL_MAIL_SEND_ENABLED` / `OCI_EMAIL_REGION` / `OCI_EMAIL_SENDER_COMPARTMENT_ID` / `OCI_EMAIL_FROM_ADDRESS` /
-  `OCI_EMAIL_MESSAGE_ID_DOMAIN`（Staging 已预置非秘密值；真实模式仍须独立启用）
+  `OCI_EMAIL_MESSAGE_ID_DOMAIN`（Staging 历史预检已验证四项非秘密值；真实模式须独立启用）
 - `LOG_LEVEL`
 - `CORS_ORIGIN`
 - `TENANT_CONTEXT_ENFORCED`
@@ -46,12 +46,16 @@
 当前 `MAIL_PROVIDER` 只接受 `mock` 与 `oci_email_delivery_https`。默认 `mock`；未知值启动失败。
 OCI 模式要求 `APP_ENV=staging`、`REAL_MAIL_SEND_ENABLED=true` 及有效的 region/approved sender compartment/From/Message-ID domain；
 这些非秘密配置只放在容器运行环境，不落数据库。Local、CI、Production 不可启用。#137 已实现 OCI adapter 与提交标识持久化，
-现已实现 #139 阶段性全局 20 次/秒应用节流。OCI Limits API 返回 `18000/分钟`、`50000/24 小时`、单封 `2008192` 字节，但 compartment 有效 quota 未返回数值，#139 保持开放。本地代码已接通真实 selector；2026-10-14 Staging Backend 已预置四项 OCI 非秘密参数并重建验证，运行中仍为 `MAIL_PROVIDER=mock`、`REAL_MAIL_SEND_ENABLED=false`，健康检查返回 200。必须完成 #141 权限、备份与回滚预检并另获新窗口批准后才可切换。该应用上限不代表 OCI tenancy 可持续配额，且没有应用侧日上限。#138 结果分类已在本地实现。ADR-019 已取消独立收件地址清单；
+现已实现 #139 阶段性全局 20 次/秒应用节流。OCI Limits API 返回 `18000/分钟`、`50000/24 小时`、单封 `2008192` 字节，但 compartment 有效 quota 未返回数值，#139 保持开放。本地代码已接通真实 selector；2026-10-14 预置四项 OCI 非秘密参数并重建 Backend，当时实测为 `MAIL_PROVIDER=mock`、`REAL_MAIL_SEND_ENABLED=false`，健康检查返回 200。真实切换须完成当次身份/IAM、备份及回滚预检，并取得独立窗口批准。该应用上限不代表 OCI tenancy 可持续配额，且没有应用侧日上限。#138 结果分类已在本地实现。ADR-019 已取消独立收件地址清单；
 收件人取自按 tenant/location/person 映射生成的不可变任务快照。新增人员邮箱仅影响后续新任务，
 已有任务不会追改。真实启用前须人工核查 Staging 人员邮箱仅含经同意的受控测试地址；
 后续人员数据维护同样须遵守此边界，不得导入真实客户地址。
 
-#141–#143 的 OCI IAM、Email Domain 日志/告警及受控单封准备见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。发件域、DKIM 与 approved sender 已由 Terraform 纳管；IAM Dynamic Group 与精确 sender policy 已应用，目标 Backend 容器的 Instance Principal 身份获取通过，但 HTTPS SubmitEmail 权限效果仍待验证。#142 两类日志和 OCI 原生告警已应用，通知订阅 ACTIVE 且合成通知已确认送达；ADR-020 的 1 条指标写入 IAM 和 6 条应用告警已应用，Backend 在 mock 模式持续发布指标，无邮件合成认证失败触发 FIRING，指定邮箱已收到通知。OCI 的 `use metrics` 包含读取，因此该 IAM policy 额外限定 `request.permission='METRIC_WRITE'`；目标容器读取测试返回 404。仅在 `APP_ENV=staging` 且 `OCI_MAIL_APP_ALERTS_ENABLED=true` 时启用指标采集，容器还需 `OCI_MONITORING_REGION` 和 `OCI_MONITORING_COMPARTMENT_ID`；Staging Compose overlay 固定了经批准的 region/compartment 并默认启用采集，可在 `.env` 中设 `OCI_MAIL_APP_ALERTS_ENABLED=false` 紧急关闭。该开关不启用真实发送。#145 的 10 分钟窗口已在预检阶段停止，Staging 当前为 mock；[ADR-021](decisions/ADR-021-oci-https-submit-authorization-verification.md) 已被驳回，不作为权限验证或切换门禁。不得将清单视为可直接执行的真实发信部署命令。旧 SMTP 占位不参与现行 Compose 或 OCI HTTPS 路径。
+#141–#143 的 OCI IAM、Email Domain 日志/告警及受控单封准备见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。2026-10-11 至 10-14 的记录覆盖发件域、DKIM、approved sender、单实例 IAM、容器身份及 #142 日志和告警。10 月 11 日在 mock 下观察到应用指标和合成告警送达。10 月 14 日将指标 IAM 限为 `request.permission='METRIC_WRITE'`，当时从目标容器读取指标返回 404。当前 IAM、指标采集、心跳及通知链路待按当次环境核验。
+
+指标采集按仓库配置仅在 `APP_ENV=staging` 且 `OCI_MAIL_APP_ALERTS_ENABLED=true` 时启用，还需 `OCI_MONITORING_REGION` 和 `OCI_MONITORING_COMPARTMENT_ID`。Staging Compose overlay 默认启用采集，可在 `.env` 中设 `OCI_MAIL_APP_ALERTS_ENABLED=false` 关闭。真实发送使用独立开关。
+
+#145 在 2026-10-14 的预检窗口停止，2026-10-16 在独立批准窗口完成受控单封并在当次回滚 `mock/false`。#141 的非目标身份和非目标 sender 拒绝效果仍待验证。执行前按 [Staging 执行卡](oci-mail-staging-operator-runbook.md) 核对目标环境生效的 provider 和开关，并按 ADR-019、ADR-020 取得当次批准。
 
 平台三个 Secret 必须彼此独立且不同于 tenant JWT/refresh Secret。缺失时平台认证与开通 API
 fail closed，但 tenant 工作台继续运行。`PLATFORM_SYNTHETIC_*` 仅用于显式 opt-in 的
@@ -487,6 +491,8 @@ Agents must stop and report blockers instead of guessing when any of the followi
 ## 9. Database migration operations (Issue #21)
 
 Backend database migrations are managed with Prisma.
+
+After a migration, restore to the current schema, or synthetic seed, run the manual integrity check on the offline database before accepting the result. See the [operations guide for the command, exit codes and failure procedure](operation.md#offline-integrity).
 
 Local development flow:
 

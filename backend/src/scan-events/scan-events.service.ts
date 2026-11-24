@@ -10,8 +10,10 @@ import { AuditService } from '../audit/audit.service';
 import { AuthenticatedUserResponse } from '../auth/auth.types';
 import { LicenseService } from '../license/license.service';
 import { LocationAccessService } from '../location-access/location-access.service';
+import { mailHistoryFailureMessage, safeMailFailureMessage } from '../mail-jobs/mail-history-failure';
 import { PrismaService } from '../prisma.service';
 import { CreateScanEventDto, ExportScanEventsDto, ListScanEventsDto } from './dto';
+import { findSameActionWarnings } from './same-action-warning';
 import {
   CreateScanEventResponse,
   CancelScanEventResponse,
@@ -20,6 +22,7 @@ import {
   ScanEventHistoryItem,
   ScanEventListResponse,
   ScanHistoryStatus,
+  SameActionWarning,
 } from './scan-events.types';
 import {
   CANCEL_WAITING_MAIL_JOB_SQL,
@@ -57,6 +60,18 @@ type ScanPersistenceClient = Pick<
   'mailJob' | 'scanRequestIdempotency'
 >;
 
+function cancellationWindow(
+  mailJob: { status: string; cancelUntil: Date | null } | undefined,
+  serverTime: Date,
+) {
+  const deadline = mailJob?.cancelUntil ?? null;
+  return {
+    can_cancel: mailJob?.status === 'waiting' && deadline !== null && serverTime < deadline,
+    cancel_until: deadline?.toISOString() ?? null,
+    server_time: serverTime.toISOString(),
+  };
+}
+
 @Injectable()
 export class ScanEventsService {
   constructor(
@@ -78,9 +93,7 @@ export class ScanEventsService {
     const where: Prisma.ScanEventWhereInput = {
       tenantId: user.tenant_id,
       ...(selectedLocation ? { locationId: selectedLocation.id } : {}),
-      ...(!query.location_id
-        ? this.locationAccess.resourceLocationWhere(user, true)
-        : {}),
+      ...this.locationAccess.resourceLocationWhere(user, true),
       ...(query.created_from || query.created_to
         ? {
             createdAt: {
@@ -102,47 +115,54 @@ export class ScanEventsService {
         : {}),
     };
 
-    const rows = await this.prisma.scanEvent.findMany({
-      where,
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: query.limit + 1,
-      select: this.historySelect(),
-    });
-
-    const hasMore = rows.length > query.limit;
-    const page = rows.slice(0, query.limit);
-    const last = page.at(-1);
-
-    return {
-      items: page.map((row) => this.toHistoryItem(row)),
-      next_cursor:
-        hasMore && last
-          ? this.encodeCursor(last.createdAt, last.id)
-          : null,
-    };
+    return this.prisma.$transaction(async (tx) => {
+      const rows = await tx.scanEvent.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: query.limit + 1,
+        select: this.historySelect(),
+      });
+      if (!rows.length) return { items: [], next_cursor: null };
+      const page = rows.slice(0, query.limit);
+      const warnings = await findSameActionWarnings(tx, user.tenant_id, page.map(row => row.id));
+      const serverTime = await this.databaseNow(tx, 'wall');
+      const last = page.at(-1);
+      return {
+        items: page.map(row => ({
+          ...this.historyFields(row, warnings.get(row.id)),
+          ...cancellationWindow(row.mailJobs[0], serverTime),
+        })),
+        next_cursor: rows.length > query.limit && last ? this.encodeCursor(last.createdAt, last.id) : null,
+      };
+    }, { isolationLevel: 'RepeatableRead' });
   }
 
   async getScanEvent(
     user: AuthenticatedUserResponse,
     scanEventId: string,
   ): Promise<ScanEventHistoryItem> {
-    const row = await this.prisma.scanEvent.findFirst({
-      where: {
-        id: scanEventId,
-        tenantId: user.tenant_id,
-        ...this.locationAccess.resourceLocationWhere(user, true),
-      },
-      select: this.historySelect(),
-    });
-
-    if (!row) {
-      throw new NotFoundException({
-        code: 'SCAN_EVENT_NOT_FOUND',
-        message: 'scan_event不存在或不属于当前租户',
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.scanEvent.findFirst({
+        where: {
+          id: scanEventId,
+          tenantId: user.tenant_id,
+          ...this.locationAccess.resourceLocationWhere(user, true),
+        },
+        select: this.historySelect(),
       });
-    }
-
-    return this.toHistoryItem(row);
+      if (!row) {
+        throw new NotFoundException({
+          code: 'SCAN_EVENT_NOT_FOUND',
+          message: 'scan_event不存在或不属于当前租户',
+        });
+      }
+      const warnings = await findSameActionWarnings(tx, user.tenant_id, [row.id]);
+      const serverTime = await this.databaseNow(tx, 'wall');
+      return {
+        ...this.historyFields(row, warnings.get(row.id)),
+        ...cancellationWindow(row.mailJobs[0], serverTime),
+      };
+    }, { isolationLevel: 'RepeatableRead' });
   }
 
   async exportScanEvents(user: AuthenticatedUserResponse, query: ExportScanEventsDto) {
@@ -189,7 +209,7 @@ export class ScanEventsService {
         'mail_job_id',
       ],
       ...rows.map((row) => {
-        const item = this.toHistoryItem(row);
+        const item = this.historyFields(row);
         return [
           item.received_at,
           item.location_name ?? '',
@@ -438,18 +458,14 @@ export class ScanEventsService {
             status: existingMailJob.status as CreateScanEventResponse['status'],
             effective_status: 'active',
             mail_status: existingMailJob.status as CreateScanEventResponse['mail_status'],
-            can_cancel:
-              existingMailJob.status === 'waiting' &&
-              existingMailJob.cancelUntil !== null &&
-              receivedAt < existingMailJob.cancelUntil,
-            cancel_until: existingMailJob.cancelUntil?.toISOString() ?? null,
-            server_time: receivedAt.toISOString(),
+            ...cancellationWindow(existingMailJob, receivedAt),
             canceled_at: null,
             retry_count: existingMailJob.retryCount,
             scheduled_at:
               existingMailJob.scheduledAt?.toISOString() ?? null,
             error_message: existingMailJob.errorMessage,
             deduplicated: true,
+            same_action_warning: null,
           };
           await this.storeIdempotency(
             tx,
@@ -510,12 +526,11 @@ export class ScanEventsService {
           select: {
             id: true,
             status: true,
-            createdAt: true,
             cancelUntil: true,
-            sendNotBefore: true,
           },
         });
 
+        const warnings = await findSameActionWarnings(tx, user.tenant_id, [scanEvent.id]);
         const created: CreateScanEventResponse = {
           scan_event_id: scanEvent.id,
           mail_job_id: mailJob.id,
@@ -526,20 +541,13 @@ export class ScanEventsService {
           status: 'waiting',
           effective_status: 'active',
           mail_status: 'waiting',
-          can_cancel:
-            mailJob.status === 'waiting' &&
-            (mailJob.cancelUntil === null ||
-              mailJob.cancelUntil === undefined ||
-              (mailJob.createdAt ?? receivedAt) < mailJob.cancelUntil),
-          cancel_until:
-            mailJob.cancelUntil?.toISOString() ??
-            new Date(receivedAt.getTime() + 10_000).toISOString(),
-          server_time: (mailJob.createdAt ?? receivedAt).toISOString(),
+          ...cancellationWindow(mailJob, receivedAt),
           canceled_at: null,
           retry_count: 0,
           scheduled_at: null,
           error_message: null,
           deduplicated: false,
+          same_action_warning: warnings.get(scanEvent.id) ?? null,
         };
         await this.storeIdempotency(
           tx,
@@ -569,10 +577,6 @@ export class ScanEventsService {
     }
 
     await this.recordScanAudit(user, result, dto.location_id);
-    if (result.deduplicated) {
-      return result;
-    }
-
     return result;
   }
 
@@ -846,7 +850,6 @@ export class ScanEventsService {
       });
     }
 
-    const serverTime = now;
     const canceled = mailJob.status === 'canceled';
     return {
       scan_event_id: mailJob.scanEvent.id,
@@ -858,17 +861,13 @@ export class ScanEventsService {
       status: mailJob.status as CreateScanEventResponse['status'],
       effective_status: canceled ? 'canceled' : 'active',
       mail_status: mailJob.status as CreateScanEventResponse['mail_status'],
-      can_cancel:
-        mailJob.status === 'waiting' &&
-        mailJob.cancelUntil !== null &&
-        serverTime < mailJob.cancelUntil,
-      cancel_until: mailJob.cancelUntil?.toISOString() ?? null,
-      server_time: serverTime.toISOString(),
+      ...cancellationWindow(mailJob, now),
       canceled_at: mailJob.scanEvent.canceledAt?.toISOString() ?? null,
       retry_count: mailJob.retryCount,
       scheduled_at: mailJob.scheduledAt?.toISOString() ?? null,
-      error_message: this.safeFailureMessage(mailJob.errorMessage),
+      error_message: safeMailFailureMessage(mailJob.errorMessage),
       deduplicated: true,
+      same_action_warning: null,
     };
   }
 
@@ -926,6 +925,7 @@ export class ScanEventsService {
         mail_job_id: result.mail_job_id,
         action: result.action,
         action_source: result.action_source,
+        ...(result.same_action_warning ? { same_action_warning: result.same_action_warning } : {}),
       },
     });
   }
@@ -1003,6 +1003,7 @@ export class ScanEventsService {
           status: true,
           sentAt: true,
           cancelUntil: true,
+          scheduledAt: true,
           errorMessage: true,
           locationNameSnapshot: true,
           personNameSnapshot: true,
@@ -1013,7 +1014,7 @@ export class ScanEventsService {
     };
   }
 
-  private toHistoryItem(row: {
+  private historyFields(row: {
     id: string;
     locationId: string | null;
     personCodeSnapshot: string | null;
@@ -1029,17 +1030,17 @@ export class ScanEventsService {
       status: string;
       sentAt: Date | null;
       cancelUntil: Date | null;
+      scheduledAt: Date | null;
       errorMessage: string | null;
       locationNameSnapshot: string;
       personNameSnapshot: string;
       personCodeSnapshot: string;
       actionSnapshot: string;
     }>;
-  }): ScanEventHistoryItem {
+  }, warning?: SameActionWarning): Omit<ScanEventHistoryItem, 'can_cancel' | 'cancel_until' | 'server_time'> {
     const mailJob = row.mailJobs[0] ?? null;
     const status: ScanHistoryStatus =
       (mailJob?.status as ScanHistoryStatus | undefined) ?? 'queued';
-    const serverTime = new Date();
     const canceled = row.canceledAt !== null || status === 'canceled';
 
     return {
@@ -1052,19 +1053,13 @@ export class ScanEventsService {
       person_name: mailJob?.personNameSnapshot ?? null,
       scan_code: row.scanCode,
       scan_type: row.scanType,
+      same_action_warning: warning ?? null,
       action: row.action as ScanAction,
       action_source: row.actionSource as ScanActionSource,
       received_at: row.receivedAt.toISOString(),
       status,
       effective_status: canceled ? 'canceled' : 'active',
       mail_status: status,
-      can_cancel:
-        status === 'waiting' &&
-        mailJob?.cancelUntil !== null &&
-        mailJob?.cancelUntil !== undefined &&
-        serverTime < mailJob.cancelUntil,
-      cancel_until: mailJob?.cancelUntil?.toISOString() ?? null,
-      server_time: serverTime.toISOString(),
       canceled_at: row.canceledAt?.toISOString() ?? null,
       mail_job: mailJob
         ? {
@@ -1072,26 +1067,17 @@ export class ScanEventsService {
             status: mailJob.status,
             action: mailJob.actionSnapshot as ScanAction,
             sent_at: mailJob.sentAt?.toISOString() ?? null,
-            error_message: this.safeFailureMessage(mailJob.errorMessage),
+            error_message: mailHistoryFailureMessage(mailJob),
           }
         : null,
     };
   }
 
-  private safeFailureMessage(message: string | null): string | null {
-    if (!message) {
-      return null;
-    }
-    return message === 'Sandbox provider simulated failure'
-      ? message
-      : '邮件发送失败';
-  }
-
   private async databaseNow(client: {
     $queryRawUnsafe<T = unknown>(query: string, ...values: unknown[]): Promise<T>;
-  }): Promise<Date> {
+  }, clock: 'transaction' | 'wall' = 'transaction'): Promise<Date> {
     const rows = await client.$queryRawUnsafe<Array<{ now: Date }>>(
-      'SELECT CURRENT_TIMESTAMP AS now',
+      clock === 'wall' ? 'SELECT clock_timestamp() AS now' : 'SELECT CURRENT_TIMESTAMP AS now',
     );
     const now = rows[0]?.now;
     if (!(now instanceof Date) || Number.isNaN(now.getTime())) {

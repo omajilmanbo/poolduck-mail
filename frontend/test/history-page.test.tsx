@@ -20,6 +20,69 @@ describe('history workspace', () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([
+    ['expired', 'operator', '订阅已过期', '租户管理员'],
+    ['expired', 'tenant_manager', '订阅已过期', '平台运营'],
+    ['suspended', 'operator', '订阅已暂停', '租户管理员'],
+    ['suspended', 'tenant_manager', '订阅已暂停', '平台运营'],
+  ] as const)('shows %s subscription guidance for %s alongside the safe history reason', async (
+    status, role, reason, contact,
+  ) => {
+    const failureReason = '系统未通过邮件服务的发信认证，本次任务不会自动重试';
+    const failedScan = historyItem('failed', failureReason);
+    vi.stubGlobal('fetch', createWorkspaceFetch({ items: [failedScan], next_cursor: null }, {
+      role,
+      getLicense: () => licenseResponse(status, false),
+    }));
+    render(<HomePage />);
+
+    await waitFor(() => expect(screen.getByTestId('license-status').textContent).toBe(status));
+    expect(screen.getByText(`${reason}，扫码与发送入口已禁用。请联系${contact}处理订阅状态。`)).not.toBeNull();
+    expect((screen.getByTestId('scan-code-input') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByTestId('scan-submit') as HTMLButtonElement).disabled).toBe(true);
+    const history = screen.getByRole('table', { name: '扫码记录' });
+    expect(await within(history).findByRole('cell', { name: 'History Person' })).not.toBeNull();
+    expect(within(history).getByText(failureReason)).not.toBeNull();
+  });
+
+  it.each(['trial', 'active'])('allows scan entry for a sendable %s subscription', async (status) => {
+    vi.stubGlobal('fetch', createWorkspaceFetch({ items: [], next_cursor: null }, {
+      getLicense: () => licenseResponse(status, true),
+    }));
+    render(<HomePage />);
+
+    await waitFor(() => expect(screen.getByTestId('license-status').textContent).toBe(status));
+    const input = screen.getByTestId('scan-code-input') as HTMLInputElement;
+    expect(input.disabled).toBe(false);
+    fireEvent.change(input, { target: { value: 'E01K0ABC80001' } });
+    expect((screen.getByTestId('scan-submit') as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText(/扫码与发送入口已禁用|处理订阅状态/)).toBeNull();
+  });
+
+  it('keeps scan disabled while the subscription status is loading', async () => {
+    vi.stubGlobal('fetch', createWorkspaceFetch({ items: [], next_cursor: null }, {
+      getLicense: () => new Promise<Response>(() => {}),
+    }));
+    render(<HomePage />);
+
+    expect(await screen.findByText('loading')).toBe(screen.getByTestId('license-status'));
+    expect((screen.getByTestId('scan-code-input') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByTestId('scan-submit') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText(/扫码与发送入口已禁用|处理订阅状态/)).toBeNull();
+  });
+
+  it('shows the connection error when the subscription status request fails', async () => {
+    vi.stubGlobal('fetch', createWorkspaceFetch({ items: [], next_cursor: null }, {
+      getLicense: () => Promise.reject(new TypeError('Failed to fetch')),
+    }));
+    render(<HomePage />);
+
+    expect(await screen.findByText(/无法连接后端 API/)).not.toBeNull();
+    expect((screen.getByTestId('scan-code-input') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByTestId('scan-submit') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText(/扫码与发送入口已禁用|处理订阅状态/)).toBeNull();
+  });
+
   it('loads persisted history after restoring a session', async () => {
     vi.stubGlobal('fetch', createWorkspaceFetch({ items: [historyItem('sent')], next_cursor: null }));
     render(<HomePage />);
@@ -34,10 +97,74 @@ describe('history workspace', () => {
     expect(screen.getByTestId('mail-status').textContent).toContain('已发送');
   });
 
+  it('shows safe rejection reasons and clears the retry message when the job is sent', async () => {
+    const quotaReason = '邮件服务因配额或频率限制拒绝了本次发送，等待自动重试';
+    const authReason = '系统未通过邮件服务的发信认证，本次任务不会自动重试';
+    const suppressedReason = '邮件服务已停止向该收件地址投递，本次任务不会自动重试';
+    const queued = historyItem('queued', quotaReason);
+    const authRejected = {
+      ...historyItem('failed', authReason),
+      scan_event_id: 'auth-rejected-scan',
+      person_name: 'Authentication Rejected Person',
+    };
+    const suppressed = {
+      ...historyItem('failed', suppressedReason),
+      scan_event_id: 'suppressed-scan',
+      person_name: 'Suppressed Person',
+    };
+    let retried = false;
+    vi.stubGlobal('fetch', createWorkspaceFetch(() => ({
+      items: [retried ? historyItem('sent') : queued, authRejected, suppressed],
+      next_cursor: null,
+    })));
+    render(<HomePage />);
+
+    const queuedRow = await screen.findByRole('row', { name: /History Person/ });
+    const authRejectedRow = screen.getByRole('row', { name: /Authentication Rejected Person/ });
+    const suppressedRow = screen.getByRole('row', { name: /Suppressed Person/ });
+    expect(within(queuedRow).getByText(quotaReason)).not.toBeNull();
+    expect(within(queuedRow).getByTestId('mail-status').textContent).toBe('发送中');
+    const terminalRows = [[authRejectedRow, authReason], [suppressedRow, suppressedReason]] as const;
+    for (const [row, reason] of terminalRows) {
+      expect(within(row).getByText(reason)).not.toBeNull();
+      expect(within(row).getByTestId('mail-status').textContent).toBe('发送失败');
+      expect(within(row).queryByText(/等待自动重试/)).toBeNull();
+    }
+
+    retried = true;
+    fireEvent.click(screen.getByTestId('history-refresh'));
+    await within(queuedRow).findByText('已发送');
+    expect(screen.queryByText(quotaReason)).toBeNull();
+    for (const [row, reason] of terminalRows) {
+      expect(within(row).getByText(reason)).not.toBeNull();
+    }
+  });
+
   it('shows an empty history state', async () => {
     vi.stubGlobal('fetch', createWorkspaceFetch({ items: [], next_cursor: null }));
     render(<HomePage />);
     expect(await screen.findByText('暂无扫码记录')).not.toBeNull();
+  });
+
+  it('shows the server warning on a filtered row and clears its evidence when access is revoked', async () => {
+    let revoked = false;
+    const exit = { ...historyItem('sent'), action: 'exit' as const, same_action_warning: {
+      previous_scan_event_id: 'previous-exit', previous_received_at: '2026-07-19T23:59:55Z',
+    } };
+    vi.stubGlobal('fetch', createWorkspaceFetch((url) => {
+      if (revoked) return { status: 403 };
+      return { items: url.searchParams.has('status') ? [exit] : [], next_cursor: null };
+    }));
+    render(<HomePage />);
+    await screen.findByText('暂无扫码记录');
+    fireEvent.change(screen.getByTestId('history-status-filter'), { target: { value: 'sent' } });
+    expect(await screen.findByText('连续离开，可能漏扫或选错动作码。')).not.toBeNull();
+    fireEvent.click(screen.getByText('前一次有效扫码'));
+    expect(screen.getByText('previous-exit')).not.toBeNull();
+    revoked = true;
+    fireEvent.click(screen.getByTestId('history-refresh'));
+    await screen.findByText('无权限查看此地点的扫码记录');
+    expect(screen.queryByText('previous-exit')).toBeNull();
   });
 
   it.each([
@@ -114,7 +241,7 @@ describe('history workspace', () => {
       'fetch',
       createWorkspaceFetch(
         { items: [historyItem('waiting')], next_cursor: null },
-        new TypeError('Failed to fetch'),
+        { cancelError: new TypeError('Failed to fetch') },
       ),
     );
     render(<HomePage />);
@@ -161,7 +288,7 @@ describe('history workspace', () => {
         items: [namedHistoryItem(requests.length)],
         next_cursor: url.searchParams.has('cursor') ? null : 'older',
       };
-    }, undefined, [locationId, secondLocation]);
+    }, { locationIds: [locationId, secondLocation] });
     vi.stubGlobal('fetch', fetchMock);
     render(<HomePage />);
 
@@ -258,9 +385,27 @@ describe('history workspace', () => {
     expect(screen.queryByTestId('scan-cancel')).toBeNull();
   });
 
+  it('clears the warning after cancellation even when reloading the page fails', async () => {
+    let canceled = false;
+    const waiting = { ...historyItem('waiting'), cancel_until: new Date(Date.now() + 10_000).toISOString(),
+      same_action_warning: { previous_scan_event_id: 'older-entry', previous_received_at: '2026-07-19T23:59:55Z' } };
+    const baseFetch = createWorkspaceFetch(() => canceled ? new TypeError('Failed to fetch') : { items: [waiting], next_cursor: null });
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/cancel')) canceled = true;
+      return baseFetch(input);
+    });
+    render(<HomePage />);
+    await screen.findByText('连续进入，可能漏扫或选错动作码。');
+    fireEvent.click(screen.getByTestId('scan-cancel'));
+    expect((await screen.findByRole('alert')).textContent).toContain('无法连接后端 API');
+    expect(screen.getByTestId('mail-status').textContent).toBe('已取消');
+    expect(screen.queryByText('前一次有效扫码')).toBeNull();
+  });
+
   it('returns to the first unfiltered page after a new scan so the waiting cancellation stays visible', async () => {
     let created = false;
     const waiting = { ...historyItem('waiting'), scan_event_id: 'new-scan', person_name: 'New Person',
+      same_action_warning: { previous_scan_event_id: 'older-entry', previous_received_at: '2026-07-19T23:59:55Z' },
       cancel_until: new Date(Date.now() + 10_000).toISOString() };
     const baseFetch = createWorkspaceFetch((url) => url.searchParams.has('cursor')
       ? { items: [namedHistoryItem(26)], next_cursor: null }
@@ -269,7 +414,7 @@ describe('history workspace', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).endsWith('/api/scan-events') && init?.method === 'POST') {
         created = true;
-        return jsonResponse({ scan_event_id: 'new-scan' });
+        return jsonResponse({ scan_event_id: 'new-scan', action: 'entry', same_action_warning: waiting.same_action_warning });
       }
       return baseFetch(input);
     });
@@ -283,6 +428,8 @@ describe('history workspace', () => {
     fireEvent.change(screen.getByTestId('scan-code-input'), { target: { value: 'E01K0ABC80001' } });
     fireEvent.click(screen.getByTestId('scan-submit'));
     expect(await screen.findByText('New Person')).not.toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('本次已记录为进入');
+    expect(screen.getAllByText('连续进入，可能漏扫或选错动作码。')).toHaveLength(1);
     expect((screen.getByTestId('history-status-filter') as HTMLSelectElement).value).toBe('');
     expect(screen.getByText(/第 1 页/)).not.toBeNull();
     expect((screen.getByTestId('scan-cancel') as HTMLButtonElement).disabled).toBe(false);
@@ -296,13 +443,22 @@ function createWorkspaceFetch(
     | { status: number }
     | TypeError
     | ((url: URL) => { items: ScanHistoryItem[]; next_cursor: string | null } | { status: number } | TypeError),
-  cancelError?: TypeError,
-  locationIds = [locationId],
+  {
+    cancelError,
+    locationIds = [locationId],
+    getLicense = () => licenseResponse('active', true),
+    role = 'operator',
+  }: {
+    cancelError?: TypeError;
+    locationIds?: string[];
+    getLicense?: () => Response | Promise<Response>;
+    role?: 'operator' | 'tenant_manager';
+  } = {},
 ) {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith('/api/auth/me')) {
-      return jsonResponse({ user: { user_id: 'user-1', tenant_code: '10CA000001', email: 'operator@example.local', role: 'operator' } });
+      return jsonResponse({ user: { user_id: 'user-1', tenant_code: '10CA000001', email: 'operator@example.local', role } });
     }
     if (url.endsWith('/api/auth/refresh')) {
       if (typeof history !== 'function' && !(history instanceof TypeError) && 'status' in history) {
@@ -311,14 +467,7 @@ function createWorkspaceFetch(
       return jsonResponse({ expires_in: 900, user: {} });
     }
     if (url.endsWith('/api/license/check')) {
-      return jsonResponse({
-        status: 'active',
-        plan: 'mvp',
-        end_at: '2026-12-31T00:00:00.000Z',
-        expired_at: '2026-12-31T00:00:00.000Z',
-        grace_period: null,
-        can_send: true,
-      });
+      return getLicense();
     }
     if (url.endsWith('/api/locations')) {
       return jsonResponse(locationIds.map((id, index) => ({
@@ -369,7 +518,18 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-function historyItem(status: ScanHistoryItem['status']): ScanHistoryItem {
+function licenseResponse(status: string, canSend: boolean) {
+  return jsonResponse({
+    status,
+    plan: 'mvp',
+    end_at: '2026-12-31T00:00:00.000Z',
+    expired_at: '2026-12-31T00:00:00.000Z',
+    grace_period: null,
+    can_send: canSend,
+  });
+}
+
+function historyItem(status: ScanHistoryItem['status'], errorMessage = status === 'failed' ? '邮件发送失败' : null): ScanHistoryItem {
   return {
     scan_event_id: '55555555-5555-4555-8555-555555555555',
     location_id: locationId,
@@ -378,6 +538,7 @@ function historyItem(status: ScanHistoryItem['status']): ScanHistoryItem {
     person_name: 'History Person',
     scan_code: '01K0ABC80001',
     scan_type: 'entry',
+    same_action_warning: null,
     action: 'entry',
     action_source: 'person_action_code',
     received_at: '2026-07-20T01:02:03.000Z',
@@ -393,7 +554,7 @@ function historyItem(status: ScanHistoryItem['status']): ScanHistoryItem {
       status,
       action: 'entry',
       sent_at: status === 'sent' ? '2026-07-20T01:03:03.000Z' : null,
-      error_message: status === 'failed' ? '邮件发送失败' : null,
+      error_message: errorMessage,
     },
   };
 }

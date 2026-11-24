@@ -9,6 +9,9 @@ describe('Tenant-scoped history APIs', () => {
   let app: INestApplication;
   let jwtService: JwtService;
   let prisma: {
+    $transaction: jest.Mock;
+    $queryRaw: jest.Mock;
+    $queryRawUnsafe: jest.Mock;
     user: { findFirst: jest.Mock };
     location: { findFirst: jest.Mock };
     scanEvent: { findMany: jest.Mock; findFirst: jest.Mock };
@@ -30,6 +33,9 @@ describe('Tenant-scoped history APIs', () => {
 
   beforeEach(async () => {
     prisma = {
+      $transaction: jest.fn(async (read: (tx: typeof prisma) => unknown) => read(prisma)),
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      $queryRawUnsafe: jest.fn().mockResolvedValue([{ now: createdAt }]),
       user: { findFirst: jest.fn() },
       location: { findFirst: jest.fn() },
       scanEvent: { findMany: jest.fn(), findFirst: jest.fn() },
@@ -54,7 +60,10 @@ describe('Tenant-scoped history APIs', () => {
     });
   });
 
-  afterEach(async () => app.close());
+  afterEach(async () => {
+    jest.useRealTimers();
+    await app.close();
+  });
 
   it('returns an empty scan history page', async () => {
     prisma.scanEvent.findMany.mockResolvedValue([]);
@@ -65,6 +74,8 @@ describe('Tenant-scoped history APIs', () => {
       .expect(200)
       .expect({ items: [], next_cursor: null });
 
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
     expect(prisma.scanEvent.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -82,6 +93,87 @@ describe('Tenant-scoped history APIs', () => {
         take: 26,
       }),
     );
+  });
+
+  it.each([
+    [-1, true],
+    [0, false],
+    [1, false],
+  ] as const)('uses database time %i ms from the deadline on fast and slow nodes', async (offset, canCancel) => {
+    const deadline = new Date(createdAt.getTime() + 10_000);
+    const dbNow = new Date(deadline.getTime() + offset);
+    prisma.$queryRawUnsafe.mockResolvedValue([{ now: dbNow }]);
+    const waiting = scanRow(scanEventId, 'waiting');
+    const sent = scanRow(otherScanEventId, 'sent');
+    prisma.scanEvent.findMany.mockResolvedValue([waiting, sent]);
+    prisma.scanEvent.findFirst.mockResolvedValue(waiting);
+    const fields = { server_time: dbNow.toISOString(), cancel_until: deadline.toISOString() };
+
+    jest.useFakeTimers();
+    for (const skew of [3000, -3000]) {
+      jest.setSystemTime(dbNow.getTime() + skew);
+      prisma.$queryRawUnsafe.mockClear();
+      const list = await request(app.getHttpServer()).get('/api/scan-events')
+        .set('Authorization', `Bearer ${token()}`).expect(200);
+      expect(list.body.items).toMatchObject([
+        { ...fields, can_cancel: canCancel },
+        { ...fields, can_cancel: false },
+      ]);
+      expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+
+      const detail = await request(app.getHttpServer()).get(`/api/scan-events/${scanEventId}`)
+        .set('Authorization', `Bearer ${token()}`).expect(200);
+      expect(detail.body).toEqual(list.body.items[0]);
+      expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it.each(['list', 'detail'])('samples the database clock after the final %s read', async (endpoint) => {
+    const row = scanRow(scanEventId, 'waiting');
+    const deadline = row.mailJobs[0].cancelUntil.getTime();
+    let wallTime = deadline - 2;
+    const readRow = () => {
+      wallTime = deadline - 1;
+      return row;
+    };
+    prisma.scanEvent.findMany.mockImplementation(() => [readRow()]);
+    prisma.scanEvent.findFirst.mockImplementation(readRow);
+
+    // Hold the data snapshot at BEGIN while the predecessor lookup crosses the deadline.
+    function readClock(sql: string, transactionStart = wallTime) {
+      switch (sql.trim().toLowerCase()) {
+        case 'select current_timestamp as now': return [{ now: new Date(transactionStart) }];
+        case 'select clock_timestamp() as now': return [{ now: new Date(wallTime) }];
+        default: throw new Error('Unexpected database clock query');
+      }
+    }
+    prisma.$queryRawUnsafe.mockImplementation(readClock);
+    const sampleWallTime = jest.fn((sql: string) => readClock(sql, deadline - 2));
+    prisma.$transaction.mockImplementation((read: (tx: unknown) => Promise<unknown>) => read({
+      ...prisma,
+      $queryRawUnsafe: sampleWallTime,
+      $queryRaw: () => {
+        wallTime = deadline + 1;
+        return [{ id: scanEventId, previous_id: otherScanEventId, previous_received_at: createdAt }];
+      },
+    }));
+
+    const response = await request(app.getHttpServer())
+      .get(endpoint === 'list' ? '/api/scan-events' : `/api/scan-events/${scanEventId}`)
+      .set('Authorization', `Bearer ${token()}`).expect(200);
+    const item = endpoint === 'list' ? response.body.items[0] : response.body;
+    expect(item).toMatchObject({
+      scan_event_id: scanEventId,
+      mail_status: 'waiting',
+      cancel_until: new Date(deadline).toISOString(),
+      same_action_warning: { previous_scan_event_id: otherScanEventId, previous_received_at: createdAt.toISOString() },
+      server_time: new Date(deadline + 1).toISOString(),
+      can_cancel: false,
+    });
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: 'RepeatableRead' });
+    expect(sampleWallTime).toHaveBeenCalledTimes(1);
+    expect(sampleWallTime).toHaveBeenCalledWith('SELECT clock_timestamp() AS now');
+    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
   });
 
   it('combines location, status, date, limit and stable cursor pagination', async () => {
@@ -188,6 +280,8 @@ describe('Tenant-scoped history APIs', () => {
       .set('Authorization', `Bearer ${token()}`)
       .expect(404);
     expect(response.body).toMatchObject({ code: 'SCAN_EVENT_NOT_FOUND' });
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
     expect(prisma.scanEvent.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -273,6 +367,56 @@ describe('Tenant-scoped history APIs', () => {
     );
   });
 
+  it.each([
+    ['queued', 'OCI_QUOTA_REJECTED', '邮件服务因配额或频率限制拒绝了本次发送，等待自动重试'],
+    ['processing', 'OCI_QUOTA_REJECTED', '邮件服务因配额或频率限制拒绝了本次发送'],
+    ['failed', 'OCI_QUOTA_REJECTED', '邮件服务因配额或频率限制拒绝了本次发送，本次任务已停止重试'],
+    ['failed', 'OCI_AUTH_REJECTED', '系统未通过邮件服务的发信认证，本次任务不会自动重试'],
+    ['failed', 'RECIPIENT_SUPPRESSED', '邮件服务已停止向该收件地址投递，本次任务不会自动重试'],
+    ['delivery_unknown', 'PROVIDER_OUTCOME_UNKNOWN', '邮件发送失败'],
+    ['failed', 'Sandbox provider simulated failure', 'Sandbox provider simulated failure'],
+    ['failed', 'OCI_QUOTA_REJECTED: synthetic-recipient@example.invalid synthetic-body raw-provider-marker', '邮件发送失败'],
+    ['failed', 'OCI_AUTH_REJECTED: synthetic-recipient@example.invalid synthetic-body raw-provider-marker', '邮件发送失败'],
+    ['failed', '', null],
+    ['sent', null, null],
+  ] as const)('returns consistent safe reasons for %s with stored reason %s', async (status, errorMessage, expected) => {
+    const auth = `Bearer ${token()}`;
+    const scheduledAt = status === 'queued' ? new Date('2026-07-20T01:02:33.000Z') : null;
+    const scan = scanRow(scanEventId, status);
+    const job = {
+      ...scan.mailJobs[0],
+      createdAt,
+      errorMessage,
+      retryCount: status === 'queued' ? 1 : 0,
+      scheduledAt,
+      locationId,
+      location: scan.location,
+      scanEvent: scan,
+      toEmail: 'synthetic-recipient@example.invalid',
+      body: 'synthetic-body',
+    };
+    const scanWithJob = { ...scan, mailJobs: [job] };
+    prisma.scanEvent.findMany.mockResolvedValue([scanWithJob]);
+    prisma.scanEvent.findFirst.mockResolvedValue(scanWithJob);
+    prisma.mailJob.findMany.mockResolvedValue([job]);
+    prisma.mailJob.findFirst.mockResolvedValue(job);
+    const http = request(app.getHttpServer());
+    const scanList = await http.get('/api/scan-events').set('Authorization', auth).expect(200);
+    const scanDetail = await http.get(`/api/scan-events/${scanEventId}`).set('Authorization', auth).expect(200);
+    const jobList = await http.get('/api/mail-jobs').set('Authorization', auth).expect(200);
+    const jobDetail = await http.get(`/api/mail-jobs/${mailJobId}`).set('Authorization', auth).expect(200);
+
+    const common = { mail_job_id: mailJobId, status, error_message: expected };
+    expect(scanList.body.items[0].mail_job).toMatchObject(common);
+    expect(scanDetail.body.mail_job).toMatchObject(common);
+    const jobResult = { ...common, scheduled_at: scheduledAt?.toISOString() ?? null, retry_count: job.retryCount };
+    expect(jobList.body.items[0]).toMatchObject(jobResult);
+    expect(jobDetail.body).toMatchObject(jobResult);
+    for (const response of [scanList, scanDetail, jobList, jobDetail]) {
+      expect(response.text).not.toMatch(/synthetic-recipient@example\.invalid|synthetic-body|raw-provider-marker/);
+    }
+  });
+
   it('rejects invalid locations, cursors and unauthenticated reads', async () => {
     prisma.location.findFirst.mockResolvedValue(null);
     await request(app.getHttpServer())
@@ -300,11 +444,13 @@ describe('Tenant-scoped history APIs', () => {
       actionSource: 'person_action_code',
       receivedAt: createdAt,
       createdAt,
+      canceledAt: null,
       location: { locationCode: 'A1B2C3D4', name: 'Office A' },
       mailJobs: [
         {
           id: mailJobId,
           status,
+          cancelUntil: new Date(createdAt.getTime() + 10_000),
           sentAt: null,
           errorMessage: null,
           locationNameSnapshot: 'Office A at send time',

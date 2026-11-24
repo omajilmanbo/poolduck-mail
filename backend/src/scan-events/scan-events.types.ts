@@ -1,4 +1,8 @@
 export type ScanAction = 'entry' | 'exit' | 'unknown';
+export type SameActionWarning = {
+  previous_scan_event_id: string;
+  previous_received_at: string;
+};
 export type ScanActionSource =
   | 'person_action_code'
   | 'manual_adjustment'
@@ -22,6 +26,7 @@ export type CreateScanEventResponse = {
   scheduled_at: string | null;
   error_message: string | null;
   deduplicated: boolean;
+  same_action_warning: SameActionWarning | null;
 };
 
 export type ScanHistoryStatus =
@@ -41,6 +46,7 @@ export type ScanEventHistoryItem = {
   person_name: string | null;
   scan_code: string;
   scan_type: string;
+  same_action_warning: SameActionWarning | null;
   action: ScanAction;
   action_source: ScanActionSource;
   received_at: string;
