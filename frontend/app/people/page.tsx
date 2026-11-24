@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   LocationItem,
   PersonMapping,
@@ -17,20 +17,7 @@ export default function PeoplePage() {
   const api = useMemo(() => createApiClient(), []);
   const [locations, setLocations] = useState<LocationItem[]>([]);
   const [locationId, setLocationId] = useState('');
-  const [people, setPeople] = useState<PersonMapping[]>([]);
-  const [editingId, setEditingId] = useState('');
-  const [personName, setPersonName] = useState('');
-  const [email, setEmail] = useState('');
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [authorized, setAuthorized] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [previewPersonCode, setPreviewPersonCode] = useState<string | null>(null);
-
-  const reloadPeople = useCallback(async () => {
-    if (!locationId) return;
-    setPeople(await api.getPeople('cookie', locationId, true));
-  }, [api, locationId]);
 
   useEffect(() => {
     Promise.all([api.getMe(), api.getLocations('cookie')])
@@ -54,13 +41,70 @@ export default function PeoplePage() {
       });
   }, [api]);
 
-  useEffect(() => {
+  if (!authorized) {
+    return <main className="min-h-screen bg-stone-100 p-6">正在验证权限…</main>;
+  }
+
+  const locationActive = locations.find((row) => row.location_id === locationId)?.is_active ?? false;
+
+  return (
+    <main className="min-h-screen bg-stone-100 p-4 text-slate-950 sm:p-6">
+      <div className="mx-auto grid max-w-5xl gap-5">
+        <header className="flex items-center justify-between gap-4">
+          <h1 className="text-2xl font-semibold">人员映射管理</h1>
+          <a href="/" className="text-sm text-emerald-700">返回工作台</a>
+        </header>
+        <section className="rounded-md border bg-white p-4">
+          <label className="text-sm font-medium">
+            地点
+            <select
+              value={locationId}
+              onChange={(event) => setLocationId(event.target.value)}
+              className="ml-3 max-w-full rounded border px-3 py-2"
+            >
+              {locations.map((row) => (
+                <option key={row.location_id} value={row.location_id}>
+                  {row.location_name}{row.is_active ? '' : '（已停用）'}
+                </option>
+              ))}
+            </select>
+          </label>
+        </section>
+        <LocationPeople key={locationId} api={api} locationId={locationId} locationActive={locationActive} />
+      </div>
+    </main>
+  );
+}
+
+type PersonEdit = {
+  person: PersonMapping;
+  status: 'loading' | 'ready' | 'failed';
+};
+
+function LocationPeople({ api, locationId, locationActive }: {
+  api: ReturnType<typeof createApiClient>;
+  locationId: string;
+  locationActive: boolean;
+}) {
+  const [people, setPeople] = useState<PersonMapping[]>([]);
+  const [editing, setEditing] = useState<PersonEdit | null>(null);
+  const [personName, setPersonName] = useState('');
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [previewPersonCode, setPreviewPersonCode] = useState<string | null>(null);
+  const editRequest = useRef(0);
+  const formDisabled = busy || (editing !== null && editing.status !== 'ready');
+
+  const reloadPeople = useCallback(async () => {
     if (!locationId) return;
-    void api
-      .getPeople('cookie', locationId, true)
-      .then(setPeople)
-      .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+    setPeople(await api.getPeople('cookie', locationId, true));
   }, [api, locationId]);
+
+  useEffect(() => {
+    void reloadPeople().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+  }, [reloadPeople]);
 
   async function run(action: () => Promise<unknown>, success: string) {
     setBusy(true);
@@ -79,79 +123,61 @@ export default function PeoplePage() {
 
   async function save(event: FormEvent) {
     event.preventDefault();
+    if (!locationActive || formDisabled) return;
+
+    const input = { person_name: personName, email };
     await run(async () => {
-      if (editingId) {
-        await api.updatePerson(locationId, editingId, {
-          person_name: personName,
-          email,
-        });
+      if (editing) {
+        await api.updatePerson(locationId, editing.person.person_id, input);
       } else {
-        await api.createPerson(locationId, {
-          person_name: personName,
-          email,
-        });
+        await api.createPerson(locationId, input);
       }
       reset();
-    }, editingId ? '人员资料已更新' : '人员已新增');
+    }, editing ? '人员资料已更新' : '人员已新增');
   }
 
   async function edit(person: PersonMapping) {
+    const request = ++editRequest.current;
+    setEditing({ person, status: 'loading' });
+    setPersonName('');
+    setEmail('');
     setError('');
+    setNotice('');
     try {
       const detail = await api.getPerson(locationId, person.person_id);
-      setEditingId(person.person_id);
+      if (request !== editRequest.current) return;
       setPersonName(detail.person_name);
       setEmail(detail.email);
+      setEditing({ person, status: 'ready' });
     } catch (cause) {
+      if (request !== editRequest.current) return;
+      setEditing({ person, status: 'failed' });
       setError(cause instanceof Error ? cause.message : '读取人员资料失败');
     }
   }
 
   function reset() {
-    setEditingId('');
+    editRequest.current += 1;
+    setEditing(null);
     setPersonName('');
     setEmail('');
+    setError('');
   }
-
-  if (!authorized) {
-    return <main className="min-h-screen bg-stone-100 p-6">正在验证权限…</main>;
-  }
-
-  const selectedLocationActive =
-    locations.find((row) => row.location_id === locationId)?.is_active ?? false;
 
   return (
-    <main className="min-h-screen bg-stone-100 p-4 text-slate-950 sm:p-6">
-      <div className="mx-auto max-w-5xl space-y-5">
-        <header className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold">人员映射管理</h1>
-          <a href="/" className="text-sm text-emerald-700">返回工作台</a>
-        </header>
+    <>
+      <div className="space-y-5">
         {error ? <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
         {notice ? <p role="status" className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p> : null}
-        <section className="rounded-md border bg-white p-4">
-          <label className="text-sm font-medium">
-            地点
-            <select
-              value={locationId}
-              onChange={(event) => {
-                setLocationId(event.target.value);
-                setPreviewPersonCode(null);
-                reset();
-              }}
-              className="ml-3 max-w-full rounded border px-3 py-2"
-            >
-              {locations.map((row) => (
-                <option key={row.location_id} value={row.location_id}>
-                  {row.location_name}{row.is_active ? '' : '（已停用）'}
-                </option>
-              ))}
-            </select>
-          </label>
-        </section>
         <form onSubmit={save} className="grid gap-3 rounded-md border bg-white p-4 md:grid-cols-3">
+          {editing?.status === 'loading' ? (
+            <p role="status" className="text-sm text-slate-600 md:col-span-3">
+              正在读取人员资料（{editing.person.person_name}）…
+            </p>
+          ) : null}
           <input
             aria-label="姓名"
+            disabled={formDisabled}
             required
             placeholder="姓名"
             value={personName}
@@ -160,6 +186,7 @@ export default function PeoplePage() {
           />
           <input
             aria-label="邮箱"
+            disabled={formDisabled}
             required
             type="email"
             placeholder="邮箱"
@@ -169,13 +196,18 @@ export default function PeoplePage() {
           />
           <div className="flex gap-2">
             <button
-              disabled={!selectedLocationActive || busy}
+              disabled={!locationActive || formDisabled}
               className="rounded bg-emerald-700 px-4 py-2 text-white disabled:bg-slate-400"
             >
-              {editingId ? '保存' : '新增'}
+              {editing ? '保存' : '新增'}
             </button>
-            {editingId ? (
-              <button type="button" onClick={reset} className="rounded border px-4 py-2">
+            {editing?.status === 'failed' ? (
+              <button type="button" disabled={busy} onClick={() => void edit(editing.person)} className="rounded border px-4 py-2">
+                重试
+              </button>
+            ) : null}
+            {editing ? (
+              <button type="button" disabled={busy} onClick={reset} className="rounded border px-4 py-2">
                 取消
               </button>
             ) : null}
@@ -303,6 +335,6 @@ export default function PeoplePage() {
           onClose={() => setPreviewPersonCode(null)}
         />
       ) : null}
-    </main>
+    </>
   );
 }

@@ -19,14 +19,14 @@
 | DATABASE_URL | 数据库连接串 | `postgresql://poolduck_local:poolduck_local_password@localhost:5432/poolduck_mail` | `Secret` | `Secret` | Yes | Local 为 compose 示例值；不写真实环境值 |
 | JWT_SECRET | JWT 签名密钥 | `local-placeholder` | `Secret` | `Secret` | Yes | 不写真实值 |
 | REFRESH_TOKEN_SECRET | 刷新令牌签名密钥 | `local-placeholder` | `Secret` | `Secret` | Yes | 不写真实值 |
-| MAIL_PROVIDER | 邮件 provider 类型 | `mock` | `mock`（OCI 待 #145） | `TBD` | No | 仅 `mock` 当前可启动；`sandbox` 不是 selector |
-| REAL_MAIL_SEND_ENABLED | 真实发送独立门禁 | `false` | `false`（#145 前） | `false` | No | 单独设置为 true 仍不能绕过代码门禁 |
+| MAIL_PROVIDER | 邮件 provider 类型 | `mock` | `mock`（常规部署） | `TBD` | No | Staging OCI HTTPS 仅用于独立批准窗口 |
+| REAL_MAIL_SEND_ENABLED | 真实发送独立门禁 | `false` | `false`（常规部署） | `false` | No | 单独设置为 true 仍不能绕过代码门禁 |
 | RECORD_RETENTION_PROCESSOR_ENABLED | ADR-024 到期记录销毁调度 | `false` | `false` | `false`（启用另审） | No | 仅可信 `APP_ENV=production` 可启动；默认关闭 |
 | RECORD_RETENTION_BATCH_SIZE | ADR-024 每类记录每轮清理上限 | `100` | `100` | `100`（灰度可设 `1`、`10`） | No | 整数 1–100；无效值停止清理器并告警 |
-| OCI_EMAIL_REGION | OCI HTTPS region | 空 | `ap-tokyo-1`（资源已建，真实发送未批准） | TBD | No | sender/Email Domain/endpoint 须同 region |
-| OCI_EMAIL_SENDER_COMPARTMENT_ID | approved sender 所在 compartment | 空 | 既有 Staging compartment；资源已建，容器仍不设置真实模式 | TBD | No | 容器运行环境，非数据库字段 |
-| OCI_EMAIL_FROM_ADDRESS | approved sender | 空 | `no-reply@mail.poolducktest.com` 已在 OCI `ACTIVE`，真实发送未批准 | TBD | No | 非登录凭据；不得提前启用 |
-| OCI_EMAIL_MESSAGE_ID_DOMAIN | Message-ID domain | 空 | 已批准 `mail.poolducktest.com`；真实模式仍关闭 | TBD | No | 与发件子域一致 |
+| OCI_EMAIL_REGION | OCI HTTPS region | 空 | `ap-tokyo-1`（历史预检已确认） | TBD | No | sender/Email Domain/endpoint 须同 region |
+| OCI_EMAIL_SENDER_COMPARTMENT_ID | approved sender 所在 compartment | 空 | 既有 Staging compartment，历史预检已确认 | TBD | No | 容器运行环境，非数据库字段 |
+| OCI_EMAIL_FROM_ADDRESS | approved sender | 空 | `no-reply@mail.poolducktest.com` 在历史预检中为 `ACTIVE` | TBD | No | 非登录凭据；不得提前启用 |
+| OCI_EMAIL_MESSAGE_ID_DOMAIN | Message-ID domain | 空 | 已批准 `mail.poolducktest.com` | TBD | No | 与发件子域一致 |
 | LOG_LEVEL | 日志级别 | `debug` | `info` | `info` | No | 按环境调整 |
 | API_METRICS_ENABLED | Backend API 每分钟聚合日志 | 默认关闭，显式 `true` 启用 | 未配置 | 未配置 | No | 启停需重启 Backend，口径见[可观测性策略 §5.1](../observability.md#51-api-5xx-与-p95-的本机核验) |
 | CORS_ORIGIN | CORS 白名单 | `http://localhost:3000` | `https://app.poolducktest.com` | `TBD` | No | 禁止通配 origin |
@@ -57,12 +57,12 @@ This section refines the Staging column for the current OCI Always Free MVP desi
 | `DATABASE_URL` | `Secret` | Yes | Yes | Staging PostgreSQL only; do not reuse Production. |
 | `JWT_SECRET` | `Secret` | Yes | Yes | Staging-only generated value. |
 | `REFRESH_TOKEN_SECRET` | `Secret` | Yes | Yes | Staging-only generated value. |
-| `MAIL_PROVIDER` | `mock` | No | Yes | OCI HTTPS is code-gated pending #145 approval. |
+| `MAIL_PROVIDER` | `mock` | No | Yes | OCI HTTPS requires a separately approved window. |
 | `REAL_MAIL_SEND_ENABLED` | `false` | No | Yes | Separate approval gate; do not change during ordinary deploy. |
-| `OCI_EMAIL_*` | Empty until approved | No | No | Only future OCI HTTPS mode; no SMTP/API key. See `docs/oci-mail-staging-readiness.md`. |
+| `OCI_EMAIL_*` | Approved values for OCI mode | No | Only for OCI mode | See [Staging admission](../oci-mail-staging-readiness.md) for the historical preflight and approval requirements. |
 | `LOG_LEVEL` | `info` | No | Yes | Use `debug` only temporarily. |
 | `TENANT_CONTEXT_ENFORCED` | `true` | No | Yes | Mandatory for Staging. |
 
 Human operators must provide or confirm the required values before Staging deployment. If any required value is missing, agents must stop and report the missing item instead of inventing a default.
 
-The historical Issue #37 baseline used SMTP/sandbox placeholders. Current Compose and Backend do not consume `MAIL_SMTP_*` or `MAIL_FROM_ADDRESS`; these are not required for mock deployments or the future OCI HTTPS path.
+The historical Issue #37 baseline used SMTP and sandbox placeholders. The Staging OCI HTTPS adapter uses Instance Principal and the approved `OCI_EMAIL_*` parameters.
