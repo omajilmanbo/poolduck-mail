@@ -255,19 +255,14 @@ sudo chown <staging-user>:<staging-user> /opt/poolduck-mail-staging
 cd /opt/poolduck-mail-staging
 ```
 
-首次部署：
+首次部署先执行 `git clone <repo-url> .`。每次发布由操作者从已通过 CI 的候选选择完整提交 SHA，在干净的部署工作树执行：
 
 ```bash
-git clone <repo-url> .
-git checkout <commit-sha-or-branch>
-```
-
-后续部署：
-
-```bash
-git fetch --all --prune
-git checkout <commit-sha-or-branch>
-git pull --ff-only
+set -eu
+: "${CANDIDATE:?set the approved full commit SHA}"
+git fetch origin main
+git checkout --detach "$CANDIDATE"
+test "$(git rev-parse HEAD)" = "$CANDIDATE"
 ```
 
 ### 3.3 准备 Staging `.env`
@@ -300,7 +295,7 @@ ssh -i .secrets\staging\id_ed25519 ubuntu@<staging-public-ip> "chmod 600 <stagin
 - `STAGING_TENANT_DELETE_ENABLED=true`（仅在已批准的 Staging 主机启用；删除时重新验平台管理员密码，直接物理清理且不可恢复）
 - `LOG_LEVEL=info`
 - `API_BASE_URL=https://app.poolducktest.com`
-- `NEXT_PUBLIC_API_BASE_URL=https://app.poolducktest.com`
+- `NEXT_PUBLIC_API_BASE_URL=/`
 - `CORS_ORIGIN=https://app.poolducktest.com`
 - `TENANT_CONTEXT_ENFORCED=true`
 
@@ -316,17 +311,32 @@ ssh -i .secrets\staging\id_ed25519 ubuntu@<staging-public-ip> "chmod 600 <stagin
 当前 `MAIL_PROVIDER=mock` 时不需要独立 `mail-sandbox` 服务；只有后续明确引入 sandbox 容器时才新增该服务。
 Caddy 使用固定版本镜像，`caddy-data` 保存证书私钥和 ACME 状态，`caddy-config` 保存运行时配置；不得使用 `docker compose down -v` 清理这些卷。
 
-执行命令：
+在目标架构（当前 Staging 为 `linux/arm64`）准备工件。需要 Python 3、Git、Docker 和支持 `!reset` 的 Compose。准备阶段从候选提交读取两个 Git 构建上下文；前端以同源路径访问 Caddy 转发的 `/api/`。工件目录放在工作树外，保留上一套通过验收的工件与记录。
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.staging.yml config
-docker run --rm -v "$PWD/deploy/staging/caddy:/etc/caddy:ro" caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-docker compose -f docker-compose.yml -f docker-compose.staging.yml build
-docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
-docker compose -f docker-compose.yml -f docker-compose.staging.yml ps
+set -eu
+: "${RELEASE:?set a new absolute artifact directory}"
+python3 deploy/staging/release.py prepare "$RELEASE"
 ```
 
-如果 `docker compose config` 失败，停止并记录具体配置错误。
+保存输出的 `release.json` SHA-256 到独立的候选记录。启动、恢复或成对回退时从所选记录填写 `LOCK_SHA256`；将其对应的 `release.json` 和 `images.tar` 放入 `RELEASE`，按 3.2 检出对应提交，并完成数据库备份。验证程序检查归档、目标架构、两端提交标签、镜像 ID 和实际 Node 补丁，再生成仅引用两个 ID 的 Compose 覆盖文件。
+
+```bash
+set -eu
+: "${LOCK_SHA256:?set the digest from the selected release record}"
+python3 deploy/staging/release.py verify "$RELEASE" "$LOCK_SHA256"
+dc() { docker compose -f docker-compose.yml -f docker-compose.staging.yml -f "$RELEASE/images.compose.yml" "$@"; }
+dc config --quiet
+docker run --rm -v "$PWD/deploy/staging/caddy:/etc/caddy:ro" caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+dc up -d --no-build --wait
+dc ps
+for service in backend frontend; do
+  docker inspect --format '{{.Image}}' "$(dc ps -q "$service")"
+  dc exec -T "$service" node --version
+done
+```
+
+将两端容器的实际 ID 与 `release.json` 逐项核对。保留本次验收的清单、归档及独立核对的摘要。将来生产只可晋级最新一次通过**实际 Staging** 完整验收的同一提交与归档，复用相同平台及同一对镜像 ID；补丁更新、架构变化或重建均须先重新通过 Staging。
 
 ### 3.5 数据库 migration 与 seed
 
@@ -339,8 +349,8 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml ps
 示例命令：
 
 ```bash
-docker compose exec backend npm run db:deploy
-docker compose exec backend npm run staging:seed
+dc exec -T backend npm run db:deploy
+dc exec -T backend npm run staging:seed
 ```
 
 `staging:seed` 仅写入 synthetic `.example.local` 测试数据，并准备 active、suspended、expired 三类订阅状态用于 Staging 验证。
@@ -364,8 +374,8 @@ echo | openssl s_client -connect app.poolducktest.com:443 -servername app.pooldu
 
 1. 停止外部测试并记录维护窗口。
 2. 保留数据库备份与 Caddy named volumes，不执行 `down -v`。
-3. 将应用代码和 `.env` 一起回退到上一个已验证 commit；旧 HTTP 配置只能恢复内部验证状态，不能继续作为扩大测试后的长期入口。
-4. 运行 `docker compose config`、`up -d --build`、migration/seed 与 smoke，确认回滚结果。
+3. 先确认旧应用与当前数据库结构兼容。检出上一个通过验收的提交，恢复匹配的 Staging 配置，选择该记录保存的归档和清单摘要。
+4. 从 3.4 的 `verify` 开始成对恢复，按 3.5–3.6 复核迁移状态、健康、登录与 mock 队列。数据库恢复遵循单独的备份恢复流程。
 5. 若问题仅为证书签发，优先修复 DNS、80/443、ACME challenge 或 Caddy 数据卷，不回滚数据库。
 
 ### 3.8 部署记录
@@ -376,7 +386,8 @@ echo | openssl s_client -connect app.poolducktest.com:443 -servername app.pooldu
 |---|---|
 | 日期 | `<yyyy-mm-dd>` |
 | 执行人 | `<name>` |
-| commit SHA | `<sha>` |
+| commit SHA / 完整 CI | `<full-sha>` / <run-url> |
+| 工件 | 清单与归档 SHA-256、两端实际镜像 ID、平台、两端 Node 补丁、归档保管位置 |
 | Staging URL | `<url-or-ip>` |
 | DB | `Staging PostgreSQL only` |
 | Mail provider | `mock` |
