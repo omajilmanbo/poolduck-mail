@@ -96,6 +96,7 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 |---|---|---|---|---|
 | [#199](https://github.com/omajilmanbo/poolduck-mail/issues/199) | 工程改进 | 按界面就绪状态同步退出重登和人员编辑的浏览器验收 | 实时状态见 GitHub | 否 |
 | [#201](https://github.com/omajilmanbo/poolduck-mail/issues/201) | 产品缺陷 | 防止人员详情回填覆盖姓名和邮箱草稿，支持读取失败后重试 | 合成数据已复现，实时状态见 GitHub | 是，修复须审查人员资料交互 |
+| [#219](https://github.com/omajilmanbo/poolduck-mail/issues/219) | 缺陷 | 用 PostgreSQL 时间显示新扫码和历史记录的可取消窗口 | 实时状态见 GitHub | 否，沿用 ADR-017 |
 | #38 | 运维 | PostgreSQL 备份与恢复策略 | 当前跟进项，实时状态见 GitHub | 是 |
 | #39 | 运维 | 日志、监控与告警策略 | 策略文档已完成并关闭；集中采集与真实告警仍待独立实施 | 是 |
 | #225 | 工程改进 | Node.js 主版本与 Staging 工件晋级 | 24 与 22 均通过[本地复验](testing/issue-225-node-runtime-2026-11-20.md)，实施与实际 Staging 验收分别跟踪 | 负责人于 2026-11-24 批准 D20 A，采用 Node 24。[ADR-030](decisions/ADR-030-node-runtime-major.md) |

@@ -260,6 +260,9 @@ ADR-017 已 `Accepted`，schema/API/worker/Frontend 已在本地实现。本节�
   状态、截止、人员或邮箱。
 - 边界：使用 PostgreSQL 可控时间覆盖截止前 1ms、恰好截止（发送领取优先）、截止后 1ms，取消/
   worker/new scan 三方并发，多 worker、进程重启、客户端时钟偏差/休眠，以及 p95 2 秒/p99 5 秒 SLO。
+- 历史读取：`backend/test/history.spec.ts` 通过列表和详情 HTTP 接口检查最后一次数据读取完成时的
+  `server_time` 和 `can_cancel`。合成时钟在历史行读取后为截止前 1ms；若同一事务还读取前序动作，
+  该查询完成时已到截止后 1ms，响应应显示不可取消。
 - 订阅：`trial`/`active` 正常；等待期间转为 `expired`/`suspended` 时取消仍可用而发送 fail-closed，
   幂等重放和 retry 不能绕过。
 - 回归：Issue #68 去重/相反动作冲突、原 key 重放、retry 30 秒/2 分钟/10 分钟、动作/正文快照、

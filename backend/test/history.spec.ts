@@ -9,6 +9,7 @@ describe('Tenant-scoped history APIs', () => {
   let app: INestApplication;
   let jwtService: JwtService;
   let prisma: {
+    $queryRawUnsafe: jest.Mock;
     user: { findFirst: jest.Mock };
     location: { findFirst: jest.Mock };
     scanEvent: { findMany: jest.Mock; findFirst: jest.Mock };
@@ -30,6 +31,7 @@ describe('Tenant-scoped history APIs', () => {
 
   beforeEach(async () => {
     prisma = {
+      $queryRawUnsafe: jest.fn().mockResolvedValue([{ now: createdAt }]),
       user: { findFirst: jest.fn() },
       location: { findFirst: jest.fn() },
       scanEvent: { findMany: jest.fn(), findFirst: jest.fn() },
@@ -54,7 +56,10 @@ describe('Tenant-scoped history APIs', () => {
     });
   });
 
-  afterEach(async () => app.close());
+  afterEach(async () => {
+    jest.useRealTimers();
+    await app.close();
+  });
 
   it('returns an empty scan history page', async () => {
     prisma.scanEvent.findMany.mockResolvedValue([]);
@@ -82,6 +87,84 @@ describe('Tenant-scoped history APIs', () => {
         take: 26,
       }),
     );
+  });
+
+  it.each([
+    [-1, true],
+    [0, false],
+    [1, false],
+  ] as const)('uses database time %i ms from the deadline on fast and slow nodes', async (offset, canCancel) => {
+    const deadline = new Date(createdAt.getTime() + 10_000);
+    const dbNow = new Date(deadline.getTime() + offset);
+    prisma.$queryRawUnsafe.mockResolvedValue([{ now: dbNow }]);
+    const waiting = scanRow(scanEventId, 'waiting');
+    const sent = scanRow(otherScanEventId, 'sent');
+    prisma.scanEvent.findMany.mockResolvedValue([waiting, sent]);
+    prisma.scanEvent.findFirst.mockResolvedValue(waiting);
+    const fields = { server_time: dbNow.toISOString(), cancel_until: deadline.toISOString() };
+
+    jest.useFakeTimers();
+    for (const skew of [3000, -3000]) {
+      jest.setSystemTime(dbNow.getTime() + skew);
+      prisma.$queryRawUnsafe.mockClear();
+      const list = await request(app.getHttpServer()).get('/api/scan-events')
+        .set('Authorization', `Bearer ${token()}`).expect(200);
+      expect(list.body.items).toMatchObject([
+        { ...fields, can_cancel: canCancel },
+        { ...fields, can_cancel: false },
+      ]);
+      expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+
+      const detail = await request(app.getHttpServer()).get(`/api/scan-events/${scanEventId}`)
+        .set('Authorization', `Bearer ${token()}`).expect(200);
+      expect(detail.body).toEqual(list.body.items[0]);
+      expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it.each(['list', 'detail'])('samples the database clock after the final %s read', async (endpoint) => {
+    const row = scanRow(scanEventId, 'waiting');
+    const deadline = row.mailJobs[0].cancelUntil.getTime();
+    let wallTime = deadline - 2;
+    const readRow = () => {
+      wallTime = deadline - 1;
+      return row;
+    };
+    prisma.scanEvent.findMany.mockImplementation(() => [readRow()]);
+    prisma.scanEvent.findFirst.mockImplementation(readRow);
+
+    // PostgreSQL pins CURRENT_TIMESTAMP at BEGIN. In autocommit each statement starts a transaction.
+    function readClock(sql: string, transactionStart = wallTime) {
+      switch (sql.trim().toLowerCase()) {
+        case 'select current_timestamp as now': return [{ now: new Date(transactionStart) }];
+        case 'select clock_timestamp() as now': return [{ now: new Date(wallTime) }];
+        default: throw new Error('Unexpected database clock query');
+      }
+    }
+    prisma.$queryRawUnsafe.mockImplementation(readClock);
+    Object.assign(prisma, {
+      $transaction: (read: (tx: unknown) => Promise<unknown>) => {
+        const transactionStart = wallTime;
+        return read({
+          ...prisma,
+          $queryRawUnsafe: (sql: string) => readClock(sql, transactionStart),
+          // With predecessor history enabled, this read completes after the same deadline.
+          $queryRaw: () => { wallTime = deadline + 1; return []; },
+        });
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .get(endpoint === 'list' ? '/api/scan-events' : `/api/scan-events/${scanEventId}`)
+      .set('Authorization', `Bearer ${token()}`).expect(200);
+    const item = endpoint === 'list' ? response.body.items[0] : response.body;
+    expect(item).toMatchObject({
+      scan_event_id: scanEventId,
+      mail_status: 'waiting',
+      cancel_until: new Date(deadline).toISOString(),
+      server_time: new Date(wallTime).toISOString(),
+      can_cancel: wallTime < deadline,
+    });
   });
 
   it('combines location, status, date, limit and stable cursor pagination', async () => {
@@ -188,6 +271,7 @@ describe('Tenant-scoped history APIs', () => {
       .set('Authorization', `Bearer ${token()}`)
       .expect(404);
     expect(response.body).toMatchObject({ code: 'SCAN_EVENT_NOT_FOUND' });
+    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
     expect(prisma.scanEvent.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -350,11 +434,13 @@ describe('Tenant-scoped history APIs', () => {
       actionSource: 'person_action_code',
       receivedAt: createdAt,
       createdAt,
+      canceledAt: null,
       location: { locationCode: 'A1B2C3D4', name: 'Office A' },
       mailJobs: [
         {
           id: mailJobId,
           status,
+          cancelUntil: new Date(createdAt.getTime() + 10_000),
           sentAt: null,
           errorMessage: null,
           locationNameSnapshot: 'Office A at send time',
