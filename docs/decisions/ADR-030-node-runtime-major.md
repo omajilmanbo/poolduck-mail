@@ -1,7 +1,7 @@
 # ADR-030：首次生产部署的 Node.js 主版本
 
-- 状态：Proposed
-- 日期：2026-11-20
+- 状态：Accepted
+- 日期：2026-11-24
 - 相关 Issue：[#225](https://github.com/omajilmanbo/poolduck-mail/issues/225)
 
 ## Context
@@ -10,9 +10,11 @@ ADR-004 指定 Node.js 20 LTS。正式候选 `a052518` 的前后端 Dockerfile �
 
 ## Decision
 
-建议项目负责人选择 **D20 A，采用 Node.js 24 LTS**，统一前端构建与服务、后端构建与服务、CI 及本地开发的 Node 主版本。若接受，仅取代 ADR-004 的 Decision 第 2 项和 Operational impact 部署项中指定 **Node.js 20** 的部分。
+2026-11-24，项目负责人批准 **D20 A，采用 Node.js 24 LTS**。前端构建与服务、后端构建与服务、CI 及本地开发统一使用 24。此决定仅取代 ADR-004 的 Decision 第 2 项和 Operational impact 部署项中的 Node.js 主版本。
 
-2026-11-24，24 和 22 均在同一候选的 Git 原始字节上通过两端单测、PG16 迁移、登录、授权扫码、取消及 mock 发送。Node 22 后端直接使用原索引，另三个镜像从经摘要核验的原层重新解包，运行配置一致。选择 A 的依据是上游维护期比 22 多一年。负责人也可选择 **D20 B，采用 Node.js 22 LTS**。选 B 时先将草案目标改为 22，再记录接受决定。[冻结候选验证回执](../testing/issue-225-node-runtime-2026-11-20.md)
+Staging 与将来的生产使用同一版本。生产只可晋级最新一次实际通过 Staging 验收的候选提交及其前后端镜像对，按不可变标识复用相同工件。任何补丁更新、应用改动或重新构建均形成新的候选，须先经过 Staging 验收。本次实施范围为 Staging 功能与发布模板。生产建设和发布须另行批准。
+
+24 与 22 在同一冻结候选上均通过两端单测、PG16 迁移、登录、授权扫码、取消及 mock 发送。选择 24 可多获得一年的上游维护期。这些本地结果用于兼容性决策，实际 Staging 发布另记环境、工件及验收回执。[冻结候选验证回执](../testing/issue-225-node-runtime-2026-11-20.md)
 
 ## Alternatives considered
 
@@ -36,10 +38,10 @@ ADR-004 指定 Node.js 20 LTS。正式候选 `a052518` 的前后端 Dockerfile �
 
 ## Operational impact
 
-本地已实测 24→22 和 22→24 成对切换。两组各自保留原 PG16 卷，重新登录后均可回读已取消和已发送的合成任务，唯一的 mock 尝试及 21 项迁移记录均保持原样。接受后，按最终候选及部署目标架构重建前后端，记录镜像摘要，执行完整 CI 和 PG16 mock 冒烟。若首发门禁失败，暂缓发布。已有环境发生回归时，按部署流程成对恢复上次获准的前后端摘要，并复查健康、登录与队列。[部署与恢复决策](ADR-005-staging-deployment-trigger-and-recovery.md)
+本地已实测 24→22 和 22→24 成对切换，两组各自保留原 PG16 卷。Staging 发布模板按同一候选及目标架构构建一次，记录提交、前后端镜像标识、平台与实际 Node 版本。通过完整 CI 后，由操作者在获准窗口验收健康、登录、扫码与 mock 任务，保存结果。验收失败时沿用上次通过的工件对，复查健康、登录与队列。[部署与恢复决策](ADR-005-staging-deployment-trigger-and-recovery.md)
 
 ## Follow-up
 
-1. 项目负责人答复 D20 A 或 B，记录选择与日期。本草案在人工接受前保持 Proposed。
-2. 接受后单独实施。同步两份 Dockerfile、CI 的 backend、frontend、adr017-release-gate 和 e2e 作业，并核对后端 `engines.node` 与锁文件根元数据。更新架构、开发和部署说明，在 ADR-004 标注部分取代关系。
-3. 在实施提交上跑完整 CI，包含数据库并发与回滚门禁、Playwright 成功和失败两条路径。按所选主版本在维护截止前安排下一次评估。正式发布由负责人另行批准。
+1. #225 单独实施两份 Dockerfile、前后端运行时声明、四个 CI 作业、开发说明及 Staging Compose 发布模板。
+2. 在实施提交上执行完整 CI，包含数据库并发与回滚门禁、Playwright 成功和失败两条路径，验证按同一候选与镜像对重复启动。
+3. 在 Node 24 上游维护截止前安排下一次主版本评估。

@@ -1,6 +1,6 @@
 # #225 · Node.js 24 与 22 的本机兼容性回执
 
-**2026-11-24 结论**　Node 24.22.3 和 22.23.5 均通过冻结候选的 Git 原始字节复验。两版各通过 345 项单测、21 项 PG16 迁移、授权扫码、取消及 mock 发送，双向切换后均可回读原任务。候选提交为 `a05251897d7fc11d96114606bcaa1807dd96af55`，Git tree 为 `93ab3e15fddc235b46fbb7a17997a46c8818b03a`。D20 的主版本选择仍由项目负责人决定。[Proposed ADR-030](../decisions/ADR-030-node-runtime-major.md)
+**2026-11-24 结论**　Node 24.22.3 和 22.23.5 均通过冻结候选的 Git 原始字节复验。两版各通过 345 项单测、21 项 PG16 迁移、授权扫码、取消及 mock 发送，双向切换后均可回读原任务。候选提交为 `a05251897d7fc11d96114606bcaa1807dd96af55`，Git tree 为 `93ab3e15fddc235b46fbb7a17997a46c8818b03a`。项目负责人随后于 2026-11-24 批准 D20 A，选定 Node 24。实际 Staging 发布另行验收。[Accepted ADR-030](../decisions/ADR-030-node-runtime-major.md)
 
 ## 11 月 24 日 · 镜像恢复与运行验收
 
