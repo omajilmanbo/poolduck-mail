@@ -23,7 +23,7 @@ describe('License API', () => {
   const otherTenantId = '22222222-2222-4222-8222-222222222222';
   const userId = '33333333-3333-4333-8333-333333333333';
   const email = 'operator@example.local';
-  const endAt = new Date('2026-12-31T23:59:59.000Z');
+  const endAt = new Date(Date.now() + 86_400_000);
 
   beforeAll(() => {
     process.env.JWT_SECRET = 'license-spec-secret';

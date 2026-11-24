@@ -2,13 +2,14 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import argon2 from "argon2";
 import { config } from "dotenv";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 config({ path: "../.env", quiet: true });
 config({ path: ".env", quiet: true });
 config({ path: ".env.local", override: true, quiet: true });
 
 const command = process.argv[2];
+const requestId = randomUUID();
 const databaseUrl = process.env.DATABASE_URL;
 const email = process.env.PLATFORM_ADMIN_EMAIL?.trim().toLowerCase();
 const password = process.env.PLATFORM_ADMIN_PASSWORD;
@@ -32,17 +33,22 @@ function fingerprint(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-async function audit(client, adminId, action, result, metadata = {}) {
-  await client.platformAuditLog.create({
+function auditSuccess(client, adminId, action, metadata = {}) {
+  return client.platformAuditLog.create({
     data: {
       platformAdminId: adminId,
       action,
       resourceType: "platform_admin",
-      resourceId: adminId ?? "unknown",
-      result,
+      resourceId: adminId,
+      result: "success",
+      requestId,
       metadataJson: metadata,
     },
   });
+}
+
+function reportSuccess(message) {
+  console.log(`${message} request_id=${requestId}`);
 }
 
 async function main() {
@@ -56,11 +62,11 @@ async function main() {
       const admin = await tx.platformAdmin.create({
         data: { email, passwordHash: hash, status: "active" },
       });
-      await audit(tx, admin.id, "platform.admin.bootstrap", "success", {
+      await auditSuccess(tx, admin.id, "platform.admin.bootstrap", {
         identity_hash: fingerprint(email),
       });
     });
-    console.log("platform_admin bootstrap completed.");
+    reportSuccess("platform_admin bootstrap completed.");
     return;
   }
 
@@ -77,18 +83,9 @@ async function main() {
         where: { platformAdminId: admin.id, revokedAt: null },
         data: { revokedAt: new Date() },
       }),
-      prisma.platformAuditLog.create({
-        data: {
-          platformAdminId: admin.id,
-          action: "platform.admin.disable",
-          resourceType: "platform_admin",
-          resourceId: admin.id,
-          result: "success",
-          metadataJson: {},
-        },
-      }),
+      auditSuccess(prisma, admin.id, "platform.admin.disable"),
     ]);
-    console.log("platform_admin disabled and all sessions revoked.");
+    reportSuccess("platform_admin disabled and all sessions revoked.");
     return;
   }
 
@@ -104,18 +101,9 @@ async function main() {
         where: { platformAdminId: admin.id, revokedAt: null },
         data: { revokedAt: new Date() },
       }),
-      prisma.platformAuditLog.create({
-        data: {
-          platformAdminId: admin.id,
-          action: "platform.admin.rotate",
-          resourceType: "platform_admin",
-          resourceId: admin.id,
-          result: "success",
-          metadataJson: {},
-        },
-      }),
+      auditSuccess(prisma, admin.id, "platform.admin.rotate"),
     ]);
-    console.log("platform_admin password rotated and all sessions revoked.");
+    reportSuccess("platform_admin password rotated and all sessions revoked.");
     return;
   }
 
@@ -136,18 +124,9 @@ async function main() {
       where: { platformAdminId: admin.id, revokedAt: null },
       data: { revokedAt: new Date() },
     }),
-    prisma.platformAuditLog.create({
-      data: {
-        platformAdminId: admin.id,
-        action: "platform.admin.recover",
-        resourceType: "platform_admin",
-        resourceId: admin.id,
-        result: "success",
-        metadataJson: {},
-      },
-    }),
+    auditSuccess(prisma, admin.id, "platform.admin.recover"),
   ]);
-  console.log("platform_admin recovered and all prior sessions revoked.");
+  reportSuccess("platform_admin recovered and all prior sessions revoked.");
 }
 
 main()
