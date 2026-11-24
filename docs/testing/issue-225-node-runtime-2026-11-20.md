@@ -25,6 +25,12 @@
 
 此前实施提交 `ea5a770` 的本机后端快照中 `libssl.so.3` 被截短，空库启动退出 1。修正后构建与运行共用已执行 `openssl version` 的基础层，并在准备、载入后实际检查解包镜像。实际 Staging 的 arm64 工件、公开 DNS/TLS、端口可达性和人工功能验收由操作者另记。将来生产只晋级最新实际 Staging 验收记录中的工件对。[Staging 发布与验收手册](../staging-manual.md#34-构建和启动服务)
 
+### 首次采用发布模板的回退演练
+
+在独立空白 PG16、内部网络和 mock 上，先检出旧格式 `a052518`，启动本机已有的 Node 20.20.2 前后端。按手册 3.2 从**运行中的容器**取得后端 ID `6ae6404786a72415cc65d37ccb7fa8e002ec37c0e34cce63a901f31cac52d6d9`、前端 ID `438d62ff2b824856da55cce52df336c4186ff5bc70718a3d506e67355d5a4568`，导出、载入并验证旧镜像对。旧配置与卷名随受限备份留存。两个提交的 Prisma 树一致；合成数据库的 `pg_dump -Fc` 在另一空库 `pg_restore --exit-on-error` 成功，迁移记录为 21 项。
+
+切换到 `1c62a62` 的 Node 24 镜像对后执行 `smoke:api`，产生一笔取消、零次尝试，另一笔发送成功、一次 mock 尝试。随后逐条执行手册 3.7 的旧格式命令，退出 0。旧 checkout 中没有 `.nvmrc`、`release.py`、`release.json`。两端恢复到上述原始 ID 与 Node 20.20.2，旧配置恢复，原 Postgres 容器和卷一致。旧应用可登录并读取两笔任务的历史和详情。扫码、任务、发送尝试、迁移四表的指纹与切回前相同。整个切换使用 `--no-build`，专用卷仅在演练结束后清理。[首次切换预检](../staging-manual.md#32-准备应用目录) · [旧格式回退](../staging-manual.md#37-https-回滚) · [该提交 CI](https://github.com/omajilmanbo/poolduck-mail/actions/runs/45304868288)
+
 ## 11 月 24 日 · 镜像恢复与运行验收
 
 重启后在本机 `desktop-linux`、Engine 29.9.3、Compose 5.7.0、`linux/amd64` 上复验。重新导出候选的 329 个文件，逐个匹配原 Git blob。两个 Dockerfile 的实验副本各仅替换两处 Node 基础镜像主版本。四个 `:git-blobs` 标签的索引摘要均匹配 11 月 20 日的构建日志。
