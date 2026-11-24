@@ -53,6 +53,9 @@
 - #139 全局预约验收：准备一次性本机 PG16，设置 `APP_ENV=test`、`DATABASE_URL` 指向其回环地址，账号须可创建数据库。在 `backend/` 执行 `npm run test:oci-pacing-pg16`。脚本迁移并清理自己的随机数据库，邮件调用只进入内存 fake。[断言和结果](testing/local-oci-pacing-2026-11-19.md)
 - ADR-023 租户生命周期迁移：在 `APP_ENV=local` 或 `test`、`DATABASE_URL` 指向本机 PostgreSQL 时，
   于 `backend/` 执行 `npm run test:tenant-lifecycle-migration`；脚本仅创建并删除随机命名的合成测试数据库。
+- 合成订阅：在 `APP_ENV=local` 或 `test`、`DATABASE_URL` 指向本机 PostgreSQL 时，于 `backend/` 执行
+  `npm run test:synthetic-subscriptions`。连接字符串仅接受本机回环地址和可选的 `?schema=public`。
+  脚本在随机命名的临时数据库中运行三个种子脚本，验证旧记录续期、跨年与重复执行，完成后删除该数据库。
 - #160 平台删除事务：在相同本地环境下，于 `backend/` 执行 `npm run test:platform-delete-transaction`；
   脚本只在随机命名的临时数据库中验证并发重放、订阅更新竞态与失败回滚，完成后删除该数据库。
 - #161 平台恢复事务：在相同本地环境下，于 `backend/` 执行 `npm run test:platform-restore-transaction`；
