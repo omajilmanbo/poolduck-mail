@@ -439,6 +439,8 @@ npm run test:e2e
 - `E01K0ABC10001` 创建 mail_job 并显示“进入”，自动触发 sandbox，按 CI matrix 验证“已发送”或“等待重试/发送失败”
 - `X01K0ABC10001` 在冲突窗口外创建离开记录并使用“退室”正文
 - 页面刷新后从 tenant-scoped API 恢复历史记录
+- 退出后等登录表单出现再以原 operator 重登，确认已取消的扫码记录仍显示“已取消”
+- 人员编辑等所选人员的原姓名回填，再改名保存，按同一人员码确认列表与刷新后的结果一致
 - 当前 location 的扫码记录首列显示人员名称，不重复显示地点；缺少人员名称的历史记录安全显示 `-`
 - Tenant A token 不能用 Tenant B location 查询历史
 - suspended tenant 登录后扫码输入和提交按钮禁用

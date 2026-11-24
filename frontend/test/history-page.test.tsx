@@ -34,6 +34,49 @@ describe('history workspace', () => {
     expect(screen.getByTestId('mail-status').textContent).toContain('已发送');
   });
 
+  it('shows safe rejection reasons and clears the retry message when the job is sent', async () => {
+    const quotaReason = '邮件服务因配额或频率限制拒绝了本次发送，等待自动重试';
+    const authReason = '系统未通过邮件服务的发信认证，本次任务不会自动重试';
+    const suppressedReason = '邮件服务已停止向该收件地址投递，本次任务不会自动重试';
+    const queued = historyItem('queued', quotaReason);
+    const authRejected = {
+      ...historyItem('failed', authReason),
+      scan_event_id: 'auth-rejected-scan',
+      person_name: 'Authentication Rejected Person',
+    };
+    const suppressed = {
+      ...historyItem('failed', suppressedReason),
+      scan_event_id: 'suppressed-scan',
+      person_name: 'Suppressed Person',
+    };
+    let retried = false;
+    vi.stubGlobal('fetch', createWorkspaceFetch(() => ({
+      items: [retried ? historyItem('sent') : queued, authRejected, suppressed],
+      next_cursor: null,
+    })));
+    render(<HomePage />);
+
+    const queuedRow = await screen.findByRole('row', { name: /History Person/ });
+    const authRejectedRow = screen.getByRole('row', { name: /Authentication Rejected Person/ });
+    const suppressedRow = screen.getByRole('row', { name: /Suppressed Person/ });
+    expect(within(queuedRow).getByText(quotaReason)).not.toBeNull();
+    expect(within(queuedRow).getByTestId('mail-status').textContent).toBe('发送中');
+    const terminalRows = [[authRejectedRow, authReason], [suppressedRow, suppressedReason]] as const;
+    for (const [row, reason] of terminalRows) {
+      expect(within(row).getByText(reason)).not.toBeNull();
+      expect(within(row).getByTestId('mail-status').textContent).toBe('发送失败');
+      expect(within(row).queryByText(/等待自动重试/)).toBeNull();
+    }
+
+    retried = true;
+    fireEvent.click(screen.getByTestId('history-refresh'));
+    await within(queuedRow).findByText('已发送');
+    expect(screen.queryByText(quotaReason)).toBeNull();
+    for (const [row, reason] of terminalRows) {
+      expect(within(row).getByText(reason)).not.toBeNull();
+    }
+  });
+
   it('shows an empty history state', async () => {
     vi.stubGlobal('fetch', createWorkspaceFetch({ items: [], next_cursor: null }));
     render(<HomePage />);
@@ -369,7 +412,7 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-function historyItem(status: ScanHistoryItem['status']): ScanHistoryItem {
+function historyItem(status: ScanHistoryItem['status'], errorMessage = status === 'failed' ? '邮件发送失败' : null): ScanHistoryItem {
   return {
     scan_event_id: '55555555-5555-4555-8555-555555555555',
     location_id: locationId,
@@ -393,7 +436,7 @@ function historyItem(status: ScanHistoryItem['status']): ScanHistoryItem {
       status,
       action: 'entry',
       sent_at: status === 'sent' ? '2026-07-20T01:03:03.000Z' : null,
-      error_message: status === 'failed' ? '邮件发送失败' : null,
+      error_message: errorMessage,
     },
   };
 }
