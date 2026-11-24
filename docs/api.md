@@ -296,7 +296,7 @@ ADR-017 当前契约：
 - 租户边界：仅使用 JWT 中的 `tenant_id`；其他 tenant 的 ID 统一返回 `MAIL_JOB_NOT_FOUND`
 - location 授权：operator 只能查询已分配 location 的任务；tenant_manager 不受 assignment 限制
 - 出参：`mail_job_id`, `action`, `status`, `created_at`, `sent_at`, `error_message`, `retry_count`, `scheduled_at`, `context`, `scan_event`
-- `context` 返回发送时固化的 `tenant_name`, `location_name`, `person_name`, `person_code`, `snapshot_source`；后续改名不改写历史
+- `context` 返回 `tenant_name`、`location_name`、`person_name`、`person_code` 和 `snapshot_source`。若来源为 `scan_relation`，这些字段在扫码创建任务时固化。若来源为 `legacy_backfill`，字段取自迁移时关联的租户、地点和人员资料。后续改名不改写快照。
 - `scan_event` 返回 `action`, `action_source`；旧数据为 `unknown` / `legacy_unknown`
 - `error_message` 是安全展示文本。
   - `OCI_QUOTA_REJECTED` 显示配额或频率限制，任务为 `queued` 且有 `scheduled_at` 时提示等待自动重试，为 `failed` 时提示已停止重试。
