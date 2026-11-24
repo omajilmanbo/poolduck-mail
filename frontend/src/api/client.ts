@@ -624,12 +624,9 @@ export function createPlatformApiClient(config: ApiClientConfig = {}) {
     getMailMode: () =>
       request<{ mode: 'mock' | 'oci_email_delivery_https' }>(
         '/api/platform/auth/mail-mode',
-        { headers: { 'Cache-Control': 'no-cache' } },
       ),
     getEnvironment: () =>
-      request<PlatformEnvironment>('/api/platform/auth/environment', {
-        headers: { 'Cache-Control': 'no-cache' },
-      }),
+      request<PlatformEnvironment>('/api/platform/auth/environment'),
     getTenants: () =>
       request<PlatformTenantSummary[]>('/api/platform/tenants'),
     getPlatformAudits: (params: URLSearchParams) =>

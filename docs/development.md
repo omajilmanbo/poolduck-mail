@@ -129,10 +129,15 @@
 - 合成 seed：仅 Local/CI/Staging 可显式设置 `PLATFORM_SYNTHETIC_SEED=true`、
   `.example.local` 邮箱和运行时测试密码，再执行 `npm.cmd run platform:seed`
 - Production 会拒绝合成 seed；CLI 与 seed 均不输出邮箱、密码、token 或哈希
-- UI：`http://localhost:3000/platform/login`；租户登录仍为 `http://localhost:3000/`
+- UI：`http://localhost:3000/platform/login`；租户登录仍为 `http://localhost:3000/`。
+- 本地浏览器跨端口访问时，前端页面来源须匹配后端的 `CORS_ORIGIN`（默认
+  `http://localhost:3000`），前端的 `NEXT_PUBLIC_API_BASE_URL` 默认指向 `http://localhost:3001`。
+  使用 `APP_ENV=local`、`MAIL_PROVIDER=mock` 和 `REAL_MAIL_SEND_ENABLED=false` 启动后，
+  控制台应显示“模拟发信（mock）”和“当前环境未开放租户删除”。
 
 聚焦验证：
 
 - Backend：`npm.cmd test -- test/platform.spec.ts test/auth.spec.ts test/management.spec.ts`
 - Frontend：`npm.cmd test -- --run test/platform.test.tsx`
-- E2E：本地前后端可用后执行 `npm.cmd run test:e2e -- platform-control-plane.spec.ts`
+- UI E2E（模拟 API）：Frontend 可用后执行 `npm.cmd run test:e2e -- platform-control-plane.spec.ts`。
+- 真实跨端口读取按[验证指南](testing.md#412-issue-195-本地跨端口平台状态)检查。
