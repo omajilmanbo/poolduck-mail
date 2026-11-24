@@ -255,7 +255,54 @@ sudo chown <staging-user>:<staging-user> /opt/poolduck-mail-staging
 cd /opt/poolduck-mail-staging
 ```
 
-首次部署先执行 `git clone <repo-url> .`。每次发布由操作者从已通过 CI 的候选选择完整提交 SHA，在干净的部署工作树执行：
+首次部署先执行 `git clone <repo-url> .`。已有旧栈首次采用本模板时，先在**仍运行旧版本**的工作树完成下面的首次切换预检。常规发布直接从已通过 CI 的候选选择完整提交 SHA。
+
+#### 首次切换预检（仅限已有旧格式部署）
+
+在改 checkout、配置或运行迁移之前，对照最近一次实际部署记录，确认旧提交、Compose 项目、文件顺序、环境来源及运行中的前后端、Postgres 和代理。保留 Staging 数据库的可恢复备份。比较候选与旧提交的 schema、迁移及数据语义，确认旧应用可读取候选迁移后的数据库；有差异时先在隔离副本演练。核对存量队列和发送开关，避免重放待处理任务。任一项无法确认，或旧镜像无法导出、复载，停在旧栈。
+
+以下 Bash 数组按旧部署实际启动参数填写。额外覆盖文件、非 Git 配置、外部 secret 和临时环境覆盖须在受限备份中保留对应版本，记录取回方法。示例复制旧栈的 `.env`；只将摘要与工件位置写入部署记录。
+
+```bash
+set -euo pipefail
+: "${STAGING_PROJECT:?set the existing Compose project name}"
+old_dc=(docker compose --env-file .env -p "$STAGING_PROJECT" -f docker-compose.yml -f docker-compose.staging.yml)
+pg_volume() {
+  docker inspect --format '{{range .Mounts}}{{if and (eq .Destination "/var/lib/postgresql/data") (eq .Type "volume")}}{{.Name}}{{end}}{{end}}' "$("${old_dc[@]}" ps -q postgres)"
+}
+```
+
+```bash
+: "${LEGACY:?set an unused absolute private backup directory outside the checkout}"
+umask 077
+mkdir -m 700 "$LEGACY"
+git diff --quiet HEAD
+git rev-parse HEAD > "$LEGACY/commit"
+install -m 600 .env "$LEGACY/staging.env"
+"${old_dc[@]}" config --format json | sha256sum > "$LEGACY/model.sha256"
+pg_volume > "$LEGACY/postgres.volume"
+test -n "$(cat "$LEGACY/postgres.volume")"
+echo 'services:' > "$LEGACY/images.compose.yml"
+for svc in backend frontend; do
+  cid=$("${old_dc[@]}" ps -q "$svc")
+  test "$(docker inspect --format '{{.State.Health.Status}}' "$cid")" = healthy
+  id=$(docker inspect --format '{{.Image}}' "$cid")
+  [[ "$id" =~ ^sha256:[0-9a-f]{64}$ ]]
+  echo "$id" > "$LEGACY/$svc.id"
+  printf '  %s:\n    image: %s\n    build: !reset null\n    pull_policy: never\n' "$svc" "$id" >> "$LEGACY/images.compose.yml"
+done
+docker image save -o "$LEGACY/images.tar" "$(cat "$LEGACY/backend.id")" "$(cat "$LEGACY/frontend.id")"
+docker image load -i "$LEGACY/images.tar"
+for svc in backend frontend; do
+  docker run --rm --network none --read-only --pull=never --entrypoint node "$(cat "$LEGACY/$svc.id")" --version
+done
+"${old_dc[@]}" -f "$LEGACY/images.compose.yml" config --quiet
+(cd "$LEGACY" && sha256sum commit staging.env model.sha256 postgres.volume backend.id frontend.id images.compose.yml images.tar > SHA256SUMS && sha256sum SHA256SUMS)
+```
+
+独立保存最后输出的摘要。确认旧项目和两端镜像 ID 仍匹配正在运行的栈，备份与回退路径均可用后，方可开始下列候选检出。
+
+#### 检出候选
 
 ```bash
 set -eu
@@ -311,7 +358,7 @@ ssh -i .secrets\staging\id_ed25519 ubuntu@<staging-public-ip> "chmod 600 <stagin
 当前 `MAIL_PROVIDER=mock` 时不需要独立 `mail-sandbox` 服务；只有后续明确引入 sandbox 容器时才新增该服务。
 Caddy 使用固定版本镜像，`caddy-data` 保存证书私钥和 ACME 状态，`caddy-config` 保存运行时配置；不得使用 `docker compose down -v` 清理这些卷。
 
-在目标架构（当前 Staging 为 `linux/arm64`）准备工件。需要 Python 3、Git、Docker 和支持 `!reset` 的 Compose。准备阶段从候选提交读取两个 Git 构建上下文；前端以同源路径访问 Caddy 转发的 `/api/`。工件目录放在工作树外，保留上一套通过验收的工件与记录。
+历史 Staging 记录为 OCI Ubuntu `linux/arm64`。每次发布先在当次获准的目标主机运行 `docker version --format '{{.Server.Os}}/{{.Server.Arch}}'` 并记录实测平台，再在该平台准备工件。需要 Python 3、Git、Docker 和支持 `!reset` 的 Compose。准备阶段从候选提交读取两个 Git 构建上下文；前端以同源路径访问 Caddy 转发的 `/api/`。工件目录放在工作树外，保留上一套通过验收的工件与记录。
 
 ```bash
 set -eu
@@ -325,7 +372,7 @@ python3 deploy/staging/release.py prepare "$RELEASE"
 set -eu
 : "${LOCK_SHA256:?set the digest from the selected release record}"
 python3 deploy/staging/release.py verify "$RELEASE" "$LOCK_SHA256"
-dc() { docker compose -f docker-compose.yml -f docker-compose.staging.yml -f "$RELEASE/images.compose.yml" "$@"; }
+dc() { docker compose -p "${STAGING_PROJECT:-poolduck-mail-staging}" -f docker-compose.yml -f docker-compose.staging.yml -f "$RELEASE/images.compose.yml" "$@"; }
 dc config --quiet
 docker run --rm -v "$PWD/deploy/staging/caddy:/etc/caddy:ro" caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 dc up -d --no-build --wait
@@ -384,9 +431,30 @@ dc exec -T -e API_SMOKE_TENANT_CODE=5A6E000001 \
 
 1. 停止外部测试并记录维护窗口。
 2. 保留数据库备份与 Caddy named volumes，不执行 `down -v`。
-3. 先确认旧应用与当前数据库结构兼容。检出上一个通过验收的提交，恢复匹配的 Staging 配置，选择该记录保存的归档和清单摘要。
-4. 从 3.4 的 `verify` 开始成对恢复，按 3.5–3.6 复核迁移状态、健康、登录与 mock 队列。数据库恢复遵循单独的备份恢复流程。
+3. 先确认旧应用与当前数据库结构兼容。若上一次是 3.2 保存的旧格式部署，执行下面的首次切换回退。若上一次已使用新模板，检出对应提交，恢复匹配配置并从 3.4 的 `verify` 开始成对恢复。
+4. 复核迁移状态、健康、HTTPS 登录、现有历史与 mock 队列。数据库恢复遵循单独的备份恢复流程。
 5. 若问题仅为证书签发，优先修复 DNS、80/443、ACME challenge 或 Caddy 数据卷，不回滚数据库。
+
+**首次切换回退到旧格式。** 在原工作目录，根据受限备份还原旧配置来源、Compose 项目和参数，重新定义 3.2 的 `old_dc` 与 `pg_volume`。确认存量队列适合安全复启，比较旧应用与当前数据库兼容性。以下命令仅重建两个应用容器，使用切换前导出的镜像。旧 checkout 可完全没有 `release.py`、`.nvmrc` 和 `release.json`。
+
+```bash
+set -euo pipefail
+: "${LEGACY_SUM:?set the checksums-file digest from the pre-cutover record}"
+(cd "$LEGACY" && printf '%s  SHA256SUMS\n' "$LEGACY_SUM" | sha256sum -c - && sha256sum -c SHA256SUMS)
+git diff --quiet HEAD
+git checkout --detach "$(cat "$LEGACY/commit")"
+install -m 600 "$LEGACY/staging.env" .env
+test "$("${old_dc[@]}" config --format json | sha256sum)" = "$(cat "$LEGACY/model.sha256")"
+test "$(pg_volume)" = "$(cat "$LEGACY/postgres.volume")"
+docker image load -i "$LEGACY/images.tar"
+locked_old=("${old_dc[@]}" -f "$LEGACY/images.compose.yml")
+"${locked_old[@]}" config --quiet
+"${locked_old[@]}" up -d --no-deps --no-build --pull never --wait backend frontend
+for svc in backend frontend; do
+  test "$(docker inspect --format '{{.Image}}' "$("${locked_old[@]}" ps -q "$svc")")" = "$(cat "$LEGACY/$svc.id")"
+done
+test "$(pg_volume)" = "$(cat "$LEGACY/postgres.volume")"
+```
 
 ### 3.8 部署记录
 
