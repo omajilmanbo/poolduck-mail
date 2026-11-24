@@ -48,6 +48,28 @@ describe('platform API client', () => {
     expect(init.body).not.toContain('tenant_code');
   });
 
+  it.each([
+    ['getMailMode', 'mail-mode', { mode: 'mock' }],
+    ['getEnvironment', 'environment', { environment: 'unavailable', deletion_enabled: false }],
+  ] as const)('uses a credentialed CORS simple GET for %s', async (method, endpoint, body) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(body), {
+      headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createPlatformApiClient({ baseUrl: 'http://localhost:3001' });
+
+    await expect(api[method]()).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `http://localhost:3001/api/platform/auth/${endpoint}`,
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      }),
+    );
+  });
+
   it('refreshes only through the platform auth endpoint', async () => {
     const fetchMock = vi
       .fn()
