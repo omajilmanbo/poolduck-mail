@@ -8,7 +8,7 @@
 
 ## 2. 基础依赖
 
-- Node.js 20 LTS
+- Node.js 24 LTS
 - npm 10+
 - Docker / Docker Compose（Local PostgreSQL 16 与本地应用容器组）
 - PostgreSQL 16（Local 由 `docker-compose.yml` 提供；Staging/Production 数据库与 secrets 策略仍需按对应 Issue 明确）
@@ -194,7 +194,7 @@ APP_PORT=127.0.0.1:3001
 FRONTEND_PORT=127.0.0.1:3000
 POSTGRES_PORT=127.0.0.1:5432
 API_BASE_URL=https://app.poolducktest.com
-NEXT_PUBLIC_API_BASE_URL=https://app.poolducktest.com
+NEXT_PUBLIC_API_BASE_URL=/
 CORS_ORIGIN=https://app.poolducktest.com
 MAIL_PROVIDER=mock
 MAIL_MOCK_SEND_RESULT=success
@@ -206,17 +206,7 @@ TENANT_CONTEXT_ENFORCED=true
 `AUTH_IDENTITY_HASH_SECRET` must be generated on the Staging host or another approved secret store. Do not
 commit or paste those values into docs, issues, or PR descriptions.
 
-Current approved deployment and recovery commands (to be wrapped by the future deployment script):
-
-```bash
-cd /opt/poolduck-mail/app
-git fetch origin
-git checkout main
-git pull --ff-only origin main
-docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
-docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T backend npm run staging:seed
-docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T -e API_BASE_URL=http://reverse-proxy backend npm run smoke:api
-```
+For the current manual release, follow [Staging steps 3.2–3.8](staging-manual.md#32-准备应用目录). Select the CI-tested commit, build the application pair once on the target architecture, and retain its release manifest and image archive. Restore or roll back by verifying that manifest and loading the same two images.
 
 Before `up`, back up the Staging database and validate both the Compose model and Caddyfile. After `up`, verify the HTTPS certificate, HTTP redirect, security headers, `/healthz`, `/health`, API smoke, browser login, and that public ports `3000`, `3001`, and `5432` remain unreachable. Do not run `docker compose down -v`: the Caddy data volume contains the certificate private key and ACME state.
 
@@ -302,21 +292,9 @@ docker --version
 docker compose version
 cd /opt/poolduck-mail/app
 if [ ! -d .git ]; then git clone https://github.com/omajilmanbo/poolduck-mail.git .; fi
-git fetch origin
-git checkout main
-git pull --ff-only origin main
-docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
-docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T backend npm run staging:seed
-docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T \
-  -e API_BASE_URL=http://reverse-proxy \
-  -e API_SMOKE_TENANT_CODE=5A6E000001 \
-  -e API_SMOKE_IDENTIFIER=staging-active-operator \
-  -e API_SMOKE_PASSWORD=PoolduckStaging123! \
-  -e API_SMOKE_LOCATION_ID=5A6E0001 \
-  -e 'API_SMOKE_SCAN_CODE=E01K0ABC20001' \
-  -e 'API_SMOKE_UNMAPPED_SCAN_CODE=E01K0ABC29999' \
-  backend npm run smoke:api
 ```
+
+Restore the approved Staging environment and database backup. Retrieve the last verified release archive and its independently recorded manifest digest, then follow sections 3.2–3.6 of the [Staging manual](staging-manual.md) starting with checkout and `verify`.
 
 On OCI Ubuntu 22.04 arm64, cloud-init installs `docker.io` and `docker-compose-v2`. If an older host has Docker but `docker compose version` returns `unknown command`, repair it with:
 
@@ -356,7 +334,7 @@ AUTH_LOGIN_MAX_PER_TENANT=100
 AUTH_LOGIN_MAX_PER_IDENTIFIER=10
 AUTH_LOGIN_MAX_PER_COMPOSITE=8
 API_BASE_URL=https://app.poolducktest.com
-NEXT_PUBLIC_API_BASE_URL=https://app.poolducktest.com
+NEXT_PUBLIC_API_BASE_URL=/
 CORS_ORIGIN=https://app.poolducktest.com
 MAIL_PROVIDER=mock
 MAIL_MOCK_SEND_RESULT=success
@@ -367,6 +345,8 @@ TENANT_CONTEXT_ENFORCED=true
 If `docker compose` still reports Docker socket permission errors immediately after cloud-init, either open a new SSH session so the `ubuntu` group membership is refreshed, or use `sudo docker compose ...` for that deployment session.
 
 ## 8. Staging deployment design (Issue #37, historical baseline)
+
+For the active HTTPS configuration and release procedure, use sections 3.2–3.8 of the [Staging manual](staging-manual.md).
 
 This section preserves the design baseline accepted in Issue #37. The current executable deployment entry is section 5 and `docs/staging-manual.md`; where commands or URLs differ, use those current sources. This historical section does not authorize cloud resource changes, GitHub secrets, DNS records, or production automation.
 

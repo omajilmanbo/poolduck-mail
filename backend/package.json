@@ -46,7 +46,7 @@
     "test:cov": "jest --coverage"
   },
   "engines": {
-    "node": ">=20"
+    "node": "24.x"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.8",
