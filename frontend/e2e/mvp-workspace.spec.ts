@@ -322,3 +322,15 @@ test('tenant_manager assigns and revokes operator location access from user mana
   await expect(page.getByTestId('location-select')).toContainText('Local Office');
   await expect(page.getByTestId('location-select')).not.toContainText('Local School');
 });
+
+test.describe('initial tenant login form', () => {
+  test.use({ javaScriptEnabled: false });
+
+  test('inputs and submit are disabled before the browser attaches input handlers', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByTestId('tenant-code-input')).toBeDisabled();
+    await expect(page.getByTestId('identifier-input')).toBeDisabled();
+    await expect(page.getByTestId('password-input')).toBeDisabled();
+    await expect(page.getByTestId('login-submit')).toBeDisabled();
+  });
+});
