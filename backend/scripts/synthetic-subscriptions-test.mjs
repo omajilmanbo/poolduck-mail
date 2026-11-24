@@ -9,16 +9,12 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import { Client } from 'pg';
 import { LicenseService } from '../dist/license/license.service.js';
+import { syntheticSeedDatabaseUrls } from './synthetic-subscriptions-test-db.mjs';
 
 const source = process.env.DATABASE_URL;
 assert(source, 'DATABASE_URL is required');
 assert(['local', 'test'].includes(process.env.APP_ENV), 'Local/CI only');
-const adminUrl = new URL(source);
-assert(['localhost', '127.0.0.1'].includes(adminUrl.hostname), 'Local PostgreSQL only');
-adminUrl.pathname = '/postgres';
-const databaseName = `poolduck_seed_test_${randomUUID().replaceAll('-', '')}`;
-const databaseUrl = new URL(adminUrl);
-databaseUrl.pathname = `/${databaseName}`;
+const { adminUrl, databaseName, databaseUrl } = syntheticSeedDatabaseUrls(source);
 
 const backend = fileURLToPath(new URL('..', import.meta.url));
 const scripts = ['local-seed.mjs', 'staging-seed.mjs', 'platform-synthetic-seed.mjs'];
