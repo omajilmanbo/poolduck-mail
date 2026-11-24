@@ -202,6 +202,8 @@ class Deployment:
                                   stdin=probe, capture=True))
 
     def release(self):
+        require(self.args.release and re.fullmatch("[a-f0-9]{64}", self.args.lock_sha256 or ""),
+                "selected release directory and independent SHA-256 required")
         folder = self.args.release.resolve()
         raw = (folder / "release.json").read_bytes()
         require(hashlib.sha256(raw).hexdigest() == self.args.lock_sha256, "release digest mismatch")
@@ -276,8 +278,6 @@ class Deployment:
         print(f"commit={args.commit}", flush=True)
         self.step("config", self.config)
         if not args.check:
-            require(args.release and re.fullmatch("[a-f0-9]{64}", args.lock_sha256 or ""),
-                    "selected release directory and independent SHA-256 required")
             with deployment_lock():
                 self.deploy()
 

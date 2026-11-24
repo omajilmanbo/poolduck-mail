@@ -58,6 +58,8 @@ def verify(run):
         print(f"case={label} exit={result.returncode}", flush=True)
         if result.returncode != expected or stage not in output:
             raise RuntimeError("unexpected deployment result: " + output)
+        if "stage=config result=failed" in output and "stage=release result=started" in output:
+            raise RuntimeError("failed preflight reached the release verifier")
         if expected and ("stage=caddy result=started" in output and label != "seed-interruption"
                          or label == "seed-interruption" and "stage=health result=started" in output):
             raise RuntimeError("deployment continued past the expected failure")
@@ -130,11 +132,16 @@ def verify(run):
     receipt = call([sys.executable, "-B", "deploy/staging/release.py", "prepare", str(release_dir)], root)
     digest = receipt.splitlines()[-1].split()[0]
     record = json.loads((release_dir / "release.json").read_bytes())
-    deploy("missing-release", args, 1, "selected release directory")
+    deploy("missing-release", args, 1, "stage=release result=failed reason=selected release directory")
     deploy("wrong-release-digest", [*args, "--release", str(release_dir), "--lock-sha256", "0" * 64],
            1, "release digest mismatch")
     args.extend(["--release", str(release_dir), "--lock-sha256", digest])
     print(f"prepared commit={sha} release_sha256={digest} node={record['node']}", flush=True)
+    for key, value in (("REAL_MAIL_SEND_ENABLED", "true"), ("MAIL_PROVIDER", "oci_email_delivery_https"),
+                       ("DATABASE_URL", values["DATABASE_URL"].replace("@postgres:", "@external.invalid:"))):
+        write_env({**values, key: value})
+        deploy("prepared-pair-reject-" + key, args, 1, "stage=config result=failed")
+    write_env(values)
     deploy("first", [*args, "--seed"], 0, "stage=smoke result=passed")
 
     def sql(query):
