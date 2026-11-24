@@ -258,14 +258,15 @@ cd /opt/poolduck-mail-staging
 
 ```bash
 git clone <repo-url> .
-git checkout --detach <approved-full-sha>
+git checkout <commit-sha-or-branch>
 ```
 
 后续部署：
 
 ```bash
 git fetch --all --prune
-git checkout --detach <approved-full-sha>
+git checkout <commit-sha-or-branch>
+git pull --ff-only
 ```
 
 ### 3.3 准备 Staging `.env`
@@ -304,18 +305,19 @@ ssh -i .secrets\staging\id_ed25519 ubuntu@<staging-public-ip> "chmod 600 <stagin
 
 显式设置 `POSTGRES_DB`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`AUTH_IDENTITY_HASH_SECRET` 和第 3.9 节的三个独立平台密钥。使用 Compose 的单行 dotenv 赋值，每键一行。为兼容现有 Compose 拼接方式，数据库密码可用随机十六进制。连接串使用内部 `postgres:5432`，省略查询参数。保管真实值，记录中只写核对结果。
 
-**脚本入口**（目标主机，Bash、Python 3.8+、Git、支持 JSON config 和 `up --wait` 的 Compose v2、curl）。从审批记录填写 SHA 和库名，避免从当前 HEAD 反推批准值。
+**脚本入口**。候选必须已包含 #230 的 `deploy/staging/release.py`、Node 版本锁及同源前端配置。切换前按 3.2 保存现有应用镜像对、配置和可恢复备份，核对队列与数据库兼容性。按 3.4 在准备阶段生成本次候选、目标架构的归档，在独立发布记录保存清单 SHA-256。目标机需要 Bash、Python 3、Git、curl、支持 `!reset` 和 `up --wait` 的 Compose，以及已有的 PG16 和 Caddy 镜像。
 
 ```bash
 approval=(--approved-synthetic-staging --commit '<approved-full-sha>' --database '<approved-db-name>')
 python3 deploy/staging/deploy.py "${approval[@]}" --check
-# 首次或需要重建合成 fixture 时
-python3 deploy/staging/deploy.py "${approval[@]}" --seed
-# 后续使用相同 fixture 的部署或恢复
-python3 deploy/staging/deploy.py "${approval[@]}"
+pair=(--release "$RELEASE" --lock-sha256 "$LOCK_SHA256")
+python3 deploy/staging/deploy.py "${approval[@]}" "${pair[@]}"
+# 仅在需要初始化或修复合成夹具时，给上一条命令追加 --seed。
 ```
 
-三条命令分别用于预检、带 seed 部署、跳过 seed 部署。每次部署选择一种。预检拒绝脏 checkout、缺项、示例密钥、Shell 的 Compose/应用覆盖和非本机 Docker endpoint。脚本在内存中核对 Compose 展开后的 backend、postgres 环境与批准的数据库，检查 mock、关闭真实投递、内部端口和前端构建 origin。它无法从库名判断数据来源，数据与窗口仍由操作者确认。整个窗口固定 checkout 和 `.env`，只使用这一份目录；并行脚本会因目录锁返回非零。
+`--check` 只读检查源码与基础 Compose 模型。实际部署先做同一预检，再验证并载入发布归档。预检拒绝脏 checkout、缺项、示例密钥、Shell 的 Compose/应用覆盖和非本机 Docker endpoint。脚本在内存中核对 Compose 展开后的 backend、postgres 环境与批准的数据库，检查 mock、关闭真实投递、内部端口、后端 API/CORS origin 和前端同源路径 `/`。最终模型只允许用清单里的两个镜像 ID 取代构建定义；启动使用 `--no-build --pull never`，随后核对运行容器的 ID 和 Node 补丁版本。它无法从库名判断数据来源，数据与窗口仍由操作者确认。整个窗口固定 checkout 和 `.env`，只使用这一份目录；并行脚本会因目录锁返回非零。
+
+release 或 start 失败时回到 3.4。Backend 启动时可能已应用迁移，保留原卷并检查迁移状态。首次切回旧格式使用 3.7 保存的旧镜像、配置和校验记录；回退不依赖旧 checkout 存在新版脚本。
 
 退出码 0 表示所选流程通过，1 表示失败，2 表示参数错误，Ctrl-C 通常返回 130。记录首个失败阶段和手册节号，先检查当前服务和迁移状态。构建和下游命令的原始输出可能含敏感信息，脚本仅转述阶段、服务、结果与退出码。人工排查只在受控终端查看必要信息，禁止粘贴展开的 Compose 配置、容器完整 inspect、连接串或原始日志。
 
@@ -334,16 +336,14 @@ Caddy 使用固定版本镜像，`caddy-data` 保存证书私钥和 ACME 状态�
 执行命令：
 
 ```bash
-# 与脚本使用相同的项目、.env 和两份 Compose 文件。先运行 3.3 的 --check。
-dc() { docker compose --project-directory "$PWD" --env-file .env -p poolduck-mail-staging -f docker-compose.yml -f docker-compose.staging.yml "$@"; }
-dc config --quiet
-docker run --rm --network none -v "$PWD/deploy/staging/caddy:/etc/caddy:ro" caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1
-dc build backend frontend
-dc up -d --no-build --wait --wait-timeout 240
-dc ps --format 'table {{.Service}}	{{.Status}}'
+docker compose -f docker-compose.yml -f docker-compose.staging.yml config
+docker run --rm -v "$PWD/deploy/staging/caddy:/etc/caddy:ro" caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+docker compose -f docker-compose.yml -f docker-compose.staging.yml build
+docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.staging.yml ps
 ```
 
-逐条检查退出码，失败即停。Backend 的启动命令包含 `db:deploy`，因此在 `start` 失败也可能已应用迁移。保留数据库、Caddy 两个卷和服务，检查 `dc ps` 及 `dc exec -T backend npx prisma migrate status`（backend 未启动时在受控终端排查），修正后从 3.3 重跑。遇到失败迁移按对应迁移的恢复说明处理，禁止 reset、清卷或未经核实标记迁移成功。
+如果 `docker compose config` 失败，停止并记录具体配置错误。
 
 ### 3.5 数据库 migration 与 seed
 
@@ -356,9 +356,8 @@ dc ps --format 'table {{.Service}}	{{.Status}}'
 示例命令：
 
 ```bash
-dc exec -T backend npm run db:deploy >/dev/null 2>&1
-# 仅在需要初始化或修复合成 fixture 时执行
-dc exec -T backend npm run staging:seed >/dev/null 2>&1
+docker compose exec backend npm run db:deploy
+docker compose exec backend npm run staging:seed
 ```
 
 `staging:seed` 仅写入 synthetic `.example.local` 测试数据，并准备 active、suspended、expired 三类订阅状态用于 Staging 验证。
@@ -390,7 +389,7 @@ echo | openssl s_client -connect app.poolducktest.com:443 -servername app.pooldu
 1. 停止外部测试并记录维护窗口。
 2. 保留数据库备份与 Caddy named volumes，不执行 `down -v`。
 3. 将应用代码和 `.env` 一起回退到上一个已验证 commit；旧 HTTP 配置只能恢复内部验证状态，不能继续作为扩大测试后的长期入口。
-4. 重新核对批准的回退 SHA 和配置，运行 `dc config --quiet`、`up -d --build`、相容的 migration/seed 与 smoke，确认回滚结果。
+4. 运行 `docker compose config`、`up -d --build`、migration/seed 与 smoke，确认回滚结果。
 5. 若问题仅为证书签发，优先修复 DNS、80/443、ACME challenge 或 Caddy 数据卷，不回滚数据库。
 
 ### 3.8 部署记录

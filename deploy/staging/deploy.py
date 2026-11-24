@@ -22,7 +22,7 @@ REQUIRED = ("APP_ENV", "TENANT_CONTEXT_ENFORCED", "LOG_LEVEL", "MAIL_PROVIDER",
             "MAIL_MOCK_SEND_RESULT", "REAL_MAIL_SEND_ENABLED",
             "DATABASE_URL", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", *SECRETS)
 RECOVERY = {"approval": "3.1", "checkout": "3.2", "config": "3.3", "caddy": "3.4",
-            "build": "3.4", "start": "3.4", "migration": "3.5", "seed": "3.5",
+            "release": "3.4", "start": "3.4", "migration": "3.5", "seed": "3.5",
             "health": "3.6", "smoke": "3.6"}
 
 
@@ -35,10 +35,10 @@ def require(condition, message):
         raise Stopped(message)
 
 
-def command(args, *, stdin=None, capture=False):
+def command(args, *, stdin=None, capture=False, env=None):
     result = subprocess.run(args, cwd=ROOT, input=stdin, text=True, encoding="utf-8",
                             stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL, errors="replace")
+                            stderr=subprocess.DEVNULL, errors="replace", env=env)
     require(result.returncode == 0, f"command exit={result.returncode}")
     return result.stdout
 
@@ -129,9 +129,9 @@ def validate(model, approved_db, rehearsal):
                 and build.get("dockerfile", "Dockerfile") == "Dockerfile", "unexpected build source")
     origin = "http://reverse-proxy" if rehearsal else "https://app.poolducktest.com"
     frontend = services["frontend"]
-    require(all(value == origin for value in (backend["API_BASE_URL"], backend["CORS_ORIGIN"],
-                frontend["environment"]["NEXT_PUBLIC_API_BASE_URL"],
-                frontend["build"]["args"]["NEXT_PUBLIC_API_BASE_URL"])), "origin mismatch")
+    require(backend["API_BASE_URL"] == backend["CORS_ORIGIN"] == origin, "backend origin mismatch")
+    require(frontend["environment"]["NEXT_PUBLIC_API_BASE_URL"] ==
+            frontend["build"]["args"]["NEXT_PUBLIC_API_BASE_URL"] == "/", "frontend must use same-origin /")
     for service in SERVICES:
         ports = services[service].get("ports", [])
         if rehearsal:
@@ -150,6 +150,7 @@ class Deployment:
     def __init__(self, args):
         self.args = args
         self.stage = "approval"
+        self.overlay = ""
 
     def step(self, stage, action):
         self.stage = stage
@@ -179,35 +180,68 @@ class Deployment:
                     "duplicate or reserved .env setting")
             keys.add(key)
         require(set(REQUIRED) <= keys, "incomplete Staging .env")
-        context = command(["docker", "context", "show"], capture=True).strip()
-        endpoint = command(["docker", "context", "inspect", context, "--format",
+        self.context = command(["docker", "context", "show"], capture=True).strip()
+        endpoint = command(["docker", "context", "inspect", self.context, "--format",
                             "{{.Endpoints.docker.Host}}"], capture=True).strip()
         require(endpoint.startswith(("unix:///", "npipe:////./pipe/")), "local Docker engine required")
-        self.docker = ["docker", "--context", context]
+        self.docker = ["docker", "--context", self.context]
         project = self.args.rehearsal or "poolduck-mail-staging"
         self.compose = [*self.docker, "compose", "--project-directory", str(ROOT), "--env-file", ".env",
                         "-p", project]
         for file in files:
             self.compose.extend(["-f", file])
-        # Compose itself expands the declared values and the actual model in a single pass.
-        probe = {"x-approved-inputs": {k: "${" + k + ":?required}" for k in REQUIRED}}
-        model = json.loads(command([*self.compose, "-f", "-", "config", "--format", "json"],
-                                   stdin=json.dumps(probe), capture=True))
-        validate(model, self.args.database, self.args.rehearsal)
-        self.caddy_image = model["services"]["reverse-proxy"]["image"]
+        self.model = self.render("")
+        validate(self.model, self.args.database, self.args.rehearsal)
+        self.caddy_image = self.model["services"]["reverse-proxy"]["image"]
         print("target=synthetic-staging db=approved-compose-postgres mail=mock real_send=false")
+
+    def render(self, overlay):
+        inputs = {k: "${" + k + ":?required}" for k in REQUIRED}
+        probe = overlay + "\nx-approved-inputs: " + json.dumps(inputs) + "\n"
+        return json.loads(command([*self.compose, "-f", "-", "config", "--format", "json"],
+                                  stdin=probe, capture=True))
+
+    def release(self):
+        folder = self.args.release.resolve()
+        raw = (folder / "release.json").read_bytes()
+        require(hashlib.sha256(raw).hexdigest() == self.args.lock_sha256, "release digest mismatch")
+        record = json.loads(raw)
+        # The release verifier owns archive, platform, revision, Node and image label checks.
+        command([sys.executable, "-B", "deploy/staging/release.py", "verify", str(folder), self.args.lock_sha256],
+                env={**os.environ, "DOCKER_CONTEXT": self.context})
+        self.images = record["images"]
+        self.node = record["node"]
+        require(set(self.images) == {"backend", "frontend"}, "unexpected release services")
+        for service, image in self.images.items():
+            app = self.model["services"][service]
+            del app["build"]
+            app.update(image=image, pull_policy="never")
+        # Freeze the generated overlay. It may only replace the two builds with the verified IDs.
+        overlay = (folder / "images.compose.yml").read_text(encoding="utf-8")
+        require(self.render(overlay) == self.model, "release overlay changed the approved Compose model")
+        self.overlay = overlay
 
     def run_compose(self, *args, capture=False):
         checkout(self.args.commit)
         require(hashlib.sha256((ROOT / ".env").read_bytes()).digest() == self.env_digest,
                 ".env changed during deployment")
-        return command([*self.compose, *args], capture=capture)
+        return command([*self.compose, "-f", "-", *args], stdin=self.overlay, capture=capture)
 
     def caddy(self):
         folder = ROOT / "deploy/staging" / ("rehearsal" if self.args.rehearsal else "caddy")
-        command([*self.docker, "run", "--rm", "--network", "none", "--volume", f"{folder}:/etc/caddy:ro",
+        command([*self.docker, "run", "--rm", "--pull=never", "--network", "none", "--volume", f"{folder}:/etc/caddy:ro",
                  self.caddy_image, "caddy", "validate", "--config", "/etc/caddy/Caddyfile",
                  "--adapter", "caddyfile"])
+
+    def start(self):
+        self.run_compose("up", "-d", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "240")
+        for service, image in self.images.items():
+            container = self.run_compose("ps", "-q", service, capture=True).strip()
+            actual = command([*self.docker, "inspect", "--format", "{{.Image}}", container], capture=True).strip()
+            require(actual == image, f"{service} running image mismatch")
+            node = self.run_compose("exec", "-T", service, "node", "--version", capture=True).strip()
+            require(node == "v" + self.node, f"{service} running Node mismatch")
+            print(f"service={service} image={actual} node={node}")
 
     def health(self):
         for service in sorted(SERVICES):
@@ -242,13 +276,15 @@ class Deployment:
         print(f"commit={args.commit}", flush=True)
         self.step("config", self.config)
         if not args.check:
+            require(args.release and re.fullmatch("[a-f0-9]{64}", args.lock_sha256 or ""),
+                    "selected release directory and independent SHA-256 required")
             with deployment_lock():
                 self.deploy()
 
     def deploy(self):
+        self.step("release", self.release)
         self.step("caddy", self.caddy)
-        self.step("build", lambda: self.run_compose("build", "backend", "frontend"))
-        self.step("start", lambda: self.run_compose("up", "-d", "--no-build", "--wait", "--wait-timeout", "240"))
+        self.step("start", self.start)
 
         def npm(*args):
             self.run_compose("exec", "-T", "backend", "npm", "run", *args)
@@ -274,6 +310,8 @@ def main():
     parser.add_argument("--database", required=True, help="approved Compose PostgreSQL database name")
     parser.add_argument("--seed", action="store_true", help="upsert the three synthetic tenant fixtures")
     parser.add_argument("--check", action="store_true", help="validate checkout and effective config only")
+    parser.add_argument("--release", type=Path, help="selected release.py artifact directory")
+    parser.add_argument("--lock-sha256", help="release.json SHA-256 from the approved release record")
     parser.add_argument("--rehearsal", metavar="pd-rehearsal-<12 hex>", help="isolated local project")
     deploy = Deployment(parser.parse_args())
     try:

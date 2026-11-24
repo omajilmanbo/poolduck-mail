@@ -1,6 +1,7 @@
 """Exercise the deployment CLI in a fresh local clone. Pass --run to start Docker services."""
 
 import argparse
+import json
 import os
 from pathlib import Path
 import secrets
@@ -32,7 +33,7 @@ def verify(run):
               "TENANT_CONTEXT_ENFORCED": "true", "POSTGRES_USER": "synthetic", "POSTGRES_DB": db,
               "POSTGRES_PASSWORD": password, "DATABASE_URL": f"postgresql://synthetic:{password}@postgres:5432/{db}",
               "APP_PORT": "127.0.0.1:3001", "POSTGRES_PORT": "127.0.0.1:5432", "FRONTEND_PORT": "127.0.0.1:3000",
-              "API_BASE_URL": "http://reverse-proxy", "NEXT_PUBLIC_API_BASE_URL": "http://reverse-proxy",
+              "API_BASE_URL": "http://reverse-proxy", "NEXT_PUBLIC_API_BASE_URL": "/",
               "CORS_ORIGIN": "http://reverse-proxy"}
     for key in ("JWT_SECRET", "REFRESH_TOKEN_SECRET", "AUTH_IDENTITY_HASH_SECRET", "PLATFORM_JWT_SECRET",
                 "PLATFORM_REFRESH_TOKEN_SECRET", "PLATFORM_PROVISIONING_SECRET"):
@@ -82,7 +83,7 @@ def verify(run):
     write_env(values)
     deploy("preflight", [*args, "--check"], 0, "stage=config result=passed")
     origin = "https://app.poolducktest.com"
-    write_env({**values, "API_BASE_URL": origin, "NEXT_PUBLIC_API_BASE_URL": origin, "CORS_ORIGIN": origin})
+    write_env({**values, "API_BASE_URL": origin, "CORS_ORIGIN": origin})
     deploy("staging-model-only", [*args[:-2], "--check"], 0, "stage=config result=passed")
     write_env(values)
     # An explicitly approved test commit can still contain an unsafe Compose override.
@@ -103,6 +104,15 @@ def verify(run):
         candidate = call(["git", "rev-parse", "HEAD"], root)
         deploy("effective-" + key, [*args, "--commit", candidate, "--check"], 1, "stage=config result=failed")
         call(["git", "checkout", "--detach", sha], root)
+    rehearsal = root / "deploy/staging/rehearsal/compose.yml"
+    rehearsal.write_text(rehearsal.read_text(encoding="utf-8").replace("  frontend:\n",
+                         '  frontend:\n    environment:\n      NEXT_PUBLIC_API_BASE_URL: "//external.invalid"\n'),
+                         encoding="utf-8")
+    call(["git", "-c", "user.name=Rehearsal", "-c", "user.email=synthetic@example.invalid",
+          "commit", "--quiet", "-am", "Isolated frontend origin fault"], root)
+    candidate = call(["git", "rev-parse", "HEAD"], root)
+    deploy("effective-frontend-origin", [*args, "--commit", candidate, "--check"], 1, "frontend must use same-origin")
+    call(["git", "checkout", "--detach", sha], root)
     if not run:
         (root / ".env").unlink()
         return
@@ -115,6 +125,16 @@ def verify(run):
         if call([*docker, kind, "ls", *(["-a"] if kind == "container" else []), "-q",
                  "--filter", f"label=com.docker.compose.project={project}"], root):
             raise RuntimeError("project already exists")
+    release_dir = Path(tempfile.mkdtemp(prefix="pd-rehearsal-release-")) / "pair"
+    print(f"preparing release={release_dir}", flush=True)
+    receipt = call([sys.executable, "-B", "deploy/staging/release.py", "prepare", str(release_dir)], root)
+    digest = receipt.splitlines()[-1].split()[0]
+    record = json.loads((release_dir / "release.json").read_bytes())
+    deploy("missing-release", args, 1, "selected release directory")
+    deploy("wrong-release-digest", [*args, "--release", str(release_dir), "--lock-sha256", "0" * 64],
+           1, "release digest mismatch")
+    args.extend(["--release", str(release_dir), "--lock-sha256", digest])
+    print(f"prepared commit={sha} release_sha256={digest} node={record['node']}", flush=True)
     deploy("first", [*args, "--seed"], 0, "stage=smoke result=passed")
 
     def sql(query):
@@ -126,6 +146,10 @@ def verify(run):
 
     def snapshot():
         rows = {}
+        for service, image in record["images"].items():
+            container = call([*compose, "ps", "-q", service], root)
+            if call([*docker, "inspect", "--format", "{{.Image}}", container], root) != image:
+                raise RuntimeError(f"{service} did not run the prepared image")
         for table in ("scan_events", "mail_jobs", "mail_delivery_attempts", "_prisma_migrations"):
             rows[table] = set(sql(f"SELECT md5(row_to_json(t)::text) FROM {table} t;").splitlines())
         rows["witness"] = sql("SELECT md5(row_to_json(t)::text) FROM tenants t WHERE tenant_code='BEEFBEEFB0';")
@@ -173,8 +197,12 @@ def verify(run):
     deploy("existing-fixture", args, 0, "stage=seed result=skipped")
     retained(recovered, 4)
     # The random project was empty at entry. Only tear it down after all assertions pass.
-    call([*compose, "down", "--volumes", "--rmi", "local"], root)
+    call([*compose, "down", "--volumes"], root)
     (root / ".env").unlink()
+    for filename in ("images.compose.yml", "images.tar", "release.json"):
+        (release_dir / filename).unlink()
+    release_dir.rmdir()
+    release_dir.parent.rmdir()
     print("isolated project cleaned; result=passed")
 
 
