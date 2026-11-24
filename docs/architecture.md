@@ -3,7 +3,7 @@
 ## 1. 总体架构
 
 - 前端：Next.js（App Router）+ TypeScript + Tailwind CSS
-- 后端：NestJS（Node.js 20 LTS，REST API）
+- 后端：NestJS（Node.js 24 LTS，REST API）。前后端按同一候选构建，未来生产复用最新通过 Staging 验收的镜像对。[ADR-030](decisions/ADR-030-node-runtime-major.md)
 - 数据库：PostgreSQL 16 + Prisma
 - 认证：JWT（access + refresh）+ RBAC
 - 邮件服务：Staging 默认使用 mock。ADR-019 的 OCI HTTPS adapter 使用 Instance Principal。历史预检已验证目标容器获取实例身份。2026-10-16 的受控单封验证了当次 HTTPS `SubmitEmail` 正向效果，随后回滚 mock。#141 的非目标身份和 sender 的拒绝效果待验证。[验收证据](oci-mail-staging-readiness.md)
