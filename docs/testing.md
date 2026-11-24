@@ -78,6 +78,18 @@ seed 数据仅使用 `example.local` 邮箱和固定 UUID，不包含真实客�
 - active `person_code`: `01K0ABC10001`；进入动作码：`E01K0ABC10001`；离开动作码：`X01K0ABC10001`
 - not-mapped 拒绝动作码：`E01K0ABC19999`
 
+### 4.1a 合成订阅跨年回归
+
+`local:seed`、`staging:seed` 和 `platform:seed` 创建 active／trial 订阅时，将结束时间设为执行时刻后 365 天。
+已有 active／trial 合成订阅在剩余期限不超过 30 天时续期，期限充足时保留原结束时间。暂停和过期夹具使用原有固定日期。
+跨年或同一演练中重跑时，核对租户与订阅 ID、计划、开始时间、版本、已有扫码与邮件历史。发生续期时核对新的结束时间。
+
+在隔离 PostgreSQL 上执行 `npm run test:synthetic-subscriptions`，核对原结束时间前 1 毫秒、截止时刻及未来年份。
+回归通过 `LicenseService` 检查四个 active／trial 场景可发送、expired／suspended 场景受阻、无关租户及其订阅行保持原值。
+许可证 API 的通用状态测试使用相对有效期，固定历史截止时刻的测试继续使用独立时钟。
+手工验收时，在合成数据库和 mock provider 上运行本地与 Staging 的 `smoke:api`、平台 `smoke:platform`，并运行本地 Playwright 的 success／failure 两组。
+复核取消任务零次 provider 调用、重扫恰好一次 mock 调用及平台幂等重放。进程内控制订阅时钟即可覆盖跨年，数据库继续为扫码与发信等待期计时。
+
 ### 4.2 API happy path 冒烟
 
 1. 使用默认 sandbox success 启动后端：`npm run start:dev`
@@ -248,6 +260,9 @@ ADR-017 已 `Accepted`，schema/API/worker/Frontend 已在本地实现。本节�
   状态、截止、人员或邮箱。
 - 边界：使用 PostgreSQL 可控时间覆盖截止前 1ms、恰好截止（发送领取优先）、截止后 1ms，取消/
   worker/new scan 三方并发，多 worker、进程重启、客户端时钟偏差/休眠，以及 p95 2 秒/p99 5 秒 SLO。
+- 历史读取：`backend/test/history.spec.ts` 通过列表和详情 HTTP 接口检查最后一次数据读取完成时的
+  `server_time` 和 `can_cancel`。合成时钟在历史行读取后为截止前 1ms，在同一快照的前序查询完成时为截止后 1ms。
+  两个入口都应保留前序提示，并在此时采样一次 PostgreSQL 墙钟，返回不可取消。
 - 订阅：`trial`/`active` 正常；等待期间转为 `expired`/`suspended` 时取消仍可用而发送 fail-closed，
   幂等重放和 retry 不能绕过。
 - 回归：Issue #68 去重/相反动作冲突、原 key 重放、retry 30 秒/2 分钟/10 分钟、动作/正文快照、
@@ -371,6 +386,20 @@ migration、运行生产取消/领取 SQL 与两个真实 worker 实例、演练
 - Staging bootstrap、Secret 注入、migration、smoke 与部署未执行；仍须按人工批准的目标和
   `docs/staging-manual.md` Runbook 单独进行。
 
+### 4.12 Issue #195 本地跨端口平台状态
+
+1. 按[本地平台入口](development.md#7-platform-control-plane-本地入口issues-110113)启动前后端，使用独立合成数据库和平台账号。后端设置 `APP_ENV=local`、`MAIL_PROVIDER=mock`、`REAL_MAIL_SEND_ENABLED=false`，并明确允许 `http://localhost:3000`。
+2. 用真实浏览器从 `http://localhost:3000/platform/login` 登录，核对发往 `http://localhost:3001` 的两个 GET。
+   `/api/platform/auth/mail-mode` 返回 200 和 `{ "mode": "mock" }`，
+   `/api/platform/auth/environment` 返回 200 和 `{ "environment": "unavailable", "deletion_enabled": false }`。
+   两个响应都有 `Cache-Control: no-store`。控制台显示“模拟发信（mock）”“环境未知”和“当前环境未开放租户删除”。
+3. 核对来源与权限。未列入 `CORS_ORIGIN` 的本机来源无法在浏览器读取响应。允许来源内的匿名请求及租户会话请求均返回 401。
+4. 在已登录页单独中断两个状态请求后重载，确认邮件显示“状态未知”，环境显示“环境未知”，删除入口隐藏。撤销平台会话后，两项读取均被拒绝，重载控制台回到平台登录页。
+
+定向自动回归使用 `frontend/` 的 `npm test -- --run test/platform.test.tsx` 和
+`backend/` 的 `npm test -- --runTestsByPath test/platform.spec.ts test/cors.spec.ts`。
+模拟 API 的平台 E2E 验证交互。跨端口状态验收时，浏览器需直接访问本机后端。
+
 ## 5. Staging seed data
 
 Staging verification uses `npm run staging:seed` from `backend/`, or the container equivalent:
@@ -447,6 +476,9 @@ npm run test:e2e
 - `E01K0ABC10001` 创建 mail_job 并显示“进入”，自动触发 sandbox，按 CI matrix 验证“已发送”或“等待重试/发送失败”
 - `X01K0ABC10001` 在冲突窗口外创建离开记录并使用“退室”正文
 - 页面刷新后从 tenant-scoped API 恢复历史记录
+- 退出后等登录表单出现再以原 operator 重登，确认已取消的扫码记录仍显示“已取消”
+- 首次打开租户登录页时，浏览器脚本运行前，三个输入框和提交按钮均禁用。脚本就绪后，原 MVP 用例通过表单登录并继续验证扫码结果。
+- 人员编辑等所选人员的原姓名回填，再改名保存，按同一人员码确认列表与刷新后的结果一致
 - 当前 location 的扫码记录首列显示人员名称，不重复显示地点；缺少人员名称的历史记录安全显示 `-`
 - Tenant A token 不能用 Tenant B location 查询历史
 - suspended tenant 登录后扫码输入和提交按钮禁用
@@ -455,7 +487,9 @@ npm run test:e2e
 
 ## 7. 质量门禁建议
 
-ADR-019 #138 Local/CI 使用 fake OCI client 验证：2xx accepted、429/配额明确拒绝、认证/请求 4xx、suppression、timeout/断线/5xx、回执缺失和 SDK 未分类异常；检查仅 transient 有限重试，unknown 不自动重发，`retry_count` 与安全错误码一致。#139 还需 fake DB 预约测试：50 ms 边界、跨 tenant 全局序列化、延期不调用 provider/不消耗 retry、重启后沿用数据库 attempt 历史、窗口查询失败时 fail closed，以及积压日志不含 PII。手工复核应在 `MAIL_PROVIDER=mock` 下检查 tenant/location/订阅门禁、任务收件快照与审计脱敏；真实 OCI 发送须等待发件域/DNS/IAM/数据核查和另行人工批准，不作为 #138/#139 测试步骤。OCI 实际每分钟、每日、单封大小配额尚未核实，#139 保持开放。
+ADR-019 #138 Local/CI 使用 fake OCI client 验证：2xx accepted、429/配额明确拒绝、认证/请求 4xx、suppression、timeout/断线/5xx、回执缺失和 SDK 未分类异常；检查仅 transient 有限重试，unknown 不自动重发，`retry_count` 与安全错误码一致。手工复核应在 `MAIL_PROVIDER=mock` 下检查 tenant/location/订阅门禁、任务收件快照与审计脱敏；真实 OCI 发送须等待发件域/DNS/IAM/数据核查和另行人工批准，不作为 #138/#139 测试步骤。
+
+#139 的 fake DB 单测覆盖 50 ms 边界、滚动一秒窗口和窗口读取失败。PG16 本机验收通过不同租户的双 worker 和服务重建场景，逐项核对延期行、下次领取时间、retry 次数与内存 fake 调用。compartment 有效分钟、每日、单封额度继续由 #139 跟踪。[验收记录与原 AC 对照](testing/local-oci-pacing-2026-11-19.md)
 
 #140 fake OCI client 契约：`backend/test/oci-mail-contract.spec.ts` 将假客户端注入真实 OCI adapter 与发送服务，只用合成 `.invalid` 地址，不建立 OCI 凭据或网络连接。测试单一收件人取持久化 `mail_job.to_email`、固定 sender/compartment、RFC Message-ID 与禁用 SDK retry、同租户 attempt 标识持久化；逐项覆盖 suppression、429/配额、请求/认证 4xx、timeout/5xx/响应丢失/无效回执，并断言 API 形状的服务响应、数据库写入及审计不包含收件人、正文或原始异常。未知状态再次处理必须拒绝。取消/等待/跨租户、过期/暂停订阅、停用地点/人员不得调用 provider。既有 `mail-jobs.spec.ts` 覆盖 HTTP 层的认证、跨租户和客户端收件人覆盖请求，`oci-email-delivery-provider.spec.ts` 覆盖 SDK 请求映射；完整后端测试含 mock provider 回归。Issue 中“独立地址 allowlist”已被修订的 ADR-019 取代：当前只按不可变人员邮箱任务快照发送，不维护第二份 allowlist。
 

@@ -125,9 +125,10 @@ describe('Scan Events API', () => {
     await app.close();
   });
 
-  it.each(['trial', 'active'])(
-    'POST /api/scan-events should create scan_event and queued mail_job for %s subscriptions',
-    async (status) => {
+  it.each([['trial', -3000], ['active', 3000]] as const)(
+    'creates a waiting job for %s with the node clock offset by %i ms',
+    async (status, skew) => {
+      jest.setSystemTime(receivedAt.getTime() + skew);
       mockAuthenticatedUser();
       mockSubscription(status);
       mockLocation();
@@ -141,7 +142,7 @@ describe('Scan Events API', () => {
       prisma.mailJob.create.mockResolvedValue({
         id: mailJobId,
         status: 'waiting',
-        createdAt: receivedAt,
+        createdAt: new Date(),
         cancelUntil: new Date(receivedAt.getTime() + 10_000),
         sendNotBefore: new Date(receivedAt.getTime() + 10_000),
       });
@@ -245,9 +246,7 @@ describe('Scan Events API', () => {
         select: {
           id: true,
           status: true,
-          createdAt: true,
           cancelUntil: true,
-          sendNotBefore: true,
         },
       });
       expect(prisma.$executeRawUnsafe).toHaveBeenCalledWith(
@@ -301,9 +300,7 @@ describe('Scan Events API', () => {
       select: {
         id: true,
         status: true,
-        createdAt: true,
         cancelUntil: true,
-        sendNotBefore: true,
       },
     });
     expect(prisma.scanRequestIdempotency.upsert).toHaveBeenCalledWith({
