@@ -146,6 +146,27 @@ describe('history workspace', () => {
     expect(await screen.findByText('暂无扫码记录')).not.toBeNull();
   });
 
+  it('shows the server warning on a filtered row and clears its evidence when access is revoked', async () => {
+    let revoked = false;
+    const exit = { ...historyItem('sent'), action: 'exit' as const, same_action_warning: {
+      previous_scan_event_id: 'previous-exit', previous_received_at: '2026-07-19T23:59:55Z',
+    } };
+    vi.stubGlobal('fetch', createWorkspaceFetch((url) => {
+      if (revoked) return { status: 403 };
+      return { items: url.searchParams.has('status') ? [exit] : [], next_cursor: null };
+    }));
+    render(<HomePage />);
+    await screen.findByText('暂无扫码记录');
+    fireEvent.change(screen.getByTestId('history-status-filter'), { target: { value: 'sent' } });
+    expect(await screen.findByText('连续离开，可能漏扫或选错动作码。')).not.toBeNull();
+    fireEvent.click(screen.getByText('前一次有效扫码'));
+    expect(screen.getByText('previous-exit')).not.toBeNull();
+    revoked = true;
+    fireEvent.click(screen.getByTestId('history-refresh'));
+    await screen.findByText('无权限查看此地点的扫码记录');
+    expect(screen.queryByText('previous-exit')).toBeNull();
+  });
+
   it.each([
     ['exit', 'person_action_code', '离开'],
     ['unknown', 'legacy_unknown', '动作未知'],
@@ -364,9 +385,27 @@ describe('history workspace', () => {
     expect(screen.queryByTestId('scan-cancel')).toBeNull();
   });
 
+  it('clears the warning after cancellation even when reloading the page fails', async () => {
+    let canceled = false;
+    const waiting = { ...historyItem('waiting'), cancel_until: new Date(Date.now() + 10_000).toISOString(),
+      same_action_warning: { previous_scan_event_id: 'older-entry', previous_received_at: '2026-07-19T23:59:55Z' } };
+    const baseFetch = createWorkspaceFetch(() => canceled ? new TypeError('Failed to fetch') : { items: [waiting], next_cursor: null });
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/cancel')) canceled = true;
+      return baseFetch(input);
+    });
+    render(<HomePage />);
+    await screen.findByText('连续进入，可能漏扫或选错动作码。');
+    fireEvent.click(screen.getByTestId('scan-cancel'));
+    expect((await screen.findByRole('alert')).textContent).toContain('无法连接后端 API');
+    expect(screen.getByTestId('mail-status').textContent).toBe('已取消');
+    expect(screen.queryByText('前一次有效扫码')).toBeNull();
+  });
+
   it('returns to the first unfiltered page after a new scan so the waiting cancellation stays visible', async () => {
     let created = false;
     const waiting = { ...historyItem('waiting'), scan_event_id: 'new-scan', person_name: 'New Person',
+      same_action_warning: { previous_scan_event_id: 'older-entry', previous_received_at: '2026-07-19T23:59:55Z' },
       cancel_until: new Date(Date.now() + 10_000).toISOString() };
     const baseFetch = createWorkspaceFetch((url) => url.searchParams.has('cursor')
       ? { items: [namedHistoryItem(26)], next_cursor: null }
@@ -375,7 +414,7 @@ describe('history workspace', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).endsWith('/api/scan-events') && init?.method === 'POST') {
         created = true;
-        return jsonResponse({ scan_event_id: 'new-scan' });
+        return jsonResponse({ scan_event_id: 'new-scan', action: 'entry', same_action_warning: waiting.same_action_warning });
       }
       return baseFetch(input);
     });
@@ -389,6 +428,8 @@ describe('history workspace', () => {
     fireEvent.change(screen.getByTestId('scan-code-input'), { target: { value: 'E01K0ABC80001' } });
     fireEvent.click(screen.getByTestId('scan-submit'));
     expect(await screen.findByText('New Person')).not.toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('本次已记录为进入');
+    expect(screen.getAllByText('连续进入，可能漏扫或选错动作码。')).toHaveLength(1);
     expect((screen.getByTestId('history-status-filter') as HTMLSelectElement).value).toBe('');
     expect(screen.getByText(/第 1 页/)).not.toBeNull();
     expect((screen.getByTestId('scan-cancel') as HTMLButtonElement).disabled).toBe(false);
@@ -497,6 +538,7 @@ function historyItem(status: ScanHistoryItem['status'], errorMessage = status ==
     person_name: 'History Person',
     scan_code: '01K0ABC80001',
     scan_type: 'entry',
+    same_action_warning: null,
     action: 'entry',
     action_source: 'person_action_code',
     received_at: '2026-07-20T01:02:03.000Z',

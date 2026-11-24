@@ -287,8 +287,8 @@ ADR-017 已 `Accepted`，schema/API/worker/Frontend 已在本地实现。本节�
 - 边界：使用 PostgreSQL 可控时间覆盖截止前 1ms、恰好截止（发送领取优先）、截止后 1ms，取消/
   worker/new scan 三方并发，多 worker、进程重启、客户端时钟偏差/休眠，以及 p95 2 秒/p99 5 秒 SLO。
 - 历史读取：`backend/test/history.spec.ts` 通过列表和详情 HTTP 接口检查最后一次数据读取完成时的
-  `server_time` 和 `can_cancel`。合成时钟在历史行读取后为截止前 1ms；若同一事务还读取前序动作，
-  该查询完成时已到截止后 1ms，响应应显示不可取消。
+  `server_time` 和 `can_cancel`。合成时钟在历史行读取后为截止前 1ms，在同一快照的前序查询完成时为截止后 1ms。
+  两个入口都应保留前序提示，并在此时采样一次 PostgreSQL 墙钟，返回不可取消。
 - 订阅：`trial`/`active` 正常；等待期间转为 `expired`/`suspended` 时取消仍可用而发送 fail-closed，
   幂等重放和 retry 不能绕过。
 - 回归：Issue #68 去重/相反动作冲突、原 key 重放、retry 30 秒/2 分钟/10 分钟、动作/正文快照、
@@ -299,6 +299,14 @@ ADR-017 已 `Accepted`，schema/API/worker/Frontend 已在本地实现。本节�
 可重复数据库准入命令：在 `backend` 运行 `npm run validate:adr017`。脚本建立一次性数据库、应用全部
 migration、运行生产取消/领取 SQL 与两个真实 worker 实例、演练 guarded rollback，并在 `finally`
 删除该数据库；脚本拒绝非 Local/CI 或非本地主机。
+
+#### 连续同动作提示
+
+在本机临时 PostgreSQL 中执行 `npm --prefix backend run test:scan-action-history`。脚本通过登录、扫码、取消、列表和详情 HTTP 入口检查首扫、连续进入/离开、稳定 ID 顺序、取消/未知记录、幂等和动作冲突，以及跨人、跨租户、未分配地点和撤权。前端 `history-page.test.tsx` 检查新扫码返回第一页后的提示、筛选行的前序详情和撤权后的清屏。
+
+人工核对时，用合成人员在同一地点相隔至少 10 秒扫描两次进入码。第二条仍显示“进入”，展开“前一次有效扫码”可核对第一条的时间与编号。取消第二条后刷新，该行的提示消失。用离开码重复此流程，并在日期或邮件状态筛选隐藏前序记录时核对提示。
+
+与 #182 联验时，将 `replace_action` 的有效动作及 `insert_missing_action` 的声明发生时间接入 `findSameActionWarnings` 的有效动作查询，分别核对被调整记录与后一条有效记录。比较新扫码响应、历史列表和单条详情，复核原扫码、投递快照及任务数量。
 
 ### 4.8 Issue #96 operator-location 授权验证
 
