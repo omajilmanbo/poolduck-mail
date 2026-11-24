@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import argon2 from "argon2";
 import { config } from "dotenv";
+import { seedSyntheticSubscription } from "./synthetic-subscriptions.mjs";
 
 config({ path: "../.env", quiet: true });
 config({ path: ".env", quiet: true });
@@ -141,9 +142,9 @@ async function upsertPersonMapping(data) {
 }
 
 async function main() {
+  const now = Date.now();
   const passwordHash = await argon2.hash(seed.password);
   const startAt = new Date("2026-01-01T00:00:00.000Z");
-  const endAt = new Date("2027-01-01T00:00:00.000Z");
   const activeLocationCount = await prisma.location.count({
     where: { tenantId: seed.activeTenantId, status: { not: "purged" } },
   });
@@ -189,39 +190,20 @@ async function main() {
     },
   });
 
-  await prisma.subscription.upsert({
-    where: { tenantId: seed.activeTenantId },
-    update: {
-      plan: "mvp-local",
-      status: "active",
-      startAt,
-      endAt,
-    },
-    create: {
-      tenantId: seed.activeTenantId,
-      plan: "mvp-local",
-      status: "active",
-      startAt,
-      endAt,
-    },
-  });
+  await seedSyntheticSubscription(prisma, {
+    tenantId: seed.activeTenantId,
+    plan: "mvp-local",
+    status: "active",
+    startAt,
+  }, now);
 
-  await prisma.subscription.upsert({
-    where: { tenantId: seed.suspendedTenantId },
-    update: {
-      plan: "mvp-local",
-      status: "suspended",
-      startAt,
-      endAt,
-    },
-    create: {
-      tenantId: seed.suspendedTenantId,
-      plan: "mvp-local",
-      status: "suspended",
-      startAt,
-      endAt,
-    },
-  });
+  await seedSyntheticSubscription(prisma, {
+    tenantId: seed.suspendedTenantId,
+    plan: "mvp-local",
+    status: "suspended",
+    startAt,
+    endAt: new Date("2027-01-01T00:00:00.000Z"),
+  }, now);
 
   await upsertUser({
     id: seed.tenantManagerUserId,

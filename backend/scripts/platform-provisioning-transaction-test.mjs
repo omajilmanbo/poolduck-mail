@@ -111,7 +111,8 @@ async function verify(db) {
     }]);
     await checkCounts(0, 0, 1);
 
-    await db.query(`ALTER TABLE platform_audit_logs ADD CHECK (request_id <> 'pg-no-audit')`);
+    await db.query(`ALTER TABLE platform_audit_logs
+      ADD CHECK (request_id NOT IN ('pg-no-audit', 'pg-replay-no-audit'))`);
     await create('pg-no-audit').expect(500, genericError);
     assert.deepEqual(await audits('pg-no-audit'), []);
     assert.equal((await db.query('SELECT last_value::int FROM rollback_probe')).rows[0].last_value, 2);
@@ -143,6 +144,13 @@ async function verify(db) {
         metadata_json: { replayed: replies[i].body.idempotency_replayed, tenant_code: first.tenant_code, location_limit: 3 },
       }]);
     }
+    await checkCounts(1, 2, 2);
+
+    const replay = await create('pg-replay-no-audit').expect(201);
+    assert.equal(replay.body.idempotency_replayed, true);
+    assert.equal(replay.body.tenant_code, first.tenant_code);
+    assert.ok(replay.body.temporary_password === first.temporary_password);
+    assert.deepEqual(await audits('pg-replay-no-audit'), []);
     await checkCounts(1, 2, 2);
 
     // Force just the first attempt for a fresh key to hit the existing tenant_code unique constraint.

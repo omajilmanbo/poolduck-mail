@@ -789,6 +789,28 @@ export class PlatformTenantsService {
         oldLimit: current.locationLimit,
         newVersion: current.platformVersion + 1,
       };
+    }).catch(async (error: unknown) => {
+      const response = error instanceof ConflictException ? error.getResponse() : null;
+      const reason = response && typeof response === 'object' && 'code' in response
+        ? response.code
+        : undefined;
+      if (reason === 'PLATFORM_VERSION_CONFLICT' || reason === 'LOCATION_LIMIT_BELOW_CURRENT_USAGE') {
+        const safeRequestId = typeof requestId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(requestId)
+          ? requestId
+          : randomUUID();
+        // Record the denial outside the rolled-back transaction. The audit service handles write failures.
+        await this.audit.record({
+          platformAdminId: admin.platform_admin_id,
+          targetTenantId: tenant.id,
+          requestId: safeRequestId,
+          action: 'platform.location_limit.update',
+          resourceType: 'tenant',
+          resourceId: tenant.id,
+          result: 'denied',
+          metadata: { reason },
+        });
+      }
+      throw error;
     });
     await this.audit.record({
       platformAdminId: admin.platform_admin_id,

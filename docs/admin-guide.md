@@ -31,7 +31,8 @@ ADR-006/ADR-013 已 Accepted；运行时已由 #110–#112 在本地实现。pla
 - platform_admin 只能查看 tenant/subscription/额度/脱敏 manager 摘要，不读取人员、扫码、
   邮件正文、收件邮箱、租户审计或 impersonate 租户用户
 - 平台控制台的“平台审计”入口可按时间、管理员内部 ID、action、result 和目标租户内部 ID 查询平台操作，每页 25 条，支持前后翻页。详情只显示安全元数据；已清理的 Staging 租户不显示原客户资料。页面不能查询租户业务审计，也不能导出或修改记录。平台 Session 过期后需重新登录
-- 平台控制台只读显示当前后端邮件提交模式：“模拟发信（mock）”“真实发信（OCI）”或请求失败时的“状态未知”；这不是单封邮件的最终投递状态。租户管理员和 operator 界面不显示此项，也不能通过租户接口读取
+- 平台控制台只读显示当前后端邮件提交模式：“模拟发信（mock）”“真实发信（OCI）”或请求失败时的“状态未知”。单封邮件的最终投递状态需另行核对。租户管理员和 operator 界面不显示此项，也不能通过租户接口读取。
+- `APP_ENV=local` 时，控制台的服务端环境显示“环境未知”，并提示当前环境未开放租户删除。
 - platform_admin 不受 tenant subscription 到期/暂停影响，但其账号和 Session 仍可过期、禁用和
   全量撤销。MVP 延后 TOTP，使用单 active 账号、高熵密码、限流、有限 Session、独立 audience、
   审计和异常告警作为补偿控制；TOTP 见 #114
@@ -70,6 +71,10 @@ Local/CI/Staging 合成账号另用显式 opt-in 的 `platform:seed`；Productio
 - location 额度统计 active、inactive 和 pending deletion，ADR-011 终结清理为 purged 后释放
 - 达到额度时禁止创建新地点；提高额度立即允许后续创建；降低额度不得低于当前计数，也不会隐式
   停用、删除或冻结既有地点
+- 调额返回 409 时，按目标租户内部 ID、时间、操作 `platform.location_limit.update` 和结果 `denied`
+  筛选平台审计，查看固定原因 `PLATFORM_VERSION_CONFLICT` 或 `LOCATION_LIMIT_BELOW_CURRENT_USAGE`。
+  版本冲突时刷新后核对版本，低于用量时先核对尚未终结清理的地点数。逐请求对账与缺失审计的处理见
+  [运维与故障排查手册](operation.md#9-平台地点调额拒绝)。
 - 人工额度不包含价格、付款、账单、proration 或自动扩容；商业化仍由 #102 Future 决策
 
 ## 5. 审计与合规
