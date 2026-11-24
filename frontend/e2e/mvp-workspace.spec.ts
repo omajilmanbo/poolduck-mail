@@ -126,13 +126,17 @@ test('ADR-017 cancellation survives refresh/relogin and treats a network failure
 });
 
 test('MVP GUI blocks scan entry for suspended subscriptions', async ({ page }) => {
+  const historyResponse = page.waitForResponse((response) =>
+    response.url().includes('/api/scan-events?') && response.request().method() === 'GET');
   await login(page, {
     tenantCode: suspendedTenantCode,
     identifier: 'suspended-operator',
   });
 
   await expect(page.getByTestId('license-status')).toHaveText('suspended');
-  await expect(page.getByText('订阅状态不可发送，扫码与发送入口已禁用。')).toBeVisible();
+  expect((await historyResponse).ok()).toBe(true);
+  await expect(page.getByRole('table', { name: '扫码记录' })).toBeVisible();
+  await expect(page.getByText('订阅已暂停，扫码与发送入口已禁用。请联系租户管理员处理订阅状态。')).toBeVisible();
   await expect(page.getByTestId('scan-code-input')).toBeDisabled();
   await expect(page.getByTestId('scan-submit')).toBeDisabled();
 });

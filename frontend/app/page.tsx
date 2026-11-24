@@ -670,8 +670,12 @@ export default function HomePage() {
                 {scanLoading ? '提交中' : '提交扫码'}
               </button>
             </div>
-            {!canSend ? (
-              <p className="mt-3 text-sm text-red-700">订阅状态不可发送，扫码与发送入口已禁用。</p>
+            {!canSend && (license?.status === 'expired' || license?.status === 'suspended') ? (
+              <p className="mt-3 text-sm text-red-700">
+                {license.status === 'expired' ? '订阅已过期' : '订阅已暂停'}
+                {'，扫码与发送入口已禁用。'}
+                {`请联系${user?.role === 'tenant_manager' ? '平台运营' : '租户管理员'}处理订阅状态。`}
+              </p>
             ) : null}
           </form>
 
