@@ -366,6 +366,20 @@ migration、运行生产取消/领取 SQL 与两个真实 worker 实例、演练
 - Staging bootstrap、Secret 注入、migration、smoke 与部署未执行；仍须按人工批准的目标和
   `docs/staging-manual.md` Runbook 单独进行。
 
+### 4.12 Issue #195 本地跨端口平台状态
+
+1. 按[本地平台入口](development.md#7-platform-control-plane-本地入口issues-110113)启动前后端，使用独立合成数据库和平台账号。后端设置 `APP_ENV=local`、`MAIL_PROVIDER=mock`、`REAL_MAIL_SEND_ENABLED=false`，并明确允许 `http://localhost:3000`。
+2. 用真实浏览器从 `http://localhost:3000/platform/login` 登录，核对发往 `http://localhost:3001` 的两个 GET。
+   `/api/platform/auth/mail-mode` 返回 200 和 `{ "mode": "mock" }`，
+   `/api/platform/auth/environment` 返回 200 和 `{ "environment": "unavailable", "deletion_enabled": false }`。
+   两个响应都有 `Cache-Control: no-store`。控制台显示“模拟发信（mock）”“环境未知”和“当前环境未开放租户删除”。
+3. 核对来源与权限。未列入 `CORS_ORIGIN` 的本机来源无法在浏览器读取响应。允许来源内的匿名请求及租户会话请求均返回 401。
+4. 在已登录页单独中断两个状态请求后重载，确认邮件显示“状态未知”，环境显示“环境未知”，删除入口隐藏。撤销平台会话后，两项读取均被拒绝，重载控制台回到平台登录页。
+
+定向自动回归使用 `frontend/` 的 `npm test -- --run test/platform.test.tsx` 和
+`backend/` 的 `npm test -- --runTestsByPath test/platform.spec.ts test/cors.spec.ts`。
+模拟 API 的平台 E2E 验证交互。跨端口状态验收时，浏览器需直接访问本机后端。
+
 ## 5. Staging seed data
 
 Staging verification uses `npm run staging:seed` from `backend/`, or the container equivalent:
