@@ -19,6 +19,7 @@ async function login(page: Page, input: {
 }
 
 test('MVP GUI: login, rejected/mapped scan, history refresh, and sandbox result', async ({ page }) => {
+  test.setTimeout(60_000);
   await login(page, {
     tenantCode: activeTenantCode,
     identifier: 'local-operator',
@@ -65,6 +66,17 @@ test('MVP GUI: login, rejected/mapped scan, history refresh, and sandbox result'
     .filter({ hasText: '01K0ABC10001' })
     .first();
   await expect(persistedHistoryRow).toContainText('Local Recipient');
+
+  // The first job has passed its grace period. The same code now creates a second event.
+  await page.getByTestId('scan-code-input').fill('E01K0ABC10001');
+  await page.getByTestId('scan-submit').click();
+  await expect(page.getByRole('status')).toContainText('本次已记录为进入');
+  await expect(persistedHistoryRow).toContainText('连续进入，可能漏扫或选错动作码。');
+  await persistedHistoryRow.getByText('前一次有效扫码').click();
+  await expect(persistedHistoryRow.locator('time')).toBeVisible();
+  await persistedHistoryRow.getByTestId('scan-cancel').click();
+  await expect(persistedHistoryRow.getByTestId('mail-status')).toHaveText('已取消');
+  await expect(persistedHistoryRow.getByText('前一次有效扫码')).toHaveCount(0);
 });
 
 test('history API does not allow a tenant token to select another tenant location', async ({ request }) => {

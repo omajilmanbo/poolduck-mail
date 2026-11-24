@@ -73,6 +73,11 @@ export type AuditLogItem = {
 };
 export type AuditLogResponse = { items: AuditLogItem[]; next_cursor: string | null };
 
+type SameActionWarning = {
+  previous_scan_event_id: string;
+  previous_received_at: string;
+};
+
 export type ScanEventResponse = {
   scan_event_id: string;
   mail_job_id: string;
@@ -91,6 +96,7 @@ export type ScanEventResponse = {
   scheduled_at: string | null;
   error_message: string | null;
   deduplicated: boolean;
+  same_action_warning: SameActionWarning | null;
 };
 
 export type MailJobStatus =
@@ -115,6 +121,7 @@ export type ScanHistoryItem = {
   person_name: string | null;
   scan_code: string;
   scan_type: string;
+  same_action_warning: SameActionWarning | null;
   action: ScanAction;
   action_source: ScanActionSource;
   received_at: string;

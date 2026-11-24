@@ -134,7 +134,7 @@ platform token 调用租户业务 API、tenant token 调用上述平台 API 时�
 > 仍由服务端数据库时间和持久化状态决定。
 > 创建响应的 `server_time` 与 `received_at` 来自同一创建事务的 PostgreSQL 时间；取消成功响应的
 > `server_time` 也来自取消事务，不使用浏览器或应用节点时间决定权限。
-> 扫码历史列表的同一页共用一次 PostgreSQL 时间采样，详情在读取时重新采样。两者都用返回的
+> 扫码历史列表和详情在同一授权快照读完记录及其前序动作后，才读取一次 PostgreSQL 墙钟 `clock_timestamp()`。整页共用该值。空页、不可见详情和 CSV 导出跳过采样。两者都用返回的
 > `server_time` 判断 `can_cancel`：仅当任务处于 `waiting` 且采样时间严格早于库内 `cancel_until` 时为 true。
 
 ADR-017 当前契约：
@@ -209,7 +209,8 @@ ADR-017 当前契约：
 - 权限：已登录用户（`tenant_manager` / `operator`）
 - 订阅要求：`trial` 或 `active`；`expired` / `suspended` 返回 `SUBSCRIPTION_NOT_SENDABLE`
 - location 授权：`operator` 必须已分配该 location；门禁在幂等结果重放之前执行，因此撤销 assignment 后旧 `Idempotency-Key` 也不能继续读取或提交该地点结果
-- 出参：`scan_event_id`, `mail_job_id`, `person_code`, `action`, `action_source`, `mail_subject`, `status`, `effective_status`, `mail_status`, `can_cancel`, `cancel_until`, `server_time`, `canceled_at`, `retry_count`, `scheduled_at`, `error_message`, `deduplicated`
+- 出参：`scan_event_id`, `mail_job_id`, `person_code`, `action`, `action_source`, `mail_subject`, `status`, `effective_status`, `mail_status`, `can_cancel`, `cancel_until`, `server_time`, `canceled_at`, `retry_count`, `scheduled_at`, `error_message`, `deduplicated`, `same_action_warning`
+- 新建事件与前一有效动作相同时，`same_action_warning` 返回 `{ previous_scan_event_id, previous_received_at }`（时间为 UTC ISO 8601）。首扫、正常转换、窗口内去重与幂等重放均返回 `null`。重放原记录的当前提示可从历史详情读取。
 - 正常响应示例：
 
 ```json
@@ -224,7 +225,8 @@ ADR-017 当前契约：
   "retry_count": 0,
   "scheduled_at": null,
   "error_message": null,
-  "deduplicated": false
+  "deduplicated": false,
+  "same_action_warning": null
 }
 ```
 
@@ -292,7 +294,7 @@ ADR-017 当前契约：
 - 租户边界：仅使用 JWT 中的 `tenant_id`；其他 tenant 的 ID 统一返回 `MAIL_JOB_NOT_FOUND`
 - location 授权：operator 只能查询已分配 location 的任务；tenant_manager 不受 assignment 限制
 - 出参：`mail_job_id`, `action`, `status`, `created_at`, `sent_at`, `error_message`, `retry_count`, `scheduled_at`, `context`, `scan_event`
-- `context` 返回发送时固化的 `tenant_name`, `location_name`, `person_name`, `person_code`, `snapshot_source`；后续改名不改写历史
+- `context` 返回 `tenant_name`、`location_name`、`person_name`、`person_code` 和 `snapshot_source`。若来源为 `scan_relation`，这些字段在扫码创建任务时固化。若来源为 `legacy_backfill`，字段取自迁移时关联的租户、地点和人员资料。后续改名不改写快照。
 - `scan_event` 返回 `action`, `action_source`；旧数据为 `unknown` / `legacy_unknown`
 - `error_message` 是安全展示文本。
   - `OCI_QUOTA_REJECTED` 显示配额或频率限制，任务为 `queued` 且有 `scheduled_at` 时提示等待自动重试，为 `failed` 时提示已停止重试。
@@ -307,6 +309,7 @@ ADR-017 当前契约：
 - 租户边界：仅使用 JWT 中的 `tenant_id`；其他 tenant 的 ID 统一返回 `SCAN_EVENT_NOT_FOUND`
 - location 授权：operator 只能查询已分配 location 的记录；撤销后单条与列表查询立即不可见
 - 出参：`scan_event_id`, `location_id`, `location_name`, `person_code`, `person_name`, `scan_code`, `scan_type`, `action`, `action_source`, `received_at`, `status`, `mail_job`；关联 `mail_job` 同时返回固化的 `action`
+- 详情与列表每项都返回 `same_action_warning`。服务端在仍保留的同租户、地点和人员映射记录中，按 `received_at, id` 取紧邻的前一条有效进入或离开。动作相同则返回前述对象，否则为 `null`。已取消、未知动作或缺少人员/地点关联的记录均跳过。邮件投递成功与否不决定动作有效性。
 - 列表和详情中 `mail_job.error_message` 的安全展示规则与邮件任务列表和详情一致。
 
 ### GET `/api/scan-events`
@@ -316,6 +319,7 @@ ADR-017 当前契约：
 - 订阅要求：无（历史记录可查）
 - 状态筛选：`waiting` / `queued` / `processing` / `sent` / `failed` / `canceled` / `delivery_unknown`
 - 出参：`{ items: [...], next_cursor }`；按 `created_at DESC, id DESC` 稳定排序，下一页原样传回 `next_cursor`
+- 日期、邮件状态与游标只筛选返回的行。每条记录的前序依据可来自其他页面、筛选范围外或前一日。
 - 非本 tenant 的 `location_id` 返回 `LOCATION_NOT_FOUND`
 - operator 未分配的 `location_id` 同样返回 `LOCATION_NOT_FOUND`；不提供 location 过滤条件时，列表也只包含已分配地点
 

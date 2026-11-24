@@ -9,6 +9,8 @@ describe('Tenant-scoped history APIs', () => {
   let app: INestApplication;
   let jwtService: JwtService;
   let prisma: {
+    $transaction: jest.Mock;
+    $queryRaw: jest.Mock;
     $queryRawUnsafe: jest.Mock;
     user: { findFirst: jest.Mock };
     location: { findFirst: jest.Mock };
@@ -31,6 +33,8 @@ describe('Tenant-scoped history APIs', () => {
 
   beforeEach(async () => {
     prisma = {
+      $transaction: jest.fn(async (read: (tx: typeof prisma) => unknown) => read(prisma)),
+      $queryRaw: jest.fn().mockResolvedValue([]),
       $queryRawUnsafe: jest.fn().mockResolvedValue([{ now: createdAt }]),
       user: { findFirst: jest.fn() },
       location: { findFirst: jest.fn() },
@@ -70,6 +74,8 @@ describe('Tenant-scoped history APIs', () => {
       .expect(200)
       .expect({ items: [], next_cursor: null });
 
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
     expect(prisma.scanEvent.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -133,7 +139,7 @@ describe('Tenant-scoped history APIs', () => {
     prisma.scanEvent.findMany.mockImplementation(() => [readRow()]);
     prisma.scanEvent.findFirst.mockImplementation(readRow);
 
-    // PostgreSQL pins CURRENT_TIMESTAMP at BEGIN. In autocommit each statement starts a transaction.
+    // Hold the data snapshot at BEGIN while the predecessor lookup crosses the deadline.
     function readClock(sql: string, transactionStart = wallTime) {
       switch (sql.trim().toLowerCase()) {
         case 'select current_timestamp as now': return [{ now: new Date(transactionStart) }];
@@ -142,17 +148,15 @@ describe('Tenant-scoped history APIs', () => {
       }
     }
     prisma.$queryRawUnsafe.mockImplementation(readClock);
-    Object.assign(prisma, {
-      $transaction: (read: (tx: unknown) => Promise<unknown>) => {
-        const transactionStart = wallTime;
-        return read({
-          ...prisma,
-          $queryRawUnsafe: (sql: string) => readClock(sql, transactionStart),
-          // With predecessor history enabled, this read completes after the same deadline.
-          $queryRaw: () => { wallTime = deadline + 1; return []; },
-        });
+    const sampleWallTime = jest.fn((sql: string) => readClock(sql, deadline - 2));
+    prisma.$transaction.mockImplementation((read: (tx: unknown) => Promise<unknown>) => read({
+      ...prisma,
+      $queryRawUnsafe: sampleWallTime,
+      $queryRaw: () => {
+        wallTime = deadline + 1;
+        return [{ id: scanEventId, previous_id: otherScanEventId, previous_received_at: createdAt }];
       },
-    });
+    }));
 
     const response = await request(app.getHttpServer())
       .get(endpoint === 'list' ? '/api/scan-events' : `/api/scan-events/${scanEventId}`)
@@ -162,9 +166,14 @@ describe('Tenant-scoped history APIs', () => {
       scan_event_id: scanEventId,
       mail_status: 'waiting',
       cancel_until: new Date(deadline).toISOString(),
-      server_time: new Date(wallTime).toISOString(),
-      can_cancel: wallTime < deadline,
+      same_action_warning: { previous_scan_event_id: otherScanEventId, previous_received_at: createdAt.toISOString() },
+      server_time: new Date(deadline + 1).toISOString(),
+      can_cancel: false,
     });
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: 'RepeatableRead' });
+    expect(sampleWallTime).toHaveBeenCalledTimes(1);
+    expect(sampleWallTime).toHaveBeenCalledWith('SELECT clock_timestamp() AS now');
+    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
   });
 
   it('combines location, status, date, limit and stable cursor pagination', async () => {
@@ -271,6 +280,7 @@ describe('Tenant-scoped history APIs', () => {
       .set('Authorization', `Bearer ${token()}`)
       .expect(404);
     expect(response.body).toMatchObject({ code: 'SCAN_EVENT_NOT_FOUND' });
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
     expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
     expect(prisma.scanEvent.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
