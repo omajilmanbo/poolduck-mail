@@ -110,6 +110,7 @@ test('ADR-017 cancellation survives refresh/relogin and treats a network failure
   await page.reload();
   await expect(page.getByTestId('mail-status').first()).toHaveText('已取消');
   await page.getByRole('button', { name: '退出' }).click();
+  await expect(page.getByTestId('tenant-code-input')).toBeVisible();
   await login(page, {
     tenantCode: activeTenantCode,
     identifier: 'local-operator',
@@ -164,10 +165,17 @@ test('operator can create, edit, deactivate and reactivate a person mapping', as
   expect((await downloadPromise).suggestedFilename()).toBe(`${personCode}-action-codes.zip`);
   await codeDialog.getByRole('button', { name: '关闭' }).click();
 
+  const nameInput = page.getByLabel('姓名');
   await row.getByRole('button', { name: '编辑' }).click();
-  await page.getByLabel('姓名').fill(updatedPersonName);
+  await expect(nameInput).toHaveValue(personName);
+  await nameInput.fill(updatedPersonName);
   await page.getByRole('button', { name: '保存' }).click();
-  await expect(page.getByText(updatedPersonName)).toBeVisible();
+  const updatedNameCell = page
+    .getByRole('row').filter({ hasText: personCode })
+    .getByRole('cell', { name: updatedPersonName, exact: true });
+  await expect(updatedNameCell).toBeVisible();
+  await page.reload();
+  await expect(updatedNameCell).toBeVisible();
 
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('row').filter({ hasText: personCode }).getByRole('button', { name: '停用' }).click();
