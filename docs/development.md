@@ -52,6 +52,7 @@
 - Backend：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`
 - #139 全局预约验收：准备一次性本机 PG16，设置 `APP_ENV=test`、`DATABASE_URL` 指向其回环地址，账号须可创建数据库。在 `backend/` 执行 `npm run test:oci-pacing-pg16`。脚本迁移并清理自己的随机数据库，邮件调用只进入内存 fake。[断言和结果](testing/local-oci-pacing-2026-11-19.md)
 - #209 平台地点调额审计：[初始化一次性 PostgreSQL 16 夹具并执行 HTTP 与 SQL 对账](#8-平台地点调额审计本机验收)。
+- #211 离线数据库验收见[运维手册的完整性检查步骤](operation.md#offline-integrity)。在 `backend/` 执行 `npm run test:offline-integrity` 可复现迁移回填及反例测试。设置 `APP_ENV=test` 或 `local`，将 `DATABASE_URL` 指向专用本机 PostgreSQL。测试账号需能创建临时数据库和 pgcrypto 扩展。脚本在新建的数据库内构造样本，结束时删除测试库。
 - ADR-023 租户生命周期迁移：在 `APP_ENV=local` 或 `test`、`DATABASE_URL` 指向本机 PostgreSQL 时，
   于 `backend/` 执行 `npm run test:tenant-lifecycle-migration`；脚本仅创建并删除随机命名的合成测试数据库。
 - 合成订阅：在 `APP_ENV=local` 或 `test`、`DATABASE_URL` 指向本机 PostgreSQL 时，于 `backend/` 执行

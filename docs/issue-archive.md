@@ -115,6 +115,7 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #153 | 运维 | 在新批准窗口进行有限的小批量 Staging OCI 真实发信与回滚验收 | [本机逐封对账与回退演练](testing/local-mail-batch-reconciliation-2026-11-19.md)已完成；Staging 批次四条 AC 待当次窗口留证 | 是，须再次批准真实发信窗口和收件数据 |
 | #217 | 缺陷 | 在扫码历史、邮件任务查询和工作台中区分配额拒绝、发信认证拒绝和停止投递 | #85 的隔离验收复现配额与发信认证拒绝；独立审查及实时状态见 GitHub | 否，沿用 ADR-019 的分类与现有重试规则 |
 | [#192](https://github.com/omajilmanbo/poolduck-mail/issues/192) | 缺陷 | 用 CLI 输出的 `request_id` 精确定位四种平台账号操作的成功审计 | 本地实现并验证，待 PR 人工审查 | 是，按已接受的 ADR-013 和现有审查流程 |
+| #211 | 运维 | 在迁移、恢复和 seed 后离线核对人员与地点租户、公码唯一、删除状态及成功历史关联 | PostgreSQL 合成验证及运行入口见[离线完整性检查](operation.md#offline-integrity) | 是，数据工具需独立人工审查 |
 | 待建 Issue | 工程改进 | 按 ADR-005 实现幂等 Staging 部署脚本；人工审批触发，并保留恢复 Runbook | 已批准设计，尚未实现 | 是 |
 | #86 | 基础设施 | Staging 域名、TLS 与访问控制 | ADR-012 Accepted；总体跟踪，Caddy/Let's Encrypt 实施见 #107 | 是 |
 | #107 | 基础设施 | 按 ADR-012 为 Staging 接入 Caddy、Let's Encrypt、HTTPS 路由与证书续期 | 已完成并部署；80/443 公网入口于 2026-07-29 人工批准 | 是，ADR-012 与公网入口已确认 |
