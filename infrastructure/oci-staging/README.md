@@ -12,7 +12,7 @@ Terraform 将准备以下 Staging 资源：
 - Always Free Compute：默认 `VM.Standard.A1.Flex`，用于 MVP Staging 单机承载 Frontend / Backend / PostgreSQL 16 容器。
 - Object Storage Bucket：用于 Staging 非真实数据备份与运维产物归档，并配置生命周期自动清理。
 - ADR-019 Email Delivery：纳管已存在的 Email Domain 与 DKIM；按批准的精确 From 创建 approved sender。最小 IAM 和包含 PII 的两类服务日志采用显式开关，未获相关审批时不创建。
-- Cloud-init：安装 `docker.io` 与 Ubuntu 22.04 arm64 默认源可用的 `docker-compose-v2`、将默认 `ubuntu` SSH 用户加入 `docker` 组、创建目录和占位配置，不写入真实 secrets，不自动启动应用。
+- Cloud-init：安装 `docker.io` 与 Ubuntu 22.04 arm64 默认源可用的 `docker-compose-v2`、将默认 `ubuntu` SSH 用户加入 `docker` 组、创建目录和 mock 占位配置。应用部署和实际运行参数由 Staging Runbook 管理。
 
 ## Always Free 人工确认项
 
@@ -140,14 +140,22 @@ API 分位延迟、队列等待与数据库锁等待不能用主机 CPU 指标�
 
 若从**不含邮件资源的旧 state** 接手，先在 OCI Console/CLI 只读核对目标 region、compartment、Domain 与 DKIM 都唯一且 `ACTIVE`，再将各自 OCID 导入对应地址。禁止跳过导入直接 apply，否则 Terraform 会尝试重复创建域和 selector。导入后先运行 `terraform plan` 并确认没有对既有 Compute、网络、备份资源的替换或删除；本地 state、plan 和 `terraform.tfvars` 均不得提交。
 
-`enable_email_instance_principal=false` 是 #141 IAM 的源码默认门禁；2026-10-11 用户批准后，本地忽略的 tfvars 已设为 `true`，Terraform 创建单实例 Dynamic Group 与精确 sender policy，均为 ACTIVE，完整 plan 无漂移。HTTPS 权限映射、容器身份 preflight 和负面权限测试仍待完成。`email_log_retention_days=null` 是 #142 日志的默认门禁；用户批准 90 天及可能存储费用；用户已指定当前唯一 OCI 用户负责读取、告警接收与回滚；OCI API 已核验其为唯一 ACTIVE 管理员，保守停止规则获批准；本地忽略的 tfvars 已启用 90 天日志和通知，Terraform 已创建两类日志、主题、订阅及三条原生告警。订阅 ACTIVE，合成通知已由运维确认收到；新增管理员需复核 PII 访问边界。任何后续 apply 均先执行**完整** `terraform plan`，禁止用 `-target` 隐藏 Compute 或其他资源漂移。Terraform 管理邮件基础设施，不管理容器中的真实发信开关；#145 仍须单独批准。
+### #141 Instance Principal 验收状态
 
-ADR-020 于 2026-10-11 获接受；`enable_email_application_alerts=false` 是源码默认门禁，本地忽略的 tfvars 已设为 `true`。完整 plan 为新增 1 条仅限 `poolduck_staging_mail` namespace 的实例指标 policy 和 6 条 CRITICAL 应用告警、0 变更、0 销毁，随后已应用。2026-10-14 按 OCI 官方 IAM 权限表再将 policy 限定为 `request.permission='METRIC_WRITE'`（裸 `use metrics` 还包含读权限），完整 plan 仅 1 条 policy 更新，已应用；目标容器读取负面测试返回 404。Staging Backend 已通过 Compose 启用 `OCI_MAIL_APP_ALERTS_ENABLED=true`、region 和 compartment，在 mock 模式持续发布 7 类匿名指标；无邮件合成认证失败触发 FIRING，指定邮箱收到通知。该配置不启用真实发信；真实 accepted/relayed 事件仍须 #145 新窗口。
+源码默认 `enable_email_instance_principal=false`。开关启用时，[Terraform](email-delivery.tf) 声明单实例 Dynamic Group 与精确到 compartment、sender 和 domain 的发信 policy。2026-10-11 的变更记录显示，该组和 policy 获批后经 Terraform 应用，当时均为 ACTIVE，随后完整 plan 无差异。同日及 2026-10-14 的预检记录确认目标 Backend 容器已成功获取 Instance Principal。2026-10-16，#145 在独立批准的窗口内完成一封 HTTPS `SubmitEmail`，OCI 记录 accept/relay，受控收件人确认收到，应用在当次窗口回滚至 `mock/false`。
+
+#141 继续跟踪非目标身份、非目标 sender 的拒绝效果。历史单封覆盖当次配置的正向路径。证据、当前运行态待核项和 IAM 撤销入口见 [Staging 准入清单第 2 节](../../docs/oci-mail-staging-readiness.md)。后续真实启用仍须按 [执行卡](../../docs/oci-mail-staging-operator-runbook.md) 取得新的批准。
+
+### 邮件日志与告警
+
+`email_log_retention_days=null` 是 #142 日志的源码默认门禁。2026-10-11 的变更记录包含 90 天保留和可能费用的批准、指定的读取与回滚责任人、两类日志、通知主题、订阅和三条原生告警的应用记录。当时订阅为 ACTIVE，合成通知已送达。当前日志、通知和 PII 访问权限以当次核验为准。任何后续 apply 均先执行**完整** `terraform plan`，禁止用 `-target` 隐藏 Compute 或其他资源漂移。容器中的真实发信开关由 [Staging 执行卡](../../docs/oci-mail-staging-operator-runbook.md) 管理。
+
+`enable_email_application_alerts=false` 是 ADR-020 应用告警的源码默认门禁。2026-10-11 的变更记录显示当时启用了应用告警，Terraform 新增 1 条专用 namespace 的指标 policy 和 6 条 CRITICAL 告警。在该次 mock 部署观察到 7 类匿名指标，合成认证失败触发 FIRING 并送达通知。2026-10-14 的记录显示 policy 收窄为 `request.permission='METRIC_WRITE'`，当时从目标容器读取指标返回 404。当前 Terraform 输入、云端策略、写入和心跳均待当次核验。指标采集独立于真实发信开关。#145 在 [2026-10-16 受控单封](../../docs/testing/staging-oci-mail-single-send-2026-10-16.md) 中观察到 accept/relay。
 
 ## 非范围声明
 
 - 本 IaC 不创建 Production 资源。
-- 本 IaC 不自动启用应用真实发信；MVP Staging 仍使用 mock/sandbox provider。
+- 本 IaC 的职责是基础设施。常规 Staging 部署与 smoke 使用 mock，真实发信开关按执行卡在目标环境核对。
 - 本 IaC 不写入或生成任何真实 secret。
 - 本 IaC 不自动部署 Poolduck Mail 应用镜像；应用发布流程由后续 Issue 单独定义。
 - 本 IaC 不创建 OCI Autonomous Database，因为当前 ADR-004 已确定 MVP 数据库为 PostgreSQL 16。
