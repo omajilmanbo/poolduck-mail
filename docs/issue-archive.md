@@ -106,6 +106,7 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | 待建 Issue | 工程改进 | 按 ADR-005 实现幂等 Staging 部署脚本；人工审批触发，并保留恢复 Runbook | 已批准设计，尚未实现 | 是 |
 | #86 | 基础设施 | Staging 域名、TLS 与访问控制 | ADR-012 Accepted；总体跟踪，Caddy/Let's Encrypt 实施见 #107 | 是 |
 | #107 | 基础设施 | 按 ADR-012 为 Staging 接入 Caddy、Let's Encrypt、HTTPS 路由与证书续期 | 已完成并部署；80/443 公网入口于 2026-07-29 人工批准 | 是，ADR-012 与公网入口已确认 |
+| #187 | 工程改进 | 稳定地点创建后重新启用的前端 CI 回归用例 | 实时状态见 GitHub | 否 |
 
 ## 4. 已完成的 MVP 基线里程碑
 
