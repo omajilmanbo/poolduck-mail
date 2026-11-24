@@ -2,6 +2,29 @@
 
 **2026-11-24 结论**　Node 24.22.3 和 22.23.5 均通过冻结候选的 Git 原始字节复验。两版各通过 345 项单测、21 项 PG16 迁移、授权扫码、取消及 mock 发送，双向切换后均可回读原任务。候选提交为 `a05251897d7fc11d96114606bcaa1807dd96af55`，Git tree 为 `93ab3e15fddc235b46fbb7a17997a46c8818b03a`。项目负责人随后于 2026-11-24 批准 D20 A，选定 Node 24。实际 Staging 发布另行验收。[Accepted ADR-030](../decisions/ADR-030-node-runtime-major.md)
 
+## 11 月 24 日 · Node 24 实施候选与工件复用
+
+实施候选 `153887410f2370aec525d935435dadaeac74b08d` 基于已含 #218、#229 的 main `18f512e`。本机核对 334 个 Git blob，使用两份正式 Dockerfile、锁文件和发布模板完成以下验证。平台为 `linux/amd64`，两端实际输出均为 Node `v24.22.3`、npm `11.19.1`。[实施 PR #230](https://github.com/omajilmanbo/poolduck-mail/pull/230) · [该提交完整 CI](https://github.com/omajilmanbo/poolduck-mail/actions/runs/45303384365)
+
+| 实际执行 | 结果 |
+| --- | --- |
+| `release.py prepare`，两端从 Git 上下文运行 `npm ci`、`npm run build`；随后执行 `release.py verify` | 退出 0，镜像清单、平台、候选、实际补丁与归档 SHA-256 匹配 |
+| 独立断网容器执行 `npm test`、`npm run typecheck`、`npm run lint` | 后端 30 套 284 项、前端 9 套 74 项通过，六条命令均退出 0 |
+| 专用内部网络、空 PG16 卷；原入口启动、`local:seed`、`smoke:api` | 21 个迁移名称逐项匹配；登录 201，未映射扫码和未获授权地点均返回 404。取消任务 0 次尝试，另一次扫码产生 1 次 mock 调用与回执 |
+| 再次 `verify` 载入相同归档，`up --force-recreate --no-build --pull never` 成对重建容器 | 两个实际镜像 ID 与首轮逐项相等。保留原数据库容器和卷，迁移无待办，2 条扫码、2 个任务、1 次尝试及迁移记录指纹相同，健康且重启次数均为 0 |
+| 在第二套独立空卷使用 `APP_ENV=staging`、`staging:seed`、本地测试 CA 和原 Caddy 路由运行 `smoke:api` | 同一镜像对，HTTPS 首页及两个健康接口均 200，HTTP 跳转 308；登录 201 且 Cookie 带 Secure，mock 冒烟退出 0。两套演练的项目资源均已清理 |
+| 拒绝错误清单摘要、其他提交、错误架构、截断归档及互换服务镜像 | 五种输入均退出 1。正确清单与归档重复验证退出 0 |
+| 完整 GitHub Actions | 前后端检查、ADR-017 PostgreSQL 门禁、Playwright success 与 failure 两条路径共 5 项成功 |
+
+| 本地工件 | SHA-256 |
+| --- | --- |
+| 后端 | `dd0adbd8b1504d4ac71f20dec4c225fce64e13db3ec49f44633451b43bd84ddf` |
+| 前端 | `ff00864237be22d605edced1dcdd9603aa94e3f634a53694d6919136a7a13ea9` |
+| 清单 | `6cbc351cdb11675df5b38bac5ef77e9e0355bf2489d078e37b74941028bcd687` |
+| 镜像归档 | `7e34355ef4ba4465c6a7cdb8ff7bec467fb15cc81d8e88d7f83cb033cb5474bf` |
+
+此前实施提交 `ea5a770` 的本机后端快照中 `libssl.so.3` 被截短，空库启动退出 1。修正后构建与运行共用已执行 `openssl version` 的基础层，并在准备、载入后实际检查解包镜像。实际 Staging 的 arm64 工件、公开 DNS/TLS、端口可达性和人工功能验收由操作者另记。将来生产只晋级最新实际 Staging 验收记录中的工件对。[Staging 发布与验收手册](../staging-manual.md#34-构建和启动服务)
+
 ## 11 月 24 日 · 镜像恢复与运行验收
 
 重启后在本机 `desktop-linux`、Engine 29.9.3、Compose 5.7.0、`linux/amd64` 上复验。重新导出候选的 329 个文件，逐个匹配原 Git blob。两个 Dockerfile 的实验副本各仅替换两处 Node 基础镜像主版本。四个 `:git-blobs` 标签的索引摘要均匹配 11 月 20 日的构建日志。

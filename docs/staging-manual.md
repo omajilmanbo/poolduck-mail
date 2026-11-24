@@ -370,6 +370,16 @@ echo | openssl s_client -connect app.poolducktest.com:443 -servername app.pooldu
 
 业务检查按 `docs/testing.md` 的 Staging smoke 清单执行；部署记录保存在 `docs/testing/staging-smoke-<date>.md`。同时确认响应包含已批准的安全头、登录 Cookie 带 `Secure`，并从外部验证 `3000`、`3001`、`5432` 不可访问。若后续清单新增尚未实现的 API，记录为“实现未完成”，不要改用真实数据绕过。
 
+在已确认使用 mock 的 Staging 栈中，用 3.5 写入的 active 合成账号执行 API 冒烟。脚本从容器的 `API_BASE_URL` 经过 HTTPS 代理访问应用，并从同一数据库核对任务与发送尝试。合成账号密码见测试手册第 5 节。
+
+```bash
+: "${API_SMOKE_PASSWORD:?set the synthetic Staging seed password}"
+dc exec -T -e API_SMOKE_TENANT_CODE=5A6E000001 \
+  -e API_SMOKE_IDENTIFIER=staging-active-operator -e API_SMOKE_PASSWORD="$API_SMOKE_PASSWORD" \
+  -e API_SMOKE_LOCATION_ID=5A6E0001 -e API_SMOKE_SCAN_CODE=E01K0ABC20001 \
+  -e API_SMOKE_UNMAPPED_SCAN_CODE=E01K0ABC29999 backend npm run smoke:api
+```
+
 ### 3.7 HTTPS 回滚
 
 1. 停止外部测试并记录维护窗口。
