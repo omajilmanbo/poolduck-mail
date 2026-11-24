@@ -561,6 +561,131 @@ describe('Platform control plane', () => {
       .expect(401);
   });
 
+  describe('location-limit rejection audit', () => {
+    const path = `/api/platform/tenants/${tenantCode}/location-limit`;
+    const requestId = 'Quota_Request-123';
+    let agent: ReturnType<typeof request.agent>;
+
+    beforeEach(async () => {
+      agent = request.agent(app.getHttpServer());
+      await agent.post('/api/platform/auth/login')
+        .send({ email: 'root@example.local', password })
+        .expect(201);
+      prisma.platformAuditLog.create.mockClear();
+    });
+
+    it.each([
+      { scenario: 'stale version', version: 2, usage: 2, updatedRows: 1, reason: 'PLATFORM_VERSION_CONFLICT', attempts: 0 },
+      { scenario: 'below current usage', version: 1, usage: 2, updatedRows: 1, reason: 'LOCATION_LIMIT_BELOW_CURRENT_USAGE', attempts: 0 },
+      { scenario: 'concurrent version change', version: 1, usage: 1, updatedRows: 0, reason: 'PLATFORM_VERSION_CONFLICT', attempts: 1 },
+    ])('audits $scenario once as $reason', async ({
+      version, usage, updatedRows, reason, attempts,
+    }) => {
+      prisma.location.count.mockResolvedValue(usage);
+      prisma.tenant.updateMany.mockResolvedValue({ count: updatedRows });
+
+      await agent.patch(path).set('X-Request-Id', requestId)
+        .send({ location_limit: 1, version }).expect(409)
+        .expect(({ body }) => expect(body.code).toBe(reason));
+
+      expect(prisma.tenant.updateMany).toHaveBeenCalledTimes(attempts);
+      expect(prisma.platformAuditLog.create.mock.calls).toEqual([[{
+        data: {
+          platformAdminId: adminId,
+          targetTenantId: tenantId,
+          requestId,
+          action: 'platform.location_limit.update',
+          resourceType: 'tenant',
+          resourceId: tenantId,
+          result: 'denied',
+          metadataJson: { reason },
+        },
+      }]]);
+    });
+
+    it.each([undefined, 'synthetic@example.local', 'a'.repeat(129)])(
+      'generates an audit request ID for missing or unsafe input (%s)',
+      async (header) => {
+        const patch = agent.patch(path);
+        if (header !== undefined) patch.set('X-Request-Id', header);
+        await patch.send({ location_limit: 2, version: 2 }).expect(409);
+
+        expect(prisma.platformAuditLog.create).toHaveBeenCalledTimes(1);
+        const { data } = prisma.platformAuditLog.create.mock.calls[0][0];
+        expect(data.requestId).toMatch(/^[0-9a-f-]{36}$/);
+        expect(data.metadataJson).toEqual({ reason: 'PLATFORM_VERSION_CONFLICT' });
+      },
+    );
+
+    it.each([
+      { version: 2, reason: 'PLATFORM_VERSION_CONFLICT', message: '数据已被其他操作更新，请刷新后重试' },
+      { version: 1, reason: 'LOCATION_LIMIT_BELOW_CURRENT_USAGE', message: 'location_limit 不能低于当前计数' },
+    ])('preserves $reason when the audit insert fails', async ({ version, reason, message }) => {
+      prisma.location.count.mockResolvedValue(2);
+      prisma.platformAuditLog.create.mockRejectedValueOnce(new Error('synthetic insert failure'));
+
+      await agent.patch(path).set('X-Request-Id', requestId)
+        .send({ location_limit: 1, version }).expect(409).expect({ code: reason, message });
+
+      expect(prisma.platformAuditLog.create).toHaveBeenCalledTimes(1);
+      expect(prisma.tenant.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('keeps the existing success audit on a valid update', async () => {
+      prisma.location.count.mockResolvedValue(2);
+      prisma.tenant.findUnique
+        .mockResolvedValueOnce(tenantRow)
+        .mockResolvedValueOnce(tenantRow)
+        .mockResolvedValueOnce({ ...tenantRow, locationLimit: 2, platformVersion: 2 });
+
+      await agent.patch(path).set('X-Request-Id', requestId)
+        .send({ location_limit: 2, version: 1 }).expect(200)
+        .expect(({ body }) => expect(body).toMatchObject({ location_limit: 2, platform_version: 2 }));
+
+      expect(prisma.platformAuditLog.create.mock.calls).toEqual([[{
+        data: {
+          platformAdminId: adminId,
+          targetTenantId: tenantId,
+          requestId,
+          action: 'platform.location_limit.update',
+          resourceType: 'tenant',
+          resourceId: tenantId,
+          result: 'success',
+          metadataJson: { old_limit: 1, new_limit: 2, new_version: 2 },
+        },
+      }]]);
+    });
+
+    it('keeps unauthenticated and tenant requests outside the quota audit', async () => {
+      const tenantToken = new JwtService({ secret: process.env.JWT_SECRET }).sign({
+        sub: 'user-1',
+        user_id: 'user-1',
+        tenant_id: tenantId,
+        role: 'tenant_manager',
+      });
+      await request(app.getHttpServer()).patch(path).set('X-Request-Id', requestId)
+        .send({ location_limit: 1, version: 2 }).expect(401);
+      await request(app.getHttpServer()).patch(path).set('X-Request-Id', requestId)
+        .set('Authorization', `Bearer ${tenantToken}`)
+        .send({ location_limit: 1, version: 2 }).expect(401);
+      expect(prisma.tenant.findUnique).not.toHaveBeenCalled();
+      expect(prisma.platformAuditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('leaves unknown targets, invalid payloads, and database failures outside the quota audit', async () => {
+      prisma.tenant.findUnique.mockResolvedValueOnce(null);
+      await agent.patch('/api/platform/tenants/10PFABC999/location-limit')
+        .set('X-Request-Id', requestId).send({ location_limit: 1, version: 1 }).expect(404);
+      await agent.patch(path).set('X-Request-Id', requestId)
+        .send({ location_limit: 0, version: 1 }).expect(400);
+      prisma.location.count.mockRejectedValueOnce(new Error('synthetic quota read failure'));
+      await agent.patch(path).set('X-Request-Id', requestId)
+        .send({ location_limit: 1, version: 1 }).expect(500);
+      expect(prisma.tenant.updateMany).not.toHaveBeenCalled();
+      expect(prisma.platformAuditLog.create).not.toHaveBeenCalled();
+    });
+  });
+
   it('exposes only the effective mail mode to an authenticated platform admin', async () => {
     await request(app.getHttpServer())
       .get('/api/platform/auth/mail-mode')
