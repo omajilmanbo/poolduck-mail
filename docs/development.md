@@ -214,10 +214,3 @@ volumes:
 - `incomplete`（退出 2）表示没有可验证关联、缺少回执或数据库证据。被中途终止且没有对账末行的档位也记为缺证据。无回执且找不到幂等记录只说明当前快照未能确认提交。
 
 幂等键哈希、event/job ID 和预期租户地点只在进程内使用。数据库按档使用只读快照，收件快照比较只返回布尔值。只保留计数和结果，不保存逐行数据。取消窗口、worker 领取和逐项 provider 故障仍依原计划另行取证。
-- UI：`http://localhost:3000/platform/login`；租户登录仍为 `http://localhost:3000/`
-
-聚焦验证：
-
-- Backend：`npm.cmd test -- test/platform.spec.ts test/auth.spec.ts test/management.spec.ts`
-- Frontend：`npm.cmd test -- --run test/platform.test.tsx`
-- E2E：本地前后端可用后执行 `npm.cmd run test:e2e -- platform-control-plane.spec.ts`
