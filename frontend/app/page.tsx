@@ -42,7 +42,7 @@ type ScanRecord = {
   actionSource: ScanActionSource;
   personName: string;
   receivedAt: string;
-  providerMessage?: string;
+  failureMessage?: string;
   canCancel: boolean;
   cancelUntil: string | null;
   canceledAt: string | null;
@@ -60,7 +60,7 @@ export function historyItemToRecord(item: ScanHistoryItem): ScanRecord {
     actionSource: item.action_source,
     personName: item.person_name ?? '-',
     receivedAt: item.received_at,
-    providerMessage: item.mail_job?.error_message ?? undefined,
+    failureMessage: item.mail_job?.error_message ?? undefined,
     canCancel: item.can_cancel,
     cancelUntil: item.cancel_until,
     canceledAt: item.canceled_at,
@@ -777,8 +777,8 @@ export default function HomePage() {
                         {record.mailSubject ? (
                           <div className="mt-1 max-w-md truncate text-xs text-slate-500">{record.mailSubject}</div>
                         ) : null}
-                        {record.providerMessage ? (
-                          <div className="mt-1 max-w-md truncate text-xs text-slate-500">{record.providerMessage}</div>
+                        {record.failureMessage ? (
+                          <div className="mt-1 max-w-md break-words text-xs text-slate-500">{record.failureMessage}</div>
                         ) : null}
                       </td>
                       <td className="border-t border-slate-100 px-4 py-3">
