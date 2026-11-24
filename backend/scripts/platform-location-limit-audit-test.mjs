@@ -7,7 +7,10 @@ import { Client } from 'pg';
 const ownerUrl = new URL(process.env.DATABASE_URL);
 assert.equal(ownerUrl.protocol, 'postgresql:');
 assert.equal(ownerUrl.hostname, '127.0.0.1', 'A loopback test database is required');
+assert(ownerUrl.port, 'An explicit PostgreSQL port is required');
 assert.equal(ownerUrl.pathname, '/poolduck_quota_209', 'Use the disposable #209 database');
+// pg parses query parameters as connection options, so pass it only the URL authority and path.
+assert(!/[?#]/.test(ownerUrl.href), 'DATABASE_URL must not contain a query or fragment');
 assert.equal(process.env.APP_ENV, 'test');
 assert.equal(process.env.NODE_ENV, 'test');
 assert.equal(process.env.MAIL_PROVIDER, 'mock');

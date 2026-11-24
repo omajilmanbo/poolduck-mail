@@ -537,6 +537,10 @@ describe('Platform control plane', () => {
       .get('/api/platform/auth/mail-mode')
       .set('Authorization', `Bearer ${tenantToken}`)
       .expect(401);
+    await request(app.getHttpServer())
+      .get('/api/platform/auth/environment')
+      .set('Authorization', `Bearer ${tenantToken}`)
+      .expect(401);
 
     const platformJwt = new JwtService({
       secret: process.env.PLATFORM_JWT_SECRET,
@@ -711,6 +715,10 @@ describe('Platform control plane', () => {
     process.env.STAGING_TENANT_DELETE_ENABLED = 'true';
     const enabled = await agent.get('/api/platform/auth/environment').expect(200);
     expect(enabled.body).toEqual({ environment: 'staging', deletion_enabled: true });
+    process.env.APP_ENV = 'local';
+    const local = await agent.get('/api/platform/auth/environment').expect(200);
+    expect(local.body).toEqual({ environment: 'unavailable', deletion_enabled: false });
+    expect(local.headers['cache-control']).toBe('no-store');
     delete process.env.STAGING_TENANT_DELETE_ENABLED;
   });
 

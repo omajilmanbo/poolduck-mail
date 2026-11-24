@@ -20,7 +20,10 @@
 5. 检查是否有长期停留在 `processing` 的异常任务；原子领取应阻止同一任务并发重复发送
 6. 重试期间订阅失效时，任务应安全终止为 `failed` / `SUBSCRIPTION_NOT_SENDABLE`
 7. 检查收件箱地址格式与域名策略
-8. OCI 真实模式尚未启用；未来启用后，`sent` 仅表示 accepted。只有明确未接受的限流/配额拒绝可按 30 秒、2 分钟、10 分钟退避；4xx 与 suppression 不重试，timeout/断线/5xx/回执不完整进入 `delivery_unknown` 并按 Message-ID、envelope ID、OCI request ID 人工对账，不直接改回 `queued`。排查时不复制收件邮箱、正文或 SDK 原始错误。
+8. 仓库支持 OCI Email Delivery HTTPS 提交，默认使用 `mock`。当前代码的真实发送门禁仅适用于 Staging，启用须通过配置检查并获得当次窗口批准。2026-10-16 的获批窗口已完成受控单封验收，随后在当次窗口回滚到 `mock`。排障时按执行卡独立核对目标环境实际生效的 provider 和开关。Production 准入须按 ADR-019 另行批准。见[单封验收记录](testing/staging-oci-mail-single-send-2026-10-16.md)、[Staging 执行卡](oci-mail-staging-operator-runbook.md)和 [ADR-019](decisions/ADR-019-oci-email-delivery-provider.md)。
+   - `sent` 仅表示 OCI 接受提交。只有 OCI 明确拒绝本次提交的 HTTP 429，以及服务错误码为 `QuotaExceeded` 或 `LimitExceeded` 的 HTTP 400，才按 30 秒、2 分钟、10 分钟有限退避。重试耗尽后进入 `failed`。
+   - OCI 明确返回的永久请求、认证或配置拒绝，以及收件人 suppression，均进入 `failed`，不重试。
+   - OCI 提交返回 HTTP 408、425、499 或 5xx，或遇到超时、断线、回执不完整等无法确认是否接受的情况，进入 `delivery_unknown`。按可用的 Message-ID、envelope ID 和 OCI request ID 人工对账，禁止自动重发或手工改回 `queued`。日志和工单只记录安全原因码与对账所需标识，避免复制收件邮箱、正文、凭据或 SDK 原始请求、响应和错误。
 
 OCI Email Domain 的 `OutboundAccepted`/`OutboundRelayed`、bounce/complaint 对账、停止条件、回滚 mock 与 IAM 撤销顺序见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。OCI 原始日志含收件人 PII，只允许获批运维角色查看；`delivery_unknown` 无日志命中也不得自动重发。
 
