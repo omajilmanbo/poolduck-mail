@@ -10,6 +10,7 @@ import { AuditService } from '../audit/audit.service';
 import { AuthenticatedUserResponse } from '../auth/auth.types';
 import { LicenseService } from '../license/license.service';
 import { LocationAccessService } from '../location-access/location-access.service';
+import { mailHistoryFailureMessage, safeMailFailureMessage } from '../mail-jobs/mail-history-failure';
 import { PrismaService } from '../prisma.service';
 import { CreateScanEventDto, ExportScanEventsDto, ListScanEventsDto } from './dto';
 import {
@@ -864,7 +865,7 @@ export class ScanEventsService {
       canceled_at: mailJob.scanEvent.canceledAt?.toISOString() ?? null,
       retry_count: mailJob.retryCount,
       scheduled_at: mailJob.scheduledAt?.toISOString() ?? null,
-      error_message: this.safeFailureMessage(mailJob.errorMessage),
+      error_message: safeMailFailureMessage(mailJob.errorMessage),
       deduplicated: true,
     };
   }
@@ -1000,6 +1001,7 @@ export class ScanEventsService {
           status: true,
           sentAt: true,
           cancelUntil: true,
+          scheduledAt: true,
           errorMessage: true,
           locationNameSnapshot: true,
           personNameSnapshot: true,
@@ -1026,6 +1028,7 @@ export class ScanEventsService {
       status: string;
       sentAt: Date | null;
       cancelUntil: Date | null;
+      scheduledAt: Date | null;
       errorMessage: string | null;
       locationNameSnapshot: string;
       personNameSnapshot: string;
@@ -1061,19 +1064,10 @@ export class ScanEventsService {
             status: mailJob.status,
             action: mailJob.actionSnapshot as ScanAction,
             sent_at: mailJob.sentAt?.toISOString() ?? null,
-            error_message: this.safeFailureMessage(mailJob.errorMessage),
+            error_message: mailHistoryFailureMessage(mailJob),
           }
         : null,
     };
-  }
-
-  private safeFailureMessage(message: string | null): string | null {
-    if (!message) {
-      return null;
-    }
-    return message === 'Sandbox provider simulated failure'
-      ? message
-      : '邮件发送失败';
   }
 
   private async databaseNow(client: {
