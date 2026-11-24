@@ -40,6 +40,7 @@ type ScanRecord = {
   scanCode: string;
   action: ScanAction;
   actionSource: ScanActionSource;
+  sameActionWarning: ScanHistoryItem['same_action_warning'];
   personName: string;
   receivedAt: string;
   failureMessage?: string;
@@ -58,6 +59,7 @@ export function historyItemToRecord(item: ScanHistoryItem): ScanRecord {
     scanCode: item.scan_code,
     action: item.action,
     actionSource: item.action_source,
+    sameActionWarning: item.same_action_warning,
     personName: item.person_name ?? '-',
     receivedAt: item.received_at,
     failureMessage: item.mail_job?.error_message ?? undefined,
@@ -125,6 +127,53 @@ function getFriendlyError(error: unknown) {
   return '请求失败';
 }
 
+function HistoryExportButton({ label, locationId, download }: {
+  label: '扫描' | '邮件';
+  locationId: string;
+  download: (params: string) => Promise<'empty' | 'downloaded'>;
+}) {
+  const [status, setStatus] = useState<'idle' | 'exporting' | 'empty' | 'downloaded' | 'failed'>('idle');
+  const messages = {
+    idle: '',
+    exporting: `正在导出${label}记录…`,
+    empty: `没有可导出的${label}记录，CSV 仅含表头。`,
+    downloaded: `${label} CSV 已发起下载。`,
+    failed: `${label}导出失败，请再次点击“导出${label}”重试。`,
+  };
+
+  async function handleExport() {
+    setStatus('exporting');
+    try {
+      const to = new Date();
+      const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const params = new URLSearchParams({
+        created_from: from.toISOString(),
+        created_to: to.toISOString(),
+        location_id: locationId,
+      });
+      setStatus(await download(params.toString()));
+    } catch {
+      setStatus('failed');
+    }
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        className="rounded-md border border-slate-300 px-3 py-2 text-xs disabled:cursor-not-allowed disabled:text-slate-400"
+        disabled={status === 'exporting'}
+        onClick={() => void handleExport()}
+      >
+        导出{label}
+      </button>
+      <p role="status" className={`mt-1 text-xs empty:mt-0 ${status === 'failed' ? 'text-red-700' : 'text-slate-600'}`}>
+        {messages[status]}
+      </p>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const api = useMemo(() => createApiClient(), []);
   const [token, setToken] = useState('');
@@ -133,6 +182,7 @@ export default function HomePage() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [loginFormReady, setLoginFormReady] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [license, setLicense] = useState<LicenseCheck | null>(null);
   const [locations, setLocations] = useState<LocationItem[]>([]);
@@ -143,6 +193,7 @@ export default function HomePage() {
   const [workspaceError, setWorkspaceError] = useState('');
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
+  const [scanWarning, setScanWarning] = useState<{ id: string; action: ScanAction } | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
   const [historyStatus, setHistoryStatus] = useState<MailJobStatus | ''>('');
@@ -156,6 +207,12 @@ export default function HomePage() {
   const [cancelingScanEventId, setCancelingScanEventId] = useState('');
   const [clockTick, setClockTick] = useState(0);
   const historyRequestId = useRef(0);
+  const scanScope = useRef(0);
+
+  useEffect(() => {
+    setScanWarning(null);
+    return () => { scanScope.current += 1; };
+  }, [selectedLocationId, token]);
 
   const canSend = isSendAllowed(license);
   const selectedLocation = locations.find((location) => location.location_id === selectedLocationId);
@@ -241,6 +298,8 @@ export default function HomePage() {
       try {
         const response = await api.getScanHistory(accessToken, locationId, query);
         if (requestId !== historyRequestId.current) return;
+        setScanWarning(current => current && response.items.some(item =>
+          item.scan_event_id === current.id && !item.same_action_warning) ? null : current);
         setRecords(response.items.slice(0, HISTORY_PAGE_SIZE).map(historyItemToRecord));
         setHistoryNextCursor(response.next_cursor);
       } catch (error) {
@@ -249,9 +308,15 @@ export default function HomePage() {
           clearSession('登录已失效，请重新登录');
           return;
         }
-        setHistoryError(error instanceof ApiError && [403, 404].includes(error.status)
-          ? '无权限查看此地点的扫码记录'
-          : getFriendlyError(error));
+        if (error instanceof ApiError && [403, 404].includes(error.status)) {
+          scanScope.current += 1;
+          setScanWarning(null);
+          setRecords([]);
+          setHistoryNextCursor(null);
+          setHistoryError('无权限查看此地点的扫码记录');
+        } else {
+          setHistoryError(getFriendlyError(error));
+        }
       } finally {
         if (!background && requestId === historyRequestId.current) {
           setHistoryLoading(false);
@@ -262,6 +327,7 @@ export default function HomePage() {
   );
 
   useEffect(() => {
+    setLoginFormReady(true);
     api.getMe().then((response) => {
       const session = 'cookie-session';
       setToken(session);
@@ -384,10 +450,16 @@ export default function HomePage() {
     }
 
     setScanLoading(true);
+    const scope = scanScope.current;
+    setScanWarning(null);
     setWorkspaceError('');
 
     try {
-      await api.createScanEvent(token, selectedLocation.location_id, scanCode);
+      const result = await api.createScanEvent(token, selectedLocation.location_id, scanCode);
+      if (scanScope.current !== scope) return;
+      if (result.same_action_warning) {
+        setScanWarning({ id: result.scan_event_id, action: result.action });
+      }
       setHistoryStatus('');
       setHistoryFrom('');
       setHistoryTo('');
@@ -395,6 +467,7 @@ export default function HomePage() {
       setHistoryRefreshKey((current) => current + 1);
       setScanCode('');
     } catch (error) {
+      if (scanScope.current !== scope) return;
       if (error instanceof ApiError && error.status === 401) {
         clearSession('登录已失效，请重新登录');
         return;
@@ -409,15 +482,19 @@ export default function HomePage() {
   async function handleCancel(record: ScanRecord) {
     if (!token || !record.canCancel || record.status !== 'waiting') return;
     setCancelingScanEventId(record.scanEventId);
+    const scope = scanScope.current;
     setWorkspaceError('');
     try {
       const response = await api.cancelScanEvent(token, record.scanEventId);
+      if (scanScope.current !== scope) return;
+      setScanWarning(current => current?.id === record.scanEventId ? null : current);
       setRecords((current) => current.map((item) =>
         item.scanEventId === record.scanEventId
           ? {
               ...item,
               status: response.mail_status,
               effectiveStatus: response.effective_status,
+              sameActionWarning: null,
               canCancel: false,
               canceledAt: response.canceled_at,
               serverOffsetMs: new Date(response.server_time).getTime() - Date.now(),
@@ -426,6 +503,7 @@ export default function HomePage() {
       ));
       if (selectedLocationId) void loadHistory(token, selectedLocationId, historyQuery, true);
     } catch (error) {
+      if (scanScope.current !== scope) return;
       if (error instanceof ApiError && error.status === 401) {
         clearSession('登录已失效，请重新登录');
         return;
@@ -467,6 +545,7 @@ export default function HomePage() {
                 tenant_code
                 <input
                   data-testid="tenant-code-input"
+                  disabled={!loginFormReady}
                   name="organization"
                   autoCapitalize="characters"
                   autoComplete="organization"
@@ -486,6 +565,7 @@ export default function HomePage() {
                 用户名/邮箱
                 <input
                   data-testid="identifier-input"
+                  disabled={!loginFormReady}
                   type="text"
                   name="username"
                   autoComplete="username"
@@ -500,6 +580,7 @@ export default function HomePage() {
                 password
                 <input
                   data-testid="password-input"
+                  disabled={!loginFormReady}
                   type="password"
                   autoComplete="current-password"
                   value={password}
@@ -518,7 +599,7 @@ export default function HomePage() {
               <button
                 data-testid="login-submit"
                 type="submit"
-                disabled={loginLoading}
+                disabled={!loginFormReady || loginLoading}
                 className="w-full rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 {loginLoading ? '登录中' : '进入工作台'}
@@ -670,28 +751,27 @@ export default function HomePage() {
                 {scanLoading ? '提交中' : '提交扫码'}
               </button>
             </div>
-            {!canSend ? (
-              <p className="mt-3 text-sm text-red-700">订阅状态不可发送，扫码与发送入口已禁用。</p>
+            {!canSend && (license?.status === 'expired' || license?.status === 'suspended') ? (
+              <p className="mt-3 text-sm text-red-700">
+                {license.status === 'expired' ? '订阅已过期' : '订阅已暂停'}
+                {'，扫码与发送入口已禁用。'}
+                {`请联系${user?.role === 'tenant_manager' ? '平台运营' : '租户管理员'}处理订阅状态。`}
+              </p>
             ) : null}
+            {scanWarning && (
+              <p role="status" className="mt-3 text-sm text-amber-800">
+                本次已记录为{scanActionLabel(scanWarning.action)}，与前一次有效扫码相同，请核对动作码。
+              </p>
+            )}
           </form>
 
           <section className="rounded-md border border-slate-200 bg-white">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-4 py-3">
               <h2 className="text-base font-semibold">扫码记录</h2>
               {user?.role === 'tenant_manager' && selectedLocationId ? (
-                <div className="flex gap-2">
-                  <button type="button" className="rounded-md border border-slate-300 px-3 py-2 text-xs" onClick={() => {
-                    const to = new Date();
-                    const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
-                    const params = new URLSearchParams({ created_from: from.toISOString(), created_to: to.toISOString(), location_id: selectedLocationId });
-                    void api.exportScanEvents(params.toString());
-                  }}>导出扫描</button>
-                  <button type="button" className="rounded-md border border-slate-300 px-3 py-2 text-xs" onClick={() => {
-                    const to = new Date();
-                    const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
-                    const params = new URLSearchParams({ created_from: from.toISOString(), created_to: to.toISOString(), location_id: selectedLocationId });
-                    void api.exportMailJobs(params.toString());
-                  }}>导出邮件</button>
+                <div key={selectedLocationId} className="flex flex-wrap gap-2">
+                  <HistoryExportButton label="扫描" locationId={selectedLocationId} download={api.exportScanEvents} />
+                  <HistoryExportButton label="邮件" locationId={selectedLocationId} download={api.exportMailJobs} />
                 </div>
               ) : null}
               <button
@@ -770,6 +850,18 @@ export default function HomePage() {
                         >
                           {scanActionLabel(record.action)}
                         </span>
+                        {record.sameActionWarning && (
+                          <div className="mt-2 text-xs text-amber-800">
+                            <p>连续{scanActionLabel(record.action)}，可能漏扫或选错动作码。</p>
+                            <details>
+                              <summary className="cursor-pointer">前一次有效扫码</summary>
+                              <time dateTime={record.sameActionWarning.previous_received_at}>
+                                {formatDateTime(record.sameActionWarning.previous_received_at)}
+                              </time>
+                              <div className="font-mono">{record.sameActionWarning.previous_scan_event_id}</div>
+                            </details>
+                          </div>
+                        )}
                       </td>
                       <td className="border-t border-slate-100 px-4 py-3 text-xs">{formatDateTime(record.receivedAt)}</td>
                       <td className="border-t border-slate-100 px-4 py-3">

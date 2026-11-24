@@ -3,6 +3,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import argon2 from "argon2";
 import { activeTenant, stagingPassword } from "./staging-fixture.mjs";
 import { config } from "dotenv";
+import { seedSyntheticSubscription } from "./synthetic-subscriptions.mjs";
 
 config({ path: "../.env", quiet: true });
 config({ path: ".env", quiet: true });
@@ -16,7 +17,7 @@ const adapter = new PrismaPg({ connectionString: DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
 const activeStartAt = new Date("2026-01-01T00:00:00.000Z");
-const activeEndAt = new Date("2027-01-01T00:00:00.000Z");
+const suspendedEndAt = new Date("2027-01-01T00:00:00.000Z");
 const expiredStartAt = new Date("2025-01-01T00:00:00.000Z");
 const expiredEndAt = new Date("2025-12-31T23:59:59.000Z");
 
@@ -212,11 +213,11 @@ function subscriptionDates(status) {
 
   return {
     startAt: activeStartAt,
-    endAt: activeEndAt,
+    endAt: status === "suspended" ? suspendedEndAt : undefined,
   };
 }
 
-async function seedTenant(tenant, passwordHash) {
+async function seedTenant(tenant, passwordHash, now) {
   const countedLocations = await prisma.location.count({
     where: { tenantId: tenant.id, status: { not: "purged" } },
   });
@@ -238,20 +239,12 @@ async function seedTenant(tenant, passwordHash) {
     },
   });
 
-  await prisma.subscription.upsert({
-    where: { tenantId: tenant.id },
-    update: {
-      plan: "mvp-staging",
-      status: tenant.subscriptionStatus,
-      ...subscriptionDates(tenant.subscriptionStatus),
-    },
-    create: {
-      tenantId: tenant.id,
-      plan: "mvp-staging",
-      status: tenant.subscriptionStatus,
-      ...subscriptionDates(tenant.subscriptionStatus),
-    },
-  });
+  await seedSyntheticSubscription(prisma, {
+    tenantId: tenant.id,
+    plan: "mvp-staging",
+    status: tenant.subscriptionStatus,
+    ...subscriptionDates(tenant.subscriptionStatus),
+  }, now);
 
   await upsertUser({
     ...tenant.tenantManager,
@@ -298,8 +291,9 @@ async function seedTenant(tenant, passwordHash) {
 async function main() {
   const passwordHash = await argon2.hash(stagingPassword);
 
+  const now = Date.now();
   for (const tenant of tenants) {
-    await seedTenant(tenant, passwordHash);
+    await seedTenant(tenant, passwordHash, now);
   }
 
   console.log("Staging synthetic seed completed (3 tenants).");

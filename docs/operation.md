@@ -90,3 +90,53 @@ Production 到期失败时保留 `pending_delete` 与 `suspended`；查 `tenant_
 `RECORD_RETENTION_PROCESSOR_ENABLED` 默认关闭；Production 启用前须先应用 `20261022000000_record_retention_scan_indexes`，按 tenant/月份盘点到期行数，核对合成数据测试、告警路由和备份边界。`RECORD_RETENTION_BATCH_SIZE` 可设 1–100；每分钟分别选取最多该数量的扫码家族、租户审计和平台审计候选，按全局到期顺序处理。清理先锁 tenant 并复核数据库到期时间。`pending_delete` 的既存扫码家族与业务审计冻结，关联平台审计延至删除流程结束；恢复后超期记录可在下一轮清理。未终态邮件或未完成发送尝试不得强制清理。`delivery_unknown` 的尝试若没有 `provider_call_closed_at`，即使 `completed_at` 已被陈旧认领恢复流程填写，也必须保留并报警。人工核实原调用已结束后才可在受控维护中记录关闭时间；不得修改邮件业务状态、自动重发或为清理而调用 provider。核对 `record_retention_alert` 安全原因码。
 
 出现清理失败、外键/计数异常或积压时将开关设为 `false` 并重启 Backend，确认无事务在途，再依据内部 ID 核对状态和迁移。Production 租户终结清理也须确认无 `processing`、未完成尝试或尚未确认关闭的 `delivery_unknown` 调用，才可销毁全部在线记录并写墓碑；失败则保持 `pending_delete` 和不可恢复门禁，修复后重试。索引回滚需停清理器并在数据库会话中显式设置 `app.allow_record_retention_index_rollback=true`；已销毁行无法靠回滚恢复。不得宣称备份副本已经清除。
+
+## 9. 平台地点调额拒绝
+
+已授权的调额请求返回 409 时，记录时间、目标租户内部 ID、错误码和安全的 `X-Request-Id`。
+用平台审计按目标租户、时间、`platform.location_limit.update` 和 `denied` 筛选。
+逐请求对账时，有权限的运维人员可用只读数据库连接执行以下参数化查询，将 `$1` 绑定为安全的请求标识，
+将 `$2` 绑定为目标租户内部 UUID。
+
+```sql
+SELECT request_id, platform_admin_id, target_tenant_id, result,
+       metadata_json->>'reason' AS reason, created_at
+FROM platform_audit_logs
+WHERE request_id = $1 AND target_tenant_id = $2::uuid
+  AND action = 'platform.location_limit.update' AND result = 'denied';
+```
+
+- `PLATFORM_VERSION_CONFLICT` 表示版本已变化。刷新平台租户摘要，重新确认目标、额度和版本。
+- `LOCATION_LIMIT_BELOW_CURRENT_USAGE` 表示目标额度低于当前用量。核对 active、inactive 和待清理地点数后重新选定额度。
+- 请求标识缺失或格式不符时，审计使用服务端 UUID。按管理员、目标租户和时间定位记录。
+- 查无记录时，核对请求标识并检查审计存储是否可写。审计写入失败仍返回原 409。刷新租户摘要核对
+  额度、版本和用量，仅在重新确认以后提交调额。
+
+<a id="offline-integrity"></a>
+
+## 10. 迁移、恢复与 seed 后的离线完整性检查
+
+完成迁移、恢复到当前 schema 或写入合成 seed 后，在恢复服务或验收前手动运行。核实离线目标库和版本，从受控环境注入该库的 `DATABASE_URL`。使用能读取 `public` 下检查所需九张表全部相关行的只读账号。在仓库根目录执行：
+
+```sh
+npm --prefix backend run --silent integrity:check
+```
+
+检查在一个 PostgreSQL `REPEATABLE READ READ ONLY` 事务内完成。每次输出一行 JSON。
+
+| 字段 | 计数单位与判定依据 |
+|---|---|
+| `person_location_tenant` | 人员行。所属 tenant 必须存在，地点必须属于同一 tenant。 |
+| `person_code_groups` | 有问题的公共码组。所有 tenant 和墓碑一起按码分组，同码多行计一组，缺码也计一组。 |
+| `lifecycle_rows` | 人员或地点行。active/inactive 的三个删除字段均为空。pending_delete 有原状态和相隔 14 天的起止时间，到期等待清理仍合法。purged 已清空原状态，允许保留原时间对，也允许随上级清理而两者均空。 |
+| `history_rows` | 扫码、邮件、尝试或幂等行，每个有问题的行在本表只计一次。核对成功扫码的 tenant、地点、人员及任务指向，非空的设备、创建人、取消人必须同 tenant。动作码扫码和历史进出扫码有且仅有一个任务，现存尝试须指向同 tenant 任务，幂等行须指向同 tenant 的同一扫码与任务。 |
+
+旧动作 `unknown/legacy_unknown` 和旧 `scan_type` 可以保留。检查依据内部关系，接受可空的设备和操作人、墓碑引用以及已按留存规则整组销毁的历史。迁移已清除的 `unmapped` 事件若重新出现，会计入历史异常。
+
+| 退出码 | JSON 结果 | 运维处理 |
+|---|---|---|
+| 0 | `ok`，四项为零 | 保存本次检查对应的版本、步骤和汇总。 |
+| 1 | `violations` 和四项计数 | 暂停放行。按非零类别在隔离副本复核迁移顺序、回填、删除时间对或留存家族关联。修复另行审核，之后重跑同一命令。 |
+| 2 | `unavailable` | 检查没有完成。核实连接、schema 版本及全表读取权限后重跑。行级安全策略限制可见数据时也应按此处理。 |
+
+工单只记录退出码和汇总，连接串、行标识、人员码和业务内容留在受控环境。验证使用合成数据，实际环境操作按既有发布审批执行。
