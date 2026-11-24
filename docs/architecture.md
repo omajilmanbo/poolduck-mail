@@ -3,10 +3,10 @@
 ## 1. 总体架构
 
 - 前端：Next.js（App Router）+ TypeScript + Tailwind CSS
-- 后端：NestJS（Node.js 20 LTS，REST API）
+- 后端：NestJS（Node.js 24 LTS，REST API）。前后端按同一候选构建，未来生产复用最新通过 Staging 验收的镜像对。[ADR-030](decisions/ADR-030-node-runtime-major.md)
 - 数据库：PostgreSQL 16 + Prisma
 - 认证：JWT（access + refresh）+ RBAC
-- 邮件服务：当前 Staging 运行时仍使用 Mock Provider；ADR-019 的 OCI HTTPS adapter、结果分类和节流已部署，目标容器的 Instance Principal 身份获取通过，但 #141 的 SubmitEmail 权限效果及负面权限仍未验证。真实发信仍关闭。
+- 邮件服务：Staging 默认使用 mock。ADR-019 的 OCI HTTPS adapter 使用 Instance Principal。历史预检已验证目标容器获取实例身份。2026-10-16 的受控单封验证了当次 HTTPS `SubmitEmail` 正向效果，随后回滚 mock。#141 的非目标身份和 sender 的拒绝效果待验证。[验收证据](oci-mail-staging-readiness.md)
 
 ### 1.1 Local 容器运行拓扑（Issue #60）
 
@@ -51,8 +51,8 @@
 - Subscription 模块：订阅状态与有效期校验
 - Scan 模块：按 ADR-022 严格解析 `E<person_code>` / `X<person_code>`、扫码事件入库、幂等与冲突处理；不双读旧 `V2` / `PD1|...` 动作码
 - Mail 模块：邮件任务创建、发送、重试
-- Mail Provider 选择器只接受 `mock` 与 `oci_email_delivery_https`；后者要求 Staging 专用的显式开关、region、approved sender compartment、From 和 Message-ID domain。#137 的 OCI HTTPS adapter 使用 Instance Principal、禁用 SDK 自动重试，并在 tenant-scoped attempt 上保存调用前 Message-ID 与响应标识；#138 将 OCI 结果明确分为 accepted、transient、permanent、suppressed、unknown，只有明确未被接受的 transient 可有限重试，unknown 不自动重发。#139 阶段性以 PostgreSQL 跨实例预约确保 OCI 提交至少间隔 50 ms（应用侧最多 20 次/秒），不设应用侧每日上限；这不是 OCI 实际配额。本地 selector 已接通真实 adapter，但 Staging 当前仍保持 mock，只有受控预检通过后才可切换。收件人始终来自按 tenant/location/person 映射创建的不可变任务快照；新增人员邮箱不需维护第二份地址清单。Staging 真实启用前须人工核查测试数据。
-- 应用级 OCI 邮件异常告警方案见 Accepted [ADR-020](decisions/ADR-020-staging-mail-application-alerts.md)。Backend 在 Staging 显式启用后每分钟发布匿名聚合指标和心跳，Terraform 为专用 namespace 配置最小写入权限及 CRITICAL 告警；部署和合成告警验收之前不得宣称自动通知已接通，真实发送仍关闭。
+- Mail Provider 选择器只接受 `mock` 与 `oci_email_delivery_https`；后者要求 Staging 专用的显式开关、region、approved sender compartment、From 和 Message-ID domain。#137 的 OCI HTTPS adapter 使用 Instance Principal、禁用 SDK 自动重试，并在 tenant-scoped attempt 上保存调用前 Message-ID 与响应标识；#138 将 OCI 结果明确分为 accepted、transient、permanent、suppressed、unknown，只有明确未被接受的 transient 可有限重试，unknown 不自动重发。#139 阶段性以 PostgreSQL 跨实例预约确保 OCI 提交至少间隔 50 ms（应用侧最多 20 次/秒），不设应用侧每日上限；这不是 OCI 实际配额。仓库默认使用 mock。切换前须核对目标环境实际生效的 provider、开关和当次批准。收件人始终来自按 tenant/location/person 映射创建的不可变任务快照；新增人员邮箱不需维护第二份地址清单。Staging 真实启用前须人工核查测试数据。
+- 应用级 OCI 邮件异常告警方案见 Accepted [ADR-020](decisions/ADR-020-staging-mail-application-alerts.md)。Backend 在 Staging 显式启用后每分钟发布匿名聚合指标和心跳，Terraform 为专用 namespace 配置最小写入权限及 CRITICAL 告警；告警链路和心跳以目标环境当次核验为准。指标采集开关独立于真实发送开关。
 - Audit 模块：以 best-effort 方式写入关键操作审计日志；审计写入失败不改变主业务结果
 
 > ADR-017 已在本地实现：首次发送使用数据库时间权威的 10 秒 `waiting` 犹豫期，并以原子条件更新决定

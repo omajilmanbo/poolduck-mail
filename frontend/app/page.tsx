@@ -42,7 +42,7 @@ type ScanRecord = {
   actionSource: ScanActionSource;
   personName: string;
   receivedAt: string;
-  providerMessage?: string;
+  failureMessage?: string;
   canCancel: boolean;
   cancelUntil: string | null;
   canceledAt: string | null;
@@ -60,7 +60,7 @@ export function historyItemToRecord(item: ScanHistoryItem): ScanRecord {
     actionSource: item.action_source,
     personName: item.person_name ?? '-',
     receivedAt: item.received_at,
-    providerMessage: item.mail_job?.error_message ?? undefined,
+    failureMessage: item.mail_job?.error_message ?? undefined,
     canCancel: item.can_cancel,
     cancelUntil: item.cancel_until,
     canceledAt: item.canceled_at,
@@ -125,6 +125,53 @@ function getFriendlyError(error: unknown) {
   return '请求失败';
 }
 
+function HistoryExportButton({ label, locationId, download }: {
+  label: '扫描' | '邮件';
+  locationId: string;
+  download: (params: string) => Promise<'empty' | 'downloaded'>;
+}) {
+  const [status, setStatus] = useState<'idle' | 'exporting' | 'empty' | 'downloaded' | 'failed'>('idle');
+  const messages = {
+    idle: '',
+    exporting: `正在导出${label}记录…`,
+    empty: `没有可导出的${label}记录，CSV 仅含表头。`,
+    downloaded: `${label} CSV 已发起下载。`,
+    failed: `${label}导出失败，请再次点击“导出${label}”重试。`,
+  };
+
+  async function handleExport() {
+    setStatus('exporting');
+    try {
+      const to = new Date();
+      const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const params = new URLSearchParams({
+        created_from: from.toISOString(),
+        created_to: to.toISOString(),
+        location_id: locationId,
+      });
+      setStatus(await download(params.toString()));
+    } catch {
+      setStatus('failed');
+    }
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        className="rounded-md border border-slate-300 px-3 py-2 text-xs disabled:cursor-not-allowed disabled:text-slate-400"
+        disabled={status === 'exporting'}
+        onClick={() => void handleExport()}
+      >
+        导出{label}
+      </button>
+      <p role="status" className={`mt-1 text-xs empty:mt-0 ${status === 'failed' ? 'text-red-700' : 'text-slate-600'}`}>
+        {messages[status]}
+      </p>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const api = useMemo(() => createApiClient(), []);
   const [token, setToken] = useState('');
@@ -133,6 +180,7 @@ export default function HomePage() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [loginFormReady, setLoginFormReady] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [license, setLicense] = useState<LicenseCheck | null>(null);
   const [locations, setLocations] = useState<LocationItem[]>([]);
@@ -262,6 +310,7 @@ export default function HomePage() {
   );
 
   useEffect(() => {
+    setLoginFormReady(true);
     api.getMe().then((response) => {
       const session = 'cookie-session';
       setToken(session);
@@ -467,6 +516,7 @@ export default function HomePage() {
                 tenant_code
                 <input
                   data-testid="tenant-code-input"
+                  disabled={!loginFormReady}
                   name="organization"
                   autoCapitalize="characters"
                   autoComplete="organization"
@@ -486,6 +536,7 @@ export default function HomePage() {
                 用户名/邮箱
                 <input
                   data-testid="identifier-input"
+                  disabled={!loginFormReady}
                   type="text"
                   name="username"
                   autoComplete="username"
@@ -500,6 +551,7 @@ export default function HomePage() {
                 password
                 <input
                   data-testid="password-input"
+                  disabled={!loginFormReady}
                   type="password"
                   autoComplete="current-password"
                   value={password}
@@ -518,7 +570,7 @@ export default function HomePage() {
               <button
                 data-testid="login-submit"
                 type="submit"
-                disabled={loginLoading}
+                disabled={!loginFormReady || loginLoading}
                 className="w-full rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 {loginLoading ? '登录中' : '进入工作台'}
@@ -670,28 +722,22 @@ export default function HomePage() {
                 {scanLoading ? '提交中' : '提交扫码'}
               </button>
             </div>
-            {!canSend ? (
-              <p className="mt-3 text-sm text-red-700">订阅状态不可发送，扫码与发送入口已禁用。</p>
+            {!canSend && (license?.status === 'expired' || license?.status === 'suspended') ? (
+              <p className="mt-3 text-sm text-red-700">
+                {license.status === 'expired' ? '订阅已过期' : '订阅已暂停'}
+                {'，扫码与发送入口已禁用。'}
+                {`请联系${user?.role === 'tenant_manager' ? '平台运营' : '租户管理员'}处理订阅状态。`}
+              </p>
             ) : null}
           </form>
 
           <section className="rounded-md border border-slate-200 bg-white">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-4 py-3">
               <h2 className="text-base font-semibold">扫码记录</h2>
               {user?.role === 'tenant_manager' && selectedLocationId ? (
-                <div className="flex gap-2">
-                  <button type="button" className="rounded-md border border-slate-300 px-3 py-2 text-xs" onClick={() => {
-                    const to = new Date();
-                    const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
-                    const params = new URLSearchParams({ created_from: from.toISOString(), created_to: to.toISOString(), location_id: selectedLocationId });
-                    void api.exportScanEvents(params.toString());
-                  }}>导出扫描</button>
-                  <button type="button" className="rounded-md border border-slate-300 px-3 py-2 text-xs" onClick={() => {
-                    const to = new Date();
-                    const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
-                    const params = new URLSearchParams({ created_from: from.toISOString(), created_to: to.toISOString(), location_id: selectedLocationId });
-                    void api.exportMailJobs(params.toString());
-                  }}>导出邮件</button>
+                <div key={selectedLocationId} className="flex flex-wrap gap-2">
+                  <HistoryExportButton label="扫描" locationId={selectedLocationId} download={api.exportScanEvents} />
+                  <HistoryExportButton label="邮件" locationId={selectedLocationId} download={api.exportMailJobs} />
                 </div>
               ) : null}
               <button
@@ -777,8 +823,8 @@ export default function HomePage() {
                         {record.mailSubject ? (
                           <div className="mt-1 max-w-md truncate text-xs text-slate-500">{record.mailSubject}</div>
                         ) : null}
-                        {record.providerMessage ? (
-                          <div className="mt-1 max-w-md truncate text-xs text-slate-500">{record.providerMessage}</div>
+                        {record.failureMessage ? (
+                          <div className="mt-1 max-w-md break-words text-xs text-slate-500">{record.failureMessage}</div>
                         ) : null}
                       </td>
                       <td className="border-t border-slate-100 px-4 py-3">

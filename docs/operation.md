@@ -20,7 +20,10 @@
 5. 检查是否有长期停留在 `processing` 的异常任务；原子领取应阻止同一任务并发重复发送
 6. 重试期间订阅失效时，任务应安全终止为 `failed` / `SUBSCRIPTION_NOT_SENDABLE`
 7. 检查收件箱地址格式与域名策略
-8. OCI 真实模式尚未启用；未来启用后，`sent` 仅表示 accepted。只有明确未接受的限流/配额拒绝可按 30 秒、2 分钟、10 分钟退避；4xx 与 suppression 不重试，timeout/断线/5xx/回执不完整进入 `delivery_unknown` 并按 Message-ID、envelope ID、OCI request ID 人工对账，不直接改回 `queued`。排查时不复制收件邮箱、正文或 SDK 原始错误。
+8. 仓库支持 OCI Email Delivery HTTPS 提交，默认使用 `mock`。当前代码的真实发送门禁仅适用于 Staging，启用须通过配置检查并获得当次窗口批准。2026-10-16 的获批窗口已完成受控单封验收，随后在当次窗口回滚到 `mock`。排障时按执行卡独立核对目标环境实际生效的 provider 和开关。Production 准入须按 ADR-019 另行批准。见[单封验收记录](testing/staging-oci-mail-single-send-2026-10-16.md)、[Staging 执行卡](oci-mail-staging-operator-runbook.md)和 [ADR-019](decisions/ADR-019-oci-email-delivery-provider.md)。
+   - `sent` 仅表示 OCI 接受提交。只有 OCI 明确拒绝本次提交的 HTTP 429，以及服务错误码为 `QuotaExceeded` 或 `LimitExceeded` 的 HTTP 400，才按 30 秒、2 分钟、10 分钟有限退避。重试耗尽后进入 `failed`。
+   - OCI 明确返回的永久请求、认证或配置拒绝，以及收件人 suppression，均进入 `failed`，不重试。
+   - OCI 提交返回 HTTP 408、425、499 或 5xx，或遇到超时、断线、回执不完整等无法确认是否接受的情况，进入 `delivery_unknown`。按可用的 Message-ID、envelope ID 和 OCI request ID 人工对账，禁止自动重发或手工改回 `queued`。日志和工单只记录安全原因码与对账所需标识，避免复制收件邮箱、正文、凭据或 SDK 原始请求、响应和错误。
 
 OCI Email Domain 的 `OutboundAccepted`/`OutboundRelayed`、bounce/complaint 对账、停止条件、回滚 mock 与 IAM 撤销顺序见 [OCI Staging 准入清单](oci-mail-staging-readiness.md)。OCI 原始日志含收件人 PII，只允许获批运维角色查看；`delivery_unknown` 无日志命中也不得自动重发。
 
@@ -88,9 +91,30 @@ Production 到期失败时保留 `pending_delete` 与 `suspended`；查 `tenant_
 
 出现清理失败、外键/计数异常或积压时将开关设为 `false` 并重启 Backend，确认无事务在途，再依据内部 ID 核对状态和迁移。Production 租户终结清理也须确认无 `processing`、未完成尝试或尚未确认关闭的 `delivery_unknown` 调用，才可销毁全部在线记录并写墓碑；失败则保持 `pending_delete` 和不可恢复门禁，修复后重试。索引回滚需停清理器并在数据库会话中显式设置 `app.allow_record_retention_index_rollback=true`；已销毁行无法靠回滚恢复。不得宣称备份副本已经清除。
 
+## 9. 平台地点调额拒绝
+
+已授权的调额请求返回 409 时，记录时间、目标租户内部 ID、错误码和安全的 `X-Request-Id`。
+用平台审计按目标租户、时间、`platform.location_limit.update` 和 `denied` 筛选。
+逐请求对账时，有权限的运维人员可用只读数据库连接执行以下参数化查询，将 `$1` 绑定为安全的请求标识，
+将 `$2` 绑定为目标租户内部 UUID。
+
+```sql
+SELECT request_id, platform_admin_id, target_tenant_id, result,
+       metadata_json->>'reason' AS reason, created_at
+FROM platform_audit_logs
+WHERE request_id = $1 AND target_tenant_id = $2::uuid
+  AND action = 'platform.location_limit.update' AND result = 'denied';
+```
+
+- `PLATFORM_VERSION_CONFLICT` 表示版本已变化。刷新平台租户摘要，重新确认目标、额度和版本。
+- `LOCATION_LIMIT_BELOW_CURRENT_USAGE` 表示目标额度低于当前用量。核对 active、inactive 和待清理地点数后重新选定额度。
+- 请求标识缺失或格式不符时，审计使用服务端 UUID。按管理员、目标租户和时间定位记录。
+- 查无记录时，核对请求标识并检查审计存储是否可写。审计写入失败仍返回原 409。刷新租户摘要核对
+  额度、版本和用量，仅在重新确认以后提交调额。
+
 <a id="offline-integrity"></a>
 
-## 9. 迁移、恢复与 seed 后的离线完整性检查
+## 10. 迁移、恢复与 seed 后的离线完整性检查
 
 完成迁移、恢复到当前 schema 或写入合成 seed 后，在恢复服务或验收前手动运行。核实离线目标库和版本，从受控环境注入该库的 `DATABASE_URL`。使用能读取 `public` 下检查所需九张表全部相关行的只读账号。在仓库根目录执行：
 

@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import argon2 from "argon2";
 import { config } from "dotenv";
+import { seedSyntheticSubscription } from "./synthetic-subscriptions.mjs";
 
 config({ path: "../.env", quiet: true });
 config({ path: ".env", quiet: true });
@@ -61,6 +62,7 @@ const tenants = [
 ];
 
 async function main() {
+  const now = Date.now();
   const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
   const active = await prisma.platformAdmin.findFirst({
     where: { status: "active" },
@@ -76,8 +78,8 @@ async function main() {
     });
   }
 
-  const now = new Date("2026-01-01T00:00:00.000Z");
-  const future = new Date("2027-01-01T00:00:00.000Z");
+  const fixtureDate = new Date("2026-01-01T00:00:00.000Z");
+  const suspendedEnd = new Date("2027-01-01T00:00:00.000Z");
   const pastStart = new Date("2025-01-01T00:00:00.000Z");
   const pastEnd = new Date("2025-12-31T23:59:59.000Z");
 
@@ -101,22 +103,15 @@ async function main() {
         locationLimit,
       },
     });
-    await prisma.subscription.upsert({
-      where: { tenantId: tenant.id },
-      update: {
-        plan: "synthetic",
-        status: tenant.status,
-        startAt: tenant.status === "expired" ? pastStart : now,
-        endAt: tenant.status === "expired" ? pastEnd : future,
-      },
-      create: {
-        tenantId: tenant.id,
-        plan: "synthetic",
-        status: tenant.status,
-        startAt: tenant.status === "expired" ? pastStart : now,
-        endAt: tenant.status === "expired" ? pastEnd : future,
-      },
-    });
+    const dates = tenant.status === "expired"
+      ? { startAt: pastStart, endAt: pastEnd }
+      : { startAt: fixtureDate, endAt: tenant.status === "suspended" ? suspendedEnd : undefined };
+    await seedSyntheticSubscription(prisma, {
+      tenantId: tenant.id,
+      plan: "synthetic",
+      status: tenant.status,
+      ...dates,
+    }, now);
     await prisma.user.upsert({
       where: {
         tenantId_email: {
@@ -155,10 +150,10 @@ async function main() {
       update: {
         name: `Synthetic ${status}`,
         status,
-        deletedAt: status === "pending_delete" ? now : null,
+        deletedAt: status === "pending_delete" ? fixtureDate : null,
         purgeAfter:
           status === "pending_delete"
-            ? new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000)
+            ? new Date(fixtureDate.getTime() + 14 * 24 * 60 * 60 * 1000)
             : null,
       },
       create: {
@@ -168,10 +163,10 @@ async function main() {
         name: `Synthetic ${status}`,
         type: "location",
         status,
-        deletedAt: status === "pending_delete" ? now : null,
+        deletedAt: status === "pending_delete" ? fixtureDate : null,
         purgeAfter:
           status === "pending_delete"
-            ? new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000)
+            ? new Date(fixtureDate.getTime() + 14 * 24 * 60 * 60 * 1000)
             : null,
       },
     });

@@ -32,7 +32,7 @@ MVP 技术栈统一如下：
    - 表单与校验：React Hook Form + Zod
 
 2. 后端
-   - 运行时与语言：Node.js 20 LTS + TypeScript
+   - 运行时与语言：TypeScript + Node.js。原定的 Node.js 20 LTS 已由 [ADR-030](ADR-030-node-runtime-major.md) 更新为 24 LTS。
    - API：NestJS（REST）
    - 数据校验：class-validator + class-transformer（输入边界）
    - 鉴权：JWT（access token）+ 刷新 token 轮换策略（MVP 可先用短周期 access + 服务端可撤销 refresh）
@@ -108,7 +108,7 @@ MVP 技术栈统一如下：
 
 ## Operational impact
 
-- 部署：需提供 Node.js 20 与 PostgreSQL 16 运行环境。
+- 部署：Node.js 主版本按 [ADR-030](ADR-030-node-runtime-major.md)，数据库使用 PostgreSQL 16。
 - CI：需建立 GitHub Actions 基础流水线并维护依赖缓存。
 - 运维：MVP 不涉及真实邮件通道运维，但需保留 provider 抽象以便后续平滑接入。
 
