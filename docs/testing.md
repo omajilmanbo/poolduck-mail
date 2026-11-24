@@ -449,7 +449,9 @@ npm run test:e2e
 
 ## 7. 质量门禁建议
 
-ADR-019 #138 Local/CI 使用 fake OCI client 验证：2xx accepted、429/配额明确拒绝、认证/请求 4xx、suppression、timeout/断线/5xx、回执缺失和 SDK 未分类异常；检查仅 transient 有限重试，unknown 不自动重发，`retry_count` 与安全错误码一致。#139 还需 fake DB 预约测试：50 ms 边界、跨 tenant 全局序列化、延期不调用 provider/不消耗 retry、重启后沿用数据库 attempt 历史、窗口查询失败时 fail closed，以及积压日志不含 PII。手工复核应在 `MAIL_PROVIDER=mock` 下检查 tenant/location/订阅门禁、任务收件快照与审计脱敏；真实 OCI 发送须等待发件域/DNS/IAM/数据核查和另行人工批准，不作为 #138/#139 测试步骤。OCI 实际每分钟、每日、单封大小配额尚未核实，#139 保持开放。
+ADR-019 #138 Local/CI 使用 fake OCI client 验证：2xx accepted、429/配额明确拒绝、认证/请求 4xx、suppression、timeout/断线/5xx、回执缺失和 SDK 未分类异常；检查仅 transient 有限重试，unknown 不自动重发，`retry_count` 与安全错误码一致。手工复核应在 `MAIL_PROVIDER=mock` 下检查 tenant/location/订阅门禁、任务收件快照与审计脱敏；真实 OCI 发送须等待发件域/DNS/IAM/数据核查和另行人工批准，不作为 #138/#139 测试步骤。
+
+#139 的 fake DB 单测覆盖 50 ms 边界、滚动一秒窗口和窗口读取失败。PG16 本机验收通过不同租户的双 worker 和服务重建场景，逐项核对延期行、下次领取时间、retry 次数与内存 fake 调用。compartment 有效分钟、每日、单封额度继续由 #139 跟踪。[验收记录与原 AC 对照](testing/local-oci-pacing-2026-11-19.md)
 
 #140 fake OCI client 契约：`backend/test/oci-mail-contract.spec.ts` 将假客户端注入真实 OCI adapter 与发送服务，只用合成 `.invalid` 地址，不建立 OCI 凭据或网络连接。测试单一收件人取持久化 `mail_job.to_email`、固定 sender/compartment、RFC Message-ID 与禁用 SDK retry、同租户 attempt 标识持久化；逐项覆盖 suppression、429/配额、请求/认证 4xx、timeout/5xx/响应丢失/无效回执，并断言 API 形状的服务响应、数据库写入及审计不包含收件人、正文或原始异常。未知状态再次处理必须拒绝。取消/等待/跨租户、过期/暂停订阅、停用地点/人员不得调用 provider。既有 `mail-jobs.spec.ts` 覆盖 HTTP 层的认证、跨租户和客户端收件人覆盖请求，`oci-email-delivery-provider.spec.ts` 覆盖 SDK 请求映射；完整后端测试含 mock provider 回归。Issue 中“独立地址 allowlist”已被修订的 ADR-019 取代：当前只按不可变人员邮箱任务快照发送，不维护第二份 allowlist。
 

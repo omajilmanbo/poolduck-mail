@@ -60,7 +60,7 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #136 | 为 OCI 邮件 provider 增加选择器与真实发信配置门禁 | 已实现并在受控单封中验证；合并与 Issue 验收待 PR | 是，涉及真实发信门禁 |
 | #137 | 在现有邮件抽象下接入 OCI HTTPS 提交、Instance Principal 与可追溯标识 | 已实现并完成一次受控 OCI 提交；合并与 Issue 验收待 PR | 是，涉及真实发信与数据模型 |
 | #138 | 区分 OCI accepted、transient、permanent、suppressed 与 unknown 结果 | fake 异常测试及受控成功路径通过；合并与 Issue 验收待 PR | 是，涉及重试和误发风险 |
-| #139 | 按 OCI 实际配额进行 provider 节流与积压观测 | 阶段性全局 20 次/秒节流已实现，compartment 有效 quota 未核实；按用户决定保持开放供调整，单封不构成容量验收 | 是，需核实有效 quota、成本与发送观察 |
+| #139 | 按 OCI 实际配额进行 provider 节流与积压观测 | [本机 PG16 验收](testing/local-oci-pacing-2026-11-19.md)通过跨租户双 worker、连接重建和 50 ms 全局预约延期核对。按 ADR-019 修订保持开放 | 是，运维待核实 compartment 有效分钟、每日、单封额度及成本 |
 | #140 | 建立 fake OCI client 契约测试与安全异常回归 | 合成 fake 契约及安全回归已实现；独立 allowlist 条款由 ADR-019 的收件快照规则取代，合并与验收待 PR | 是，涉及 tenant/邮件目标地址异常 |
 | #144 | 确认 Staging 发件域、DNS、人员邮箱测试数据、配额与启用前提 | 发件域、DKIM、sender、SPF、DMARC 和受控测试数据已核查并完成单封；有效 compartment quota 留在 #139 跟踪 | 是，下一真实窗口仍须单独批准 |
 | #146 | 设计 OCI 异步回执同步为产品级投递状态的方案 | P3 可选后续；不阻塞 #85 首次真实 provider | 是，涉及 tenant scope、PII 与 schema |
