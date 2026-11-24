@@ -5,21 +5,18 @@ import argon2 from 'argon2';
 import { Client } from 'pg';
 import request from 'supertest';
 import { NestFactory } from '@nestjs/core';
+import { syntheticSeedDatabaseUrls } from './synthetic-subscriptions-test-db.mjs';
 
 // Exercise the actual HTTP guards and SQL against a newly created, disposable database.
-const url = new URL(process.env.DATABASE_URL);
 assert(['test', 'local'].includes(process.env.APP_ENV));
-assert(['localhost', '127.0.0.1'].includes(url.hostname));
-const databaseName = 'scan_history_' + randomUUID().replaceAll('-', '');
-url.pathname = '/postgres';
-const admin = new Client({ connectionString: url.toString() });
+const { adminUrl, databaseName, databaseUrl } = syntheticSeedDatabaseUrls(process.env.DATABASE_URL);
+const admin = new Client({ connectionString: adminUrl.toString() });
 await admin.connect();
 try {
   await admin.query(`CREATE DATABASE "${databaseName}"`);
   try {
-    url.pathname = '/' + databaseName;
     Object.assign(process.env, {
-      DATABASE_URL: url.toString(), APP_ENV: 'test', NODE_ENV: 'test',
+      DATABASE_URL: databaseUrl.toString(), APP_ENV: 'test', NODE_ENV: 'test',
       MAIL_PROVIDER: 'mock', REAL_MAIL_SEND_ENABLED: 'false', MAIL_JOB_PROCESSOR_ENABLED: 'false',
       JWT_SECRET: 'synthetic-scan-history-test-secret',
     });
