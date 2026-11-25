@@ -113,6 +113,9 @@ jobs:
       - name: Verify ADR-023 tenant lifecycle migration and guarded rollback
         run: npm --prefix backend run test:tenant-lifecycle-migration
 
+      - name: Verify ADR-011 location and person restore deadlines
+        run: npm --prefix backend run test:location-person-restore
+
       - name: Test offline integrity checks with synthetic PostgreSQL fixtures
         run: npm --prefix backend run test:offline-integrity
 

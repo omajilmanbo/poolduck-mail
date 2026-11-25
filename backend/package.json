@@ -32,6 +32,7 @@
     "start:dev": "ts-node-dev --respawn --transpile-only src/main.ts",
     "test": "jest --runInBand",
     "test:db": "npm run prisma:generate && node scripts/prisma-smoke-test.mjs",
+    "test:location-person-restore": "npm run build && node scripts/location-person-restore-test.mjs",
     "test:scan-action-history": "node --test scripts/synthetic-subscriptions-test-db.test.mjs && npm run build && node scripts/scan-action-history-test.mjs",
     "test:synthetic-subscriptions": "npm run build && node scripts/synthetic-subscriptions-test.mjs",
     "validate:adr017": "npm run build && node scripts/adr017-release-validation.mjs",

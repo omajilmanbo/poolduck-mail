@@ -52,6 +52,7 @@
 本地质量门禁命令：
 
 - Backend：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`
+- ADR-011 地点和人员恢复：将 `APP_ENV` 设为 `test`，`DATABASE_URL` 指向本机 PostgreSQL 16，在 `backend/` 运行 `npm run test:location-person-restore`。脚本在临时库中用固定时刻验证截止边界，再分别观察一个授权恢复请求在截止前后等待同一把锁，核对拒绝审计、原状态和邮件计数，结束后删除临时库。
 - 在 `backend/` 执行 `npm run capacity:test`，用离线合成样本验证负载参数、逐请求对账和 TSV 窗口增量。容器 I/O 汇总命令见[容量测试 Runbook](testing/staging-capacity-runbook.md#61-离线汇总容器-io)。
 - 验证扫码动作提示时，设置 `APP_ENV=test`、`MAIL_PROVIDER=mock`、`REAL_MAIL_SEND_ENABLED=false`，将 `DATABASE_URL` 指向具有建库权限的本机 PostgreSQL 16。主机可填 `localhost` 或 `127.0.0.1`，查询参数仅支持可选的 `schema=public`。在 `backend/` 执行 `npm run test:scan-action-history`。脚本先运行离线配置断言，再连接本机 `postgres` 管理库，创建随机命名的合成测试库。迁移、扫码、取消与授权历史验证均在测试库中执行，结束后删除该库。
 - #139 全局预约验收：准备一次性本机 PG16，设置 `APP_ENV=test`、`DATABASE_URL` 指向其回环地址，账号须可创建数据库。在 `backend/` 执行 `npm run test:oci-pacing-pg16`。脚本迁移并清理自己的随机数据库，邮件调用只进入内存 fake。[断言和结果](testing/local-oci-pacing-2026-11-19.md)
