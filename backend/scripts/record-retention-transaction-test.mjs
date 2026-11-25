@@ -100,9 +100,9 @@ try {
       data: { status: 'delivery_unknown', completedAt: new Date() } });
     assert.equal(await retention.purgeScanFamily(tenant.id, scan.id), 'blocked');
     await db.$executeRaw`UPDATE tenants SET status = 'pending_delete',
-      deleted_at = clock_timestamp() AT TIME ZONE 'UTC',
-      purge_after = (clock_timestamp() AT TIME ZONE 'UTC') + INTERVAL '1 year',
+      deleted_at = stamp.deleted_at, purge_after = stamp.deleted_at + INTERVAL '1 year',
       deleted_from_status = 'active', deleted_from_subscription_status = 'trial'
+      FROM (SELECT CURRENT_TIMESTAMP(3) AT TIME ZONE 'UTC' AS deleted_at) AS stamp
       WHERE id = ${tenant.id}::uuid`;
     await db.subscription.update({ where: { tenantId: tenant.id }, data: { status: 'suspended' } });
     assert.equal((await retention.dueScanFamilies()).some((row) => row.id === scan.id), false);
