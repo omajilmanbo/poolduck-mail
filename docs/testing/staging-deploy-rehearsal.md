@@ -1,6 +1,6 @@
 # Staging 部署脚本的本机隔离演练
 
-在开发机仓库根目录运行。需要 Python 3.8+、Git 和指向本机的 Docker Compose。完整演练需 Linux 容器引擎、支持 `!reset` 的 Compose，以及已有的 PG16、Caddy 镜像和准备应用工件所需的构建依赖。完整演练的候选须同时包含 #230 的 release.py、.nvmrc 和同源 Compose 配置。测试程序从当前已提交的 HEAD 创建临时克隆，生成仅供本次使用的配置，输出随机项目名、克隆路径和 SHA。真实发布的审批及分步接管见 [Staging 手册](../staging-manual.md)。
+在开发机仓库根目录运行。需要 Python 3.8+、Git 和指向本机的 Docker Compose。完整演练需 Linux 容器引擎、支持 `!reset` 的 Compose，以及已有的 PG16、Caddy 镜像和准备应用工件所需的构建依赖。测试程序从当前已提交的 HEAD 创建临时克隆，生成仅供本次使用的配置，输出随机项目名、克隆路径和 SHA。它用仓库的 `release.py` 准备一次镜像对，并在后续每次启动时核对运行镜像和 `.nvmrc` 规定的 Node 版本。真实发布的审批及分步接管见 [Staging 手册](../staging-manual.md)。
 
 ```bash
 python -B deploy/staging/rehearsal/verify.py
