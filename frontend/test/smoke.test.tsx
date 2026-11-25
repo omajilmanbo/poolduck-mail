@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ApiNetworkError,
   createApiClient,
+  createPlatformApiClient,
   createScanEventBody,
   isSendAllowed,
   mailStatusLabel,
@@ -17,6 +18,24 @@ describe('frontend API client', () => {
     const client = createApiClient();
 
     expect(client.baseUrl).toBe('http://localhost:3001');
+  });
+
+  it('uses same-origin API routes for both Staging clients', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_BASE_URL', '/');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response('{}', { headers: { 'content-type': 'application/json' } }),
+    );
+    try {
+      await createApiClient().login({
+        tenant_code: 'tenant', identifier: 'operator', password: 'password',
+      });
+      await createPlatformApiClient().login('admin@example.local', 'password');
+      expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+        '/api/auth/login', '/api/platform/auth/login',
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('posts scan events without tenant_id or custom mail body fields', async () => {

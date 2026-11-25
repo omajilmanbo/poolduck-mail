@@ -5,12 +5,14 @@
 ## 1. 技术基线
 
 - Frontend：Next.js（App Router）+ TypeScript + Tailwind CSS
-- Backend：NestJS + Node.js 20 LTS + TypeScript
+- Backend：NestJS + Node.js 24 LTS + TypeScript
 - Database：PostgreSQL 16 + Prisma
 - Auth：JWT + RBAC
 - Mail：MVP 仅使用 mock/sandbox provider
 - Test：Vitest / Testing Library、Jest / Supertest、Playwright
 - CI：GitHub Actions
+
+前后端在仓库根目录执行 `nvm install` 与 `nvm use`（nvm-windows 按 `.nvmrc` 的完整版本安装和切换）。CI 从同一文件选择 Node；两个 Dockerfile 钉住对应补丁和多架构基础镜像摘要。更新补丁时三处一起改，重新构建并验收 Staging 工件对，见 ADR-030。
 
 技术选型以 `docs/decisions/ADR-004-tech-stack-for-mvp.md` 为准。
 

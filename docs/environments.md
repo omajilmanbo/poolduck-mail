@@ -71,7 +71,7 @@ Staging is an internal verification environment. It validates configuration, dep
 | `APP_PORT` | `3001` unless the host reverse proxy changes it | No | Backend listener. |
 | `FRONTEND_PORT` | `3000` unless the host reverse proxy changes it | No | Frontend listener. |
 | `API_BASE_URL` | `https://app.poolducktest.com` | No | Caddy routes API requests on the same origin. |
-| `NEXT_PUBLIC_API_BASE_URL` | Same public base URL used by the frontend | No | Required by the current frontend client. |
+| `NEXT_PUBLIC_API_BASE_URL` | Local backend URL; Staging uses `/` (same origin) | No | Required by the current frontend client. |
 | `CORS_ORIGIN` | `https://app.poolducktest.com` | No | Do not use wildcard origins. |
 | `DATABASE_URL` | Secret Staging PostgreSQL URL | Yes | Isolated Staging database only. |
 | `JWT_SECRET` | Generated Staging-only secret | Yes | Do not reuse Local or Production. |
