@@ -7,6 +7,13 @@ services:
       OCI_MONITORING_REGION: ${OCI_MONITORING_REGION:-ap-tokyo-1}
       OCI_MONITORING_COMPARTMENT_ID: ${OCI_MONITORING_COMPARTMENT_ID:-ocid1.compartment.oc1..aaaaaaaaozodhl7uv5suytbn4ef5nyanoo2msdlwp3kk7vnddjadc6ijv3jq}
 
+  frontend:
+    build:
+      args:
+        NEXT_PUBLIC_API_BASE_URL: "/"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: "/"
+
   reverse-proxy:
     image: caddy:2.11.4-alpine
     container_name: poolduck-mail-staging-proxy

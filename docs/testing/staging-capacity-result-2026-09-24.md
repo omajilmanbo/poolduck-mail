@@ -37,7 +37,7 @@
 | OCPU / 内存 | 2 OCPU / 11,932 MiB（配置目标 12 GB） |
 | 启动盘 | 100 GB、10 VPU/GB；根文件系统 97 GB，测试中最高使用率 19% |
 | Node.js / PostgreSQL / Compose | `v20.20.2` / `16.14` / `2.40.3` |
-| Backend / worker / PostgreSQL | 各 1 个容器；worker 与 Backend 同进程 |
+| Compose 实例 | Caddy、Frontend、Backend、PostgreSQL 各 1 个容器，worker 与 Backend 同进程 |
 | Mail provider | `mock / success` |
 | 合成数据 | active 50 operators / 4,096 persons；suspended 1 operator / 100 persons |
 | 备份 | 测试前 custom-format dump 已创建，并通过 `pg_restore -l` 验证 |
@@ -152,3 +152,19 @@ burst 共返回 14,487 次 201；严格 UTC 数据库窗口统计到 14,482 个 
 - [x] steady、burst、mixed backlog 均自然归零，无手工改状态或删除历史
 - [x] 最终四容器 healthy、restart 0、OOM false、DB lock waiter 0
 - [x] 未产生付费资源、真实投递或敏感 artifact；容量密码临时文件已从本机与 Staging 删除
+
+## #116 九项验收复核（2026-11-19，离线）
+
+复核依据为[本 Issue 的九项 AC](https://github.com/omajilmanbo/poolduck-mail/issues/116)、上文实测、[原测量 PR](https://github.com/omajilmanbo/poolduck-mail/pull/134) 和仓库中的采集工具。下表保留 9 月 24 日的测试口径。
+
+| AC | 状态 | 证据与仍缺的条件 |
+|---|---|---|
+| 1 可重复测试 | 已有工具和说明 | [Runbook](staging-capacity-runbook.md) 对应 seed、负载阶梯、停止条件、恢复和[结果模板](staging-capacity-result-template.md)。mixed-success 已测；mock provider-failure 仅有方案，须单独批准窗口。 |
+| 2 环境与窗口 | 历史实测 | 上文记录部署 commit、三个 UTC 窗口、A1 Flex 2 OCPU / 11,932 MiB、100 GB / 10 VPU/GB、四容器 Compose、mock/success。 |
+| 3 可持续并发与吞吐 | 历史实测，有置信边界 | steady 20 并发、300.9 秒、5,780 次有效扫码，API 19.211 RPS、19.211 jobs/s，claim p95 964 ms、积压 0。下一档 40 并发已超 claim SLO。外部 Windows 负载机的 CPU/内存采集受权限限制，历史余量未知。 |
+| 4 容量边界 | 已区分 | 50 并发 burst 的 93.220 RPS 是 API 峰值。端到端结论仅适用于本次单 VM 与 mock/success；真实 provider 投递、失败重试与 Production 容量均未知。 |
+| 5 指标证据 | 部分实测 | 见各阶梯的 API 分位数/错误、job 领取/积压，以及 CPU/内存、根盘、DB 连接 7–8、锁等待 0、restart/OOM 0。根盘 19% 衡量空间占用。采集器支持容器 Block I/O 和网络累计计数，仓库没有该次原始 TSV 或窗口增量；历史读写量、网络收发量与卷饱和度未知。 |
+| 6 主次瓶颈 | 首要有证据，次要归因待验 | 首要限制出现在共享 CPU 的 Backend/worker 与 PostgreSQL 领取链路。steady 40 并发 API p95 78 ms，claim p95 已达 262,647 ms。次要候选为 burst 请求处理路径：20→50 并发仅从 91.277 增至 93.220 RPS，p95 从 271 增至 676 ms。负载机余量未知，两次 steady 502 也不足以定位 Caddy 或上游。建议先剖析领取批次与数据库耗时，获批后在相同业务规则下复测 20–40 并发，同窗记录客户端资源、代理和服务端 CPU/I/O。 |
+| 7 监控覆盖与责任 | 方案已有，容量告警待指定 | 沿用 [#39](https://github.com/omajilmanbo/poolduck-mail/issues/39) 的脱敏、阈值和运维邮箱路径。见[容量监控方案](../observability.md#8-issue-116-低成本性能采集方案)的采集、保留、看板与角色分工。#116 的接收人、值班安排和新增费用须人工确认；ADR-020 已批准的邮件异常通知有独立范围。 |
+| 8 前后 smoke | 部分留证 | 上文及原测量 PR 留有最终 health、登录、active、expired/suspended 拒绝、跨 tenant/location 404、取消及重扫 mock smoke。provider 模式前后已核对；逐项测试前 smoke 和单独 trial 样本在报告中缺失。新窗口须分别记录前后结果。 |
+| 9 环境和费用 | 历史边界有记录 | 9 月报告记录仅用 Staging 合成数据和 mock，未创建付费资源或真实投递。此次离线复核只验证工具，费用依据仍是 9 月 8 日记录，新窗口执行前需重新核对。 |
