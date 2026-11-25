@@ -8,7 +8,7 @@
 
 ## 2. 基础依赖
 
-- Node.js 20 LTS
+- Node.js 24 LTS
 - npm 10+
 - Docker / Docker Compose（Local PostgreSQL 16 与本地应用容器组）
 - PostgreSQL 16（Local 由 `docker-compose.yml` 提供；Staging/Production 数据库与 secrets 策略仍需按对应 Issue 明确）
@@ -173,8 +173,7 @@ Local/CI/Staging 合成验证，Production 会拒绝执行。
 
 - 使用独立数据库与邮件沙箱配置
 - cloud-init 只负责安装 Docker/Compose、配置主机用户/目录和基础防火墙，不部署应用
-- 当前由人工批准后，操作者或 Agent 通过 SSH 执行 Compose 部署命令；部署后执行 smoke test
-- 已接受的目标方案是把命令链收敛为幂等部署脚本，触发仍保留人工审批；详见 ADR-005
+- 人工批准主机、合成数据库、完整 SHA 与维护窗口后，操作者或 Agent 通过 SSH 在已准备的 checkout 运行 [Staging 部署脚本](../deploy/staging/deploy.py)。先用 `release.py prepare` 准备候选的镜像对并单独记录清单摘要。脚本在完成数据库、邮件模式预检后，从归档按 ID 启动并复核运行版本。参数、分步接管与旧格式回滚见 [Staging 手册第 3 章](staging-manual.md)。
 - 验证订阅、权限、扫码链路
 - Staging 已采用与 Local 相同的容器组基线部署到 OCI 服务器，并通过 override 增加 Caddy HTTPS reverse proxy。
 - Staging 域名和证书由 ADR-012 / Issue #107 落地；备份策略、集中监控与正式 secrets store 仍由独立 Issue 跟进，当前 secrets 位于 VM 的仓库外 `.env`。
@@ -198,29 +197,20 @@ APP_PORT=127.0.0.1:3001
 FRONTEND_PORT=127.0.0.1:3000
 POSTGRES_PORT=127.0.0.1:5432
 API_BASE_URL=https://app.poolducktest.com
-NEXT_PUBLIC_API_BASE_URL=https://app.poolducktest.com
+NEXT_PUBLIC_API_BASE_URL=/
 CORS_ORIGIN=https://app.poolducktest.com
 MAIL_PROVIDER=mock
 MAIL_MOCK_SEND_RESULT=success
+REAL_MAIL_SEND_ENABLED=false
 STAGING_TENANT_DELETE_ENABLED=true
 TENANT_CONTEXT_ENFORCED=true
 ```
 
-`POSTGRES_PASSWORD`, `DATABASE_URL`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, and
-`AUTH_IDENTITY_HASH_SECRET` must be generated on the Staging host or another approved secret store. Do not
-commit or paste those values into docs, issues, or PR descriptions.
+Set `POSTGRES_DB` and `POSTGRES_USER` explicitly. Provision the matching DB password and URL,
+tenant and platform access/refresh secrets, identity hash secret and provisioning secret through
+the approved Staging secret source. The complete required inputs are in section 3.3 of the manual.
 
-Current approved deployment and recovery commands (to be wrapped by the future deployment script):
-
-```bash
-cd /opt/poolduck-mail/app
-git fetch origin
-git checkout main
-git pull --ff-only origin main
-docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
-docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T backend npm run staging:seed
-docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T -e API_BASE_URL=http://reverse-proxy backend npm run smoke:api
-```
+For the current manual release, follow [Staging steps 3.2–3.8](staging-manual.md#32-准备应用目录). Select the CI-tested commit, build the application pair once on the target architecture, and retain its release manifest and image archive. Restore or roll back by verifying that manifest and loading the same two images.
 
 Before `up`, back up the Staging database and validate both the Compose model and Caddyfile. After `up`, verify the HTTPS certificate, HTTP redirect, security headers, `/healthz`, `/health`, API smoke, browser login, and that public ports `3000`, `3001`, and `5432` remain unreachable. Do not run `docker compose down -v`: the Caddy data volume contains the certificate private key and ACME state.
 
@@ -244,7 +234,7 @@ Issue #91 tenant-code cutover and rollback:
    `backend/prisma/rollback/20260728010000_add_tenant_codes.sql`。不得先删除仍被当前应用依赖的列。
 5. 恢复完成后将兼容开关重置为 `false`；不得长期保留双读。
 
-For sandbox/mock failure-path verification, temporarily set `MAIL_MOCK_SEND_RESULT=failure`, recreate Backend, run the smoke test with `API_SMOKE_EXPECT_SEND_STATUS=failed`, then restore `MAIL_MOCK_SEND_RESULT=success`.
+For deployment failure and takeover verification, the local rehearsal interrupts the seed in its own synthetic database and repeats the deployment after removing the interruption.
 
 Issue #58 deployment result for 2026-07-07 is recorded in `docs/testing/staging-smoke-2026-07-07.md`.
 
@@ -306,21 +296,9 @@ docker --version
 docker compose version
 cd /opt/poolduck-mail/app
 if [ ! -d .git ]; then git clone https://github.com/omajilmanbo/poolduck-mail.git .; fi
-git fetch origin
-git checkout main
-git pull --ff-only origin main
-docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
-docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T backend npm run staging:seed
-docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T \
-  -e API_BASE_URL=http://reverse-proxy \
-  -e API_SMOKE_TENANT_CODE=5A6E000001 \
-  -e API_SMOKE_IDENTIFIER=staging-active-operator \
-  -e API_SMOKE_PASSWORD=PoolduckStaging123! \
-  -e API_SMOKE_LOCATION_ID=5A6E0001 \
-  -e 'API_SMOKE_SCAN_CODE=E01K0ABC20001' \
-  -e 'API_SMOKE_UNMAPPED_SCAN_CODE=E01K0ABC29999' \
-  backend npm run smoke:api
 ```
+
+Restore the approved Staging environment and database backup. Retrieve the last verified release archive and its independently recorded manifest digest, then follow sections 3.2–3.6 of the [Staging manual](staging-manual.md) starting with checkout and `verify`.
 
 On OCI Ubuntu 22.04 arm64, cloud-init installs `docker.io` and `docker-compose-v2`. If an older host has Docker but `docker compose version` returns `unknown command`, repair it with:
 
@@ -360,10 +338,11 @@ AUTH_LOGIN_MAX_PER_TENANT=100
 AUTH_LOGIN_MAX_PER_IDENTIFIER=10
 AUTH_LOGIN_MAX_PER_COMPOSITE=8
 API_BASE_URL=https://app.poolducktest.com
-NEXT_PUBLIC_API_BASE_URL=https://app.poolducktest.com
+NEXT_PUBLIC_API_BASE_URL=/
 CORS_ORIGIN=https://app.poolducktest.com
 MAIL_PROVIDER=mock
 MAIL_MOCK_SEND_RESULT=success
+REAL_MAIL_SEND_ENABLED=false
 LOG_LEVEL=info
 TENANT_CONTEXT_ENFORCED=true
 ```
@@ -371,6 +350,8 @@ TENANT_CONTEXT_ENFORCED=true
 If `docker compose` still reports Docker socket permission errors immediately after cloud-init, either open a new SSH session so the `ubuntu` group membership is refreshed, or use `sudo docker compose ...` for that deployment session.
 
 ## 8. Staging deployment design (Issue #37, historical baseline)
+
+For the active HTTPS configuration and release procedure, use sections 3.2–3.8 of the [Staging manual](staging-manual.md).
 
 This section preserves the design baseline accepted in Issue #37. The current executable deployment entry is section 5 and `docs/staging-manual.md`; where commands or URLs differ, use those current sources. This historical section does not authorize cloud resource changes, GitHub secrets, DNS records, or production automation.
 
@@ -491,6 +472,8 @@ Agents must stop and report blockers instead of guessing when any of the followi
 ## 9. Database migration operations (Issue #21)
 
 Backend database migrations are managed with Prisma.
+
+After a migration, restore to the current schema, or synthetic seed, run the manual integrity check on the offline database before accepting the result. See the [operations guide for the command, exit codes and failure procedure](operation.md#offline-integrity).
 
 Local development flow:
 

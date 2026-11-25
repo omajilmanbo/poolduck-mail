@@ -18,7 +18,9 @@
     "capacity:plan": "node scripts/capacity-load-test.mjs --plan",
     "capacity:run": "node scripts/capacity-load-test.mjs",
     "capacity:report": "node scripts/capacity-db-report.mjs",
-    "capacity:test": "node --test scripts/capacity-load-test.test.mjs",
+    "capacity:reconcile": "node scripts/capacity-load-test.mjs --reconcile",
+    "capacity:io": "node scripts/capacity-io-report.mjs",
+    "capacity:test": "node --test scripts/capacity-load-test.test.mjs scripts/capacity-reconcile.test.mjs scripts/capacity-io-report.test.mjs",
     "platform:admin": "npm run prisma:generate && node scripts/platform-admin.mjs",
     "platform:seed": "npm run prisma:generate && node scripts/platform-synthetic-seed.mjs",
     "smoke:api": "node scripts/api-smoke-test.mjs",
@@ -30,6 +32,8 @@
     "start:dev": "ts-node-dev --respawn --transpile-only src/main.ts",
     "test": "jest --runInBand",
     "test:db": "npm run prisma:generate && node scripts/prisma-smoke-test.mjs",
+    "test:location-person-restore": "npm run build && node scripts/location-person-restore-test.mjs",
+    "test:scan-action-history": "node --test scripts/synthetic-subscriptions-test-db.test.mjs && npm run build && node scripts/scan-action-history-test.mjs",
     "test:synthetic-subscriptions": "npm run build && node scripts/synthetic-subscriptions-test.mjs",
     "validate:adr017": "npm run build && node scripts/adr017-release-validation.mjs",
     "test:oci-pacing-pg16": "npm run build && node scripts/oci-pacing-pg16-test.mjs",
@@ -44,11 +48,13 @@
     "test:record-retention": "npm run build && node scripts/record-retention-transaction-test.mjs",
     "test:tenant-retention-large": "npm run build && node scripts/tenant-retention-large-test.mjs",
     "retention:counts": "node scripts/record-retention-counts.mjs",
+    "integrity:check": "node scripts/offline-integrity.mjs",
+    "test:offline-integrity": "node scripts/offline-integrity-test.mjs",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
   },
   "engines": {
-    "node": ">=20"
+    "node": "24.x"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.8",

@@ -43,6 +43,21 @@ ADR-006/ADR-013 已 Accepted；运行时已由 #110–#112 在本地实现。pla
 - `npm.cmd run platform:admin -- disable`：禁用并撤销全部 Session
 - `npm.cmd run platform:admin -- recover`：仅在没有其他 active 账号时恢复并轮换密码
 
+成功提交后，CLI 会在结果行末尾输出 `request_id=<UUID>`。在运维执行记录中保存该标识和操作时间。标识由 CLI 为每次执行随机生成，与邮箱、密码和命令输入无关。拒绝或事务失败时，命令返回非零退出码，没有成功结果行或成功审计。
+
+核对合成执行记录时，从成功结果行复制 UUID。具有既有数据库只读权限的运维人员可在对应数据库的 `psql` 会话中按完整值查找：
+
+```sql
+\set cli_request_id '<从成功结果行复制的 UUID>'
+SELECT id, action, result, created_at
+FROM platform_audit_logs
+WHERE request_id = :'cli_request_id'
+  AND resource_type = 'platform_admin'
+  AND result = 'success';
+```
+
+预期返回一行，`action` 与执行的 `platform.admin.bootstrap`、`platform.admin.rotate`、`platform.admin.disable` 或 `platform.admin.recover` 对应。旧审计的 `request_id` 可能为空，可按动作、执行时间和平台管理员内部 ID 核对。
+
 Local/CI/Staging 合成账号另用显式 opt-in 的 `platform:seed`；Production 会拒绝该 seed。平台
 控制台地址为 `/platform/login`，账号恢复不提供 UI。
 
@@ -83,6 +98,8 @@ Local/CI/Staging 合成账号另用显式 opt-in 的 `platform:seed`；Productio
 - 审计与导出不得包含邮件正文、密码、token 或 provider secret。ADR-024 规定 Production 租户业务审计和平台审计各按自身创建时间保留一个日历年；日常清理默认关闭，启用后才执行到期销毁。待删除租户的业务审计和关联平台操作审计在流程结束前冻结。
 
 ## 6. 地点与人员停用
+
+地点和人员均以数据库实际写入恢复结果的时间为准。请在 14 天截止前完成恢复。即使在截止前点击“恢复”，写入时已到截止时间也会收到期限已结束的提示，包括后台尚未清理对象的情况。
 
 - tenant_manager 新建地点时只填写名称；8 位地点 ID 由服务端生成，类型固定为 `location`，页面不再要求代码或 office/school 分类
 - “停用”只暂停人员业务使用；“删除”进入 14 天恢复期。恢复入口紧邻删除状态并显示剩余天数，

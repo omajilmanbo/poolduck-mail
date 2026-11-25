@@ -20,7 +20,7 @@
 
 - Terraform 与 cloud-init 负责主机 bootstrap；cloud-init 不克隆应用、不注入真实 secrets、不启动应用 Compose。
 - 应用部署步骤由独立、幂等的部署脚本承载，并在人工批准后由操作者或 Agent 触发。
-- 部署脚本落地前，`docs/staging-manual.md` 的 SSH/Compose 命令链是当前执行入口。
+- 在已准备的 checkout 运行 [Staging 部署脚本](../deploy/staging/deploy.py)，详见 [SSH 部署与人工恢复手册](staging-manual.md)。
 - 人工 Runbook 永久保留，用于脚本失败、恢复、排障和回滚。
 - `workflow_dispatch` 属于后续独立 Issue；当前不启用无审批自动发布。
 

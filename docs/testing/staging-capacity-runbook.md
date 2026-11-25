@@ -21,6 +21,7 @@ PostgreSQL、等待队列和 mock provider 的容量，不表示真实邮件供�
 | `npm run capacity:run` | 从 VM 外执行 steady/burst/mixed 负载 | 只输出聚合延迟、状态和吞吐 |
 | `npm run capacity:report` | 从测试时间窗聚合 mail job、领取延迟、积压和数据库等待 | 不输出人员、邮箱、动作码、token 或内部资源 ID |
 | `deploy/staging/capacity-monitor.sh` | 每 5 秒采样宿主机和容器资源 | TSV，仅含资源数值和容器名 |
+| `npm run capacity:io` | 离线汇总 TSV 中负载窗口内各容器的 Block I/O 与网络增量 | JSON，按方向输出字节数、有效覆盖时长及整窗结果 |
 
 容量账号密码必须通过 `CAPACITY_TEST_PASSWORD` 或 `CAPACITY_TEST_PASSWORD_FILE` 注入，长度至少 16；
 不得进入 Git、命令输出、报告或 Issue。推荐把随机密码保存于仓库外、权限 `0600` 的临时文件，
@@ -99,7 +100,7 @@ CAPACITY_MONITOR_SAMPLES=420 deploy/staging/capacity-monitor.sh \
   /opt/poolduck-mail/metrics/capacity/<run-id>-host.tsv
 ```
 
-负载机按场景设置 `CAPACITY_SCENARIO`、`CAPACITY_STEPS`、`CAPACITY_STEP_SECONDS` 后运行
+负载机同步记录本机 CPU、可用内存与时段。若权限不足，在报告填“负载机余量未知”。按场景设置 `CAPACITY_SCENARIO`、`CAPACITY_STEPS`、`CAPACITY_STEP_SECONDS` 后运行
 `npm run capacity:run`。保存 JSON 输出时权限设为 `0600`；先人工扫描敏感信息，再决定是否提交聚合摘要。
 
 测试结束后把负载输出中的 `run_started_at/run_finished_at` 传给 backend 容器：
@@ -109,6 +110,20 @@ sudo docker compose -f docker-compose.yml -f docker-compose.staging.yml exec -T 
   -e CAPACITY_RUN_STARTED_AT=<UTC> -e CAPACITY_RUN_FINISHED_AT=<UTC> \
   backend npm run capacity:report
 ```
+
+### 6.1 离线汇总容器 I/O
+
+在有权读取该 TSV 的机器上，从 `backend/` 运行以下命令。每次只给一个连续的实际负载窗口，采用负载 JSON 的 UTC 起止时间（保留毫秒），分开处理不同场景、暂停与恢复期。
+
+```sh
+npm run --silent capacity:io -- "$TSV" "$START_UTC" "$END_UTC" 10
+```
+
+末项为允许的最大相邻采样间隔（秒）。默认采集器每轮执行 Docker stats 后睡眠 5 秒，上例取 10 秒容许采集耗时。按实际采集设置选择并在报告保留该参数。工具只对两个时间戳均在窗内的相邻样本求差。容器缺行、超长间隔、方向缺值或未知单位会中断该方向的覆盖。若某个计数比上次可读值低，工具跳过两者之间该容器所有方向的增量，从新基线继续。仅凭容器名和舍入计数无法识别采样间未显现的重建；如果另有 restart/recreate 记录，按实例生命周期分窗。
+
+- 每个 Compose 容器分别输出 `block_read`、`block_write`、`network_rx`、`network_tx`。Docker 的 B/kB/MB 等使用十进制，KiB/MiB 等使用二进制，展示值本身经过舍入。
+- `observed_bytes` 是有效采样区间的估算增量，`covered_ms` 是这些区间时长之和。没有有效区间时字节数为 `null`。两端及中间区间全部覆盖时才给出 `window_bytes`，其余填“未知”，保留可用的部分观测。
+- TSV 使用每轮执行 Docker stats 前的 UTC 秒级标签。窗口覆盖按标签计算，实际读取计数的时刻受采集耗时影响。根盘使用率来自 `df`，容器 Block I/O 读写字节来自 Docker。卷 IOPS、I/O 延迟和饱和度需独立证据。
 
 ## 7. 恢复与结果模板
 

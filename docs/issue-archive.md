@@ -85,6 +85,9 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #173 | 将记录销毁接入租户删除窗口冻结、恢复和终结清理 | 本地实现；生产终结清理开关与合成数据库验收待审核 | 是，涉及整租户数据生命周期 |
 | #174 | 为平台管理员提供独立的平台审计查询 API | 本地实现；平台鉴权与白名单测试通过，发布待验收 | 是，涉及平台授权与审计可见范围 |
 | #175 | 在平台控制台新增平台审计页面 | 本地实现；筛选分页与空状态测试通过，发布待验收 | 是，涉及平台审计展示 |
+| [#181](https://github.com/omajilmanbo/poolduck-mail/issues/181) | 在授权扫码历史中提示去重窗口外的连续同动作异常 | ADR-008 §3 | 现行规则已确认 |
+| [#182](https://github.com/omajilmanbo/poolduck-mail/issues/182) | 为管理员追加错扫修正与漏扫补录，保留原始记录并提供受控 API | ADR-008 §5 | 新增保留规则须确认 |
+| [#183](https://github.com/omajilmanbo/poolduck-mail/issues/183) | 在授权历史中展示修正依据、有效动作并提供管理员操作入口 | 依赖 #182 的契约 | 现行角色边界已确认 |
 | #195 | 修复本地跨端口平台控制台读取邮件模式与环境失败 | 本地实现；实时状态见 GitHub | 否，沿用现有只读接口与权限 |
 | #231 | 修复租户登录页首次加载时已输入的租户码被清空 | 实时状态见 GitHub | 否 |
 
@@ -99,11 +102,11 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | [#219](https://github.com/omajilmanbo/poolduck-mail/issues/219) | 缺陷 | 用 PostgreSQL 时间显示新扫码和历史记录的可取消窗口 | 实时状态见 GitHub | 否，沿用 ADR-017 |
 | #38 | 运维 | PostgreSQL 备份与恢复策略 | 当前跟进项，实时状态见 GitHub | 是 |
 | #39 | 运维 | 日志、监控与告警策略 | 策略文档已完成并关闭；集中采集与真实告警仍待独立实施 | 是 |
-| #225 | 工程改进 | Node.js 主版本与 Staging 工件晋级 | 24 与 22 均通过[本地复验](testing/issue-225-node-runtime-2026-11-20.md)，实施与实际 Staging 验收分别跟踪 | 负责人于 2026-11-24 批准 D20 A，采用 Node 24。[ADR-030](decisions/ADR-030-node-runtime-major.md) |
+| #225 | 工程改进 | Node.js 主版本与 Staging 工件晋级 | 24 与 22 均通过复验；Node 24 实施候选的[CI、双镜像复载及 mock 回执](testing/issue-225-node-runtime-2026-11-20.md)已记录，实际 Staging 验收待发布窗口 | 负责人于 2026-11-24 批准 D20 A，采用 Node 24。[ADR-030](decisions/ADR-030-node-runtime-major.md) |
 | #227 | 运维 | 从 Backend 完成响应核对 API 5xx 比率和 p95 连续超时 | 已以本机合成请求验证单进程聚合日志及开关 | 目标环境采集、通知和恢复另行确认 |
 | #170 | 工程改进 | 为 ADR-024 的一年记录销毁建立到期索引、外键矩阵和安全迁移 | 本地实现；合成数据库迁移验收待审核 | 是，涉及数据迁移 |
 | #176 | 运维 | 完成 ADR-024 的销毁发布验收、告警与文档对齐 | 文档、计数工具与合成验收矩阵本地准备；PostgreSQL 端到端验收待执行 | 是，生产启用须人工审核 |
-| #116 | 运维 | 测量 OCI Always Free 单机的最大可持续并发扫码发信容量，并检讨低成本性能监控方案 | 2026-09-24 steady/burst/mixed-success 已完成：端到端上限 20 并发、约 19 次有效扫码/秒；provider-failure 与常驻告警落地待后续 Issue | 是，告警接收方、worker 扩容方案与 provider-failure 窗口仍需人工批准 |
+| #116 | 运维 | Staging 单机扫码容量与低成本监控 | 9 月 24 日 mock/success 实测 20 并发、19.211 次有效扫码/秒；[九项验收复核](testing/staging-capacity-result-2026-09-24.md)记录历史 I/O、负载机余量和次要瓶颈归因缺口，TSV 窗口汇总已用合成样本验证 | 是，provider-failure 及补测窗口、容量告警接收人/值班和新增费用待批准 |
 | #141 | 基础设施 | 为 Staging Compute 配置最小范围的 Instance Principal 发信权限 | 仓库已复核最小授权声明；历史预检已验证容器身份，#145 受控单封已验证当次正向 SubmitEmail；非目标身份和 sender 的拒绝效果待验证，凭据边界仅完成相关源码复核。保持开放。见 [准入清单第 2 节](oci-mail-staging-readiness.md) | 是，后续真实发信窗口独立批准 |
 | #142 | 运维 | 建立 OCI Email Domain 投递日志、指标、告警和人工对账路径 | 90 天日志、九条告警与订阅已应用，合成告警已送达，受控单封出现 accept/relay；合并与验收待 PR | 是，日志与告警责任已确认 |
 | #143 | 工程改进 | 对齐 OCI provider 的环境、部署、运维和测试文档 | 执行卡及详细参考已人工审阅，单封与回滚验证完成；本地修订待 PR | 是，后续真实窗口另批 |
@@ -112,7 +115,9 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | #152 | 运维 | 用合成数据与 mock/fake provider 执行短时高并发扫码和邮件队列测试 | 待批准测试参数；真实 OCI 压测不在默认范围 | 是，需批准窗口和停止阈值 |
 | #153 | 运维 | 在新批准窗口进行有限的小批量 Staging OCI 真实发信与回滚验收 | [本机逐封对账与回退演练](testing/local-mail-batch-reconciliation-2026-11-19.md)已完成；Staging 批次四条 AC 待当次窗口留证 | 是，须再次批准真实发信窗口和收件数据 |
 | #217 | 缺陷 | 在扫码历史、邮件任务查询和工作台中区分配额拒绝、发信认证拒绝和停止投递 | #85 的隔离验收复现配额与发信认证拒绝；独立审查及实时状态见 GitHub | 否，沿用 ADR-019 的分类与现有重试规则 |
-| 待建 Issue | 工程改进 | 按 ADR-005 实现幂等 Staging 部署脚本；人工审批触发，并保留恢复 Runbook | 已批准设计，尚未实现 | 是 |
+| [#192](https://github.com/omajilmanbo/poolduck-mail/issues/192) | 缺陷 | 用 CLI 输出的 `request_id` 精确定位四种平台账号操作的成功审计 | 本地实现并验证，待 PR 人工审查 | 是，按已接受的 ADR-013 和现有审查流程 |
+| #211 | 运维 | 在迁移、恢复和 seed 后离线核对人员与地点租户、公码唯一、删除状态及成功历史关联 | PostgreSQL 合成验证及运行入口见[离线完整性检查](operation.md#offline-integrity) | 是，数据工具需独立人工审查 |
+| [#213](https://github.com/omajilmanbo/poolduck-mail/issues/213) | 工程改进 / 运维 | 按 ADR-005 实现可重跑的人工 Staging 部署脚本并保留分步恢复手册 | 实现和本机隔离验收；真实发布另批窗口 | 是 |
 | #86 | 基础设施 | Staging 域名、TLS 与访问控制 | ADR-012 Accepted；总体跟踪，Caddy/Let's Encrypt 实施见 #107 | 是 |
 | #107 | 基础设施 | 按 ADR-012 为 Staging 接入 Caddy、Let's Encrypt、HTTPS 路由与证书续期 | 已完成并部署；80/443 公网入口于 2026-07-29 人工批准 | 是，ADR-012 与公网入口已确认 |
 | #187 | 工程改进 | 稳定地点创建后重新启用的前端 CI 回归用例 | 实时状态见 GitHub | 否 |
@@ -159,3 +164,4 @@ ADR-004 的 Follow-up 保留了 ADR 编写时的旧编号映射。后续实际�
 | Issue | 摘要 | 阶段备注 | 人工确认 |
 |---|---|---|---|
 | [#222](https://github.com/omajilmanbo/poolduck-mail/issues/222) | 在工作台的订阅过期或暂停提示中补充联系管理员的指引 | 实时状态见 GitHub | 合并须经独立审查 |
+| [#224](https://github.com/omajilmanbo/poolduck-mail/issues/224) | 在数据库最终更新时核对地点与人员的 14 天恢复期限 | ADR-011、#104 的修正，实时状态见 GitHub | 合并须经独立审查 |

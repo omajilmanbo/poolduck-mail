@@ -117,8 +117,10 @@ try {
 
     await platform.post(`/api/platform/tenants/${tenant.tenantCode}/delete`)
       .send({ password: adminPassword }).expect(201);
-    await db.$executeRaw`UPDATE tenants SET deleted_at = (clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 year' - INTERVAL '1 second',
-      purge_after = (clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 second' WHERE id = ${tenant.id}::uuid`;
+    await db.$executeRaw`UPDATE tenants
+      SET deleted_at = stamp.deleted_at, purge_after = stamp.deleted_at + INTERVAL '1 year'
+      FROM (SELECT (CURRENT_TIMESTAMP(3) AT TIME ZONE 'UTC') - INTERVAL '1 year' - INTERVAL '1 second' AS deleted_at) AS stamp
+      WHERE id = ${tenant.id}::uuid`;
     await platform.post(`/api/platform/tenants/${tenant.tenantCode}/restore`).send({}).expect(409);
     const purge = app.get(PlatformTenantPurgeService);
     assert.equal((await purge.purgeDueTenant(tenant.id)).outcome, 'purged');

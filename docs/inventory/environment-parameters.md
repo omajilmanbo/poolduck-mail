@@ -48,7 +48,7 @@ This section refines the Staging column for the current OCI Always Free MVP desi
 | `APP_PORT` | `3001` | No | Yes | May change only if a reverse proxy/container mapping requires it. |
 | `FRONTEND_PORT` | `3000` | No | Yes | May change only if a reverse proxy/container mapping requires it. |
 | `API_BASE_URL` | `https://app.poolducktest.com` | No | Yes | Caddy routes public traffic on the same origin. |
-| `NEXT_PUBLIC_API_BASE_URL` | Same public base URL as `API_BASE_URL` | No | Yes | Current frontend code reads this variable. |
+| `NEXT_PUBLIC_API_BASE_URL` | Local backend URL; Staging uses `/` (same origin) | No | Yes | Current frontend code reads this variable. |
 | `CORS_ORIGIN` | `https://app.poolducktest.com` | No | Yes | Wildcard CORS is not allowed. |
 | `POSTGRES_DB` | `poolduck_mail_staging` or implementation-specific Staging DB name | No | Yes | Real DB name may be local-only if it exposes tenant/account details. |
 | `POSTGRES_USER` | `Secret/Placeholder` | Yes | Yes | Do not commit real user names if considered sensitive. |
