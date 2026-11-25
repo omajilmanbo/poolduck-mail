@@ -1,15 +1,28 @@
 import { config } from "dotenv";
 import { Client } from "pg";
+import { activeTenant, stagingPassword } from "./staging-fixture.mjs";
 
 config({ path: "../.env", quiet: true });
 config({ path: ".env", quiet: true });
 config({ path: ".env.local", override: true, quiet: true });
 
-const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:3001";
+const staging = process.argv.includes("--staging");
+if (staging && (process.env.APP_ENV !== "staging" || process.env.MAIL_PROVIDER !== "mock" ||
+    process.env.REAL_MAIL_SEND_ENABLED !== "false" || !process.env.DATABASE_URL)) {
+  throw new Error("Staging smoke requires the synthetic Staging database and mock mail.");
+}
+const API_BASE_URL = staging ? "http://127.0.0.1:3001" : process.env.API_BASE_URL ?? "http://localhost:3001";
 const expectedCreateStatus = process.env.API_SMOKE_EXPECT_SEND_STATUS ?? "waiting";
 let sessionCookie = "";
 
-const smoke = {
+const smoke = staging ? {
+  tenantCode: activeTenant.tenantCode,
+  identifier: activeTenant.operator.username,
+  password: stagingPassword,
+  locationId: activeTenant.location.code,
+  scanCode: `E${activeTenant.mapping.scanCode}`,
+  unmappedScanCode: "E01K0ABC29999",
+} : {
   tenantCode:
     process.env.API_SMOKE_TENANT_CODE ??
     "10CA000001",

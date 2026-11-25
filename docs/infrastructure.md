@@ -99,9 +99,9 @@ Issue #35 只负责基础设施设计，当时不包含以下实现；后续 Iss
 
 ## 6. 当前待补强项
 
-Local Compose、Staging IaC 与人工批准的 Compose 部署 Runbook 已经落地。当前仍需补强：
+Local Compose、Staging IaC 与人工批准的部署入口已经落地。部署脚本和分步恢复方式见 [Staging 手册](staging-manual.md)。当前仍需补强：
 
-1. 按 ADR-005 实现 Staging 幂等部署脚本，并保持人工审批触发。
+1. 在单独批准的真实 Staging 窗口核验 #213 的部署与恢复流程。
 2. Staging/Production secrets 管理规范落地。
 3. Staging 与 Production HTTPS 证书、域名和访问控制。
 4. 数据库备份与恢复演练（#38）。

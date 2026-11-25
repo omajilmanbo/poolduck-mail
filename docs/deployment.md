@@ -173,8 +173,7 @@ Local/CI/Staging 合成验证，Production 会拒绝执行。
 
 - 使用独立数据库与邮件沙箱配置
 - cloud-init 只负责安装 Docker/Compose、配置主机用户/目录和基础防火墙，不部署应用
-- 当前由人工批准后，操作者或 Agent 通过 SSH 执行 Compose 部署命令；部署后执行 smoke test
-- 已接受的目标方案是把命令链收敛为幂等部署脚本，触发仍保留人工审批；详见 ADR-005
+- 人工批准主机、合成数据库、完整 SHA 与维护窗口后，操作者或 Agent 通过 SSH 在已准备的 checkout 运行 [Staging 部署脚本](../deploy/staging/deploy.py)。先用 `release.py prepare` 准备候选的镜像对并单独记录清单摘要。脚本在完成数据库、邮件模式预检后，从归档按 ID 启动并复核运行版本。参数、分步接管与旧格式回滚见 [Staging 手册第 3 章](staging-manual.md)。
 - 验证订阅、权限、扫码链路
 - Staging 已采用与 Local 相同的容器组基线部署到 OCI 服务器，并通过 override 增加 Caddy HTTPS reverse proxy。
 - Staging 域名和证书由 ADR-012 / Issue #107 落地；备份策略、集中监控与正式 secrets store 仍由独立 Issue 跟进，当前 secrets 位于 VM 的仓库外 `.env`。
@@ -202,13 +201,14 @@ NEXT_PUBLIC_API_BASE_URL=/
 CORS_ORIGIN=https://app.poolducktest.com
 MAIL_PROVIDER=mock
 MAIL_MOCK_SEND_RESULT=success
+REAL_MAIL_SEND_ENABLED=false
 STAGING_TENANT_DELETE_ENABLED=true
 TENANT_CONTEXT_ENFORCED=true
 ```
 
-`POSTGRES_PASSWORD`, `DATABASE_URL`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, and
-`AUTH_IDENTITY_HASH_SECRET` must be generated on the Staging host or another approved secret store. Do not
-commit or paste those values into docs, issues, or PR descriptions.
+Set `POSTGRES_DB` and `POSTGRES_USER` explicitly. Provision the matching DB password and URL,
+tenant and platform access/refresh secrets, identity hash secret and provisioning secret through
+the approved Staging secret source. The complete required inputs are in section 3.3 of the manual.
 
 For the current manual release, follow [Staging steps 3.2–3.8](staging-manual.md#32-准备应用目录). Select the CI-tested commit, build the application pair once on the target architecture, and retain its release manifest and image archive. Restore or roll back by verifying that manifest and loading the same two images.
 
@@ -234,7 +234,7 @@ Issue #91 tenant-code cutover and rollback:
    `backend/prisma/rollback/20260728010000_add_tenant_codes.sql`。不得先删除仍被当前应用依赖的列。
 5. 恢复完成后将兼容开关重置为 `false`；不得长期保留双读。
 
-For sandbox/mock failure-path verification, temporarily set `MAIL_MOCK_SEND_RESULT=failure`, recreate Backend, run the smoke test with `API_SMOKE_EXPECT_SEND_STATUS=failed`, then restore `MAIL_MOCK_SEND_RESULT=success`.
+For deployment failure and takeover verification, the local rehearsal interrupts the seed in its own synthetic database and repeats the deployment after removing the interruption.
 
 Issue #58 deployment result for 2026-07-07 is recorded in `docs/testing/staging-smoke-2026-07-07.md`.
 
@@ -342,6 +342,7 @@ NEXT_PUBLIC_API_BASE_URL=/
 CORS_ORIGIN=https://app.poolducktest.com
 MAIL_PROVIDER=mock
 MAIL_MOCK_SEND_RESULT=success
+REAL_MAIL_SEND_ENABLED=false
 LOG_LEVEL=info
 TENANT_CONTEXT_ENFORCED=true
 ```

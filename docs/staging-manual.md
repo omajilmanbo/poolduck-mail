@@ -5,8 +5,7 @@
 ## 1. 使用边界
 
 - 当前默认平台：OCI Always Free 单 VM + Docker Compose。
-- 当前默认部署触发：人工批准后，由操作者或 Agent 通过 SSH 执行 Compose 命令链。
-- 目标部署入口：独立、幂等的 Staging 部署脚本；脚本实现前继续使用本文 Runbook。
+- 人工批准维护窗口、目标主机、专用数据库和完整提交后，操作者或 Agent 通过 SSH 在准备好的 checkout 根目录运行 [部署脚本](../deploy/staging/deploy.py)。第 3 章同时保留底层命令供人工接管。
 - 当前默认数据库：Staging VM 内 PostgreSQL 16。
 - 常规部署与 smoke 使用 `mock`。`sandbox` 不是有效的 selector。
 - 当前禁止事项：真实客户数据、生产数据库快照、生产密钥、真实 Gmail/Workspace/SMTP 凭据、OAuth refresh token。
@@ -208,8 +207,8 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml exec postgres
 示例命令：
 
 ```bash
-grep '^MAIL_PROVIDER=' .env
-docker compose ps mail-sandbox
+# 在第 3.3 节准备好批准参数后执行
+python3 deploy/staging/deploy.py "${approval[@]}" --check
 ```
 
 通过标准：
@@ -236,12 +235,12 @@ docker compose ps mail-sandbox
 
 ## 3. 当前部署与人工恢复步骤
 
-本章是部署脚本实现前的当前应用部署入口，也是未来脚本失败时的恢复、排障或重新部署 Runbook。自动化脚本必须保持与本章步骤一致。
+在批准的单主机、单 checkout 上执行。第 3.1–3.3 节准备部署，脚本成功或失败都报告阶段。第 3.4–3.7 节用于人工分步执行、排障和回滚。
 
 ### 3.1 部署前检查
 
 1. 完成第 2 章所有确认项。
-2. 确认本次部署 commit SHA。
+2. 在维护窗口记录已批准的完整 40 位 commit SHA、主机、Compose 项目 `poolduck-mail-staging` 和专用库名。与负责人确认数据均为合成数据，检查备份及恢复可用性。
 3. 确认没有未授权 Production 资源、Production secrets 或真实客户数据。
 4. 确认当前应用代码支持本次 smoke test 所需 endpoint；尚未实现的 endpoint 记录为实现阻塞项。
 
@@ -337,7 +336,7 @@ ssh -i .secrets\staging\id_ed25519 ubuntu@<staging-public-ip> "chmod 600 <stagin
 - `DATABASE_URL=postgresql://<staging-user>:<staging-password>@postgres:5432/<staging-db>`
 - `JWT_SECRET=<staging-only-random-secret>`
 - `REFRESH_TOKEN_SECRET=<staging-only-random-secret>`
-- `MAIL_PROVIDER=mock`
+- `MAIL_PROVIDER=mock`、`REAL_MAIL_SEND_ENABLED=false`
 - `MAIL_MOCK_SEND_RESULT=success`
 - `STAGING_TENANT_DELETE_ENABLED=true`（仅在已批准的 Staging 主机启用；删除时重新验平台管理员密码，直接物理清理且不可恢复）
 - `LOG_LEVEL=info`
@@ -345,6 +344,27 @@ ssh -i .secrets\staging\id_ed25519 ubuntu@<staging-public-ip> "chmod 600 <stagin
 - `NEXT_PUBLIC_API_BASE_URL=/`
 - `CORS_ORIGIN=https://app.poolducktest.com`
 - `TENANT_CONTEXT_ENFORCED=true`
+
+显式设置 `POSTGRES_DB`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`AUTH_IDENTITY_HASH_SECRET` 和第 3.9 节的三个独立平台密钥。使用 Compose 的单行 dotenv 赋值，每键一行。为兼容现有 Compose 拼接方式，数据库密码可用随机十六进制。连接串使用内部 `postgres:5432`，省略查询参数。保管真实值，记录中只写核对结果。
+
+**人工部署入口**。首次切换前按 3.2 保存现有应用镜像对、配置和可恢复备份，核对队列与数据库兼容性。按 3.4 的准备步骤为获准提交和目标架构生成一次归档，将清单 SHA-256 存入独立发布记录。启动或重跑时，从该记录选取同一归档和摘要。目标机需要 Bash、Python 3、Git、curl、支持 `!reset` 和 `up --wait` 的 Compose，以及已有的 PG16 和 Caddy 镜像。
+
+```bash
+set -eu
+: "${CANDIDATE:?set the approved full commit SHA}" "${STAGING_DB:?set the approved database name}"
+approval=(--approved-synthetic-staging --commit "$CANDIDATE" --database "$STAGING_DB")
+python3 deploy/staging/deploy.py "${approval[@]}" --check
+: "${RELEASE:?select the prepared artifact directory}" "${LOCK_SHA256:?set the digest from the selected release record}"
+pair=(--release "$RELEASE" --lock-sha256 "$LOCK_SHA256")
+python3 deploy/staging/deploy.py "${approval[@]}" "${pair[@]}"
+# 仅在需要初始化或修复合成夹具时，给上一条命令追加 --seed。
+```
+
+`--check` 只读检查源码与基础 Compose 模型。实际部署先做同一预检，再验证并载入发布归档。预检拒绝脏 checkout、缺项、示例密钥、Shell 的 Compose/应用覆盖和非本机 Docker endpoint。脚本在内存中核对 Compose 展开后的 backend、postgres 环境与批准的数据库，检查 mock、关闭真实投递、内部端口、后端 API/CORS origin 和前端同源路径 `/`。最终模型只允许用清单里的两个镜像 ID 取代构建定义；启动使用 `--no-build --pull never`，随后核对运行容器的 ID 和 Node 补丁版本。它无法从库名判断数据来源，数据与窗口仍由操作者确认。整个窗口固定 checkout 和 `.env`，只使用这一份目录；并行脚本会因目录锁返回非零。
+
+release 或 start 失败时回到 3.4 核验同一份归档。Backend 启动时可能已应用迁移，保留原卷并检查迁移状态。首次切回旧格式时，按 3.7 恢复 3.2 保存的旧镜像、配置和校验记录。
+
+退出码 0 表示所选流程通过，1 表示失败，2 表示参数错误，Ctrl-C 通常返回 130。记录首个失败阶段和手册节号，先检查当前服务和迁移状态。构建和下游命令的原始输出可能含敏感信息，脚本仅转述阶段、服务、结果与退出码。人工排查只在受控终端查看必要信息，禁止粘贴展开的 Compose 配置、容器完整 inspect、连接串或原始日志。
 
 ### 3.4 构建和启动服务
 
@@ -374,8 +394,8 @@ set -eu
 python3 deploy/staging/release.py verify "$RELEASE" "$LOCK_SHA256"
 dc() { docker compose -p "${STAGING_PROJECT:-poolduck-mail-staging}" -f docker-compose.yml -f docker-compose.staging.yml -f "$RELEASE/images.compose.yml" "$@"; }
 dc config --quiet
-docker run --rm -v "$PWD/deploy/staging/caddy:/etc/caddy:ro" caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-dc up -d --no-build --wait
+docker run --rm --pull=never --network none -v "$PWD/deploy/staging/caddy:/etc/caddy:ro" caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+dc up -d --no-build --pull never --wait
 dc ps
 for service in backend frontend; do
   docker inspect --format '{{.Image}}' "$(dc ps -q "$service")"
@@ -404,13 +424,20 @@ dc exec -T backend npm run staging:seed
 
 ### 3.6 Smoke test
 
-基础检查：
+脚本逐个检查四项服务的健康状态、Caddy 到 `/health` 与 `/healthz` 的路由，再在 backend 内通过回环地址调用现有 API smoke。人工接管可执行：
+
+```bash
+dc exec -T backend npm run smoke:api -- --staging >/dev/null 2>&1
+```
+
+成功的主动冒烟会登录合成 operator，产生新的 session、审计和幂等记录，以及 2 条扫码、2 个邮件任务（取消和 mock 成功各 1 个）、1 次 mock 调用。迁移重跑不新增已完成迁移，seed 按固定身份更新，可能刷新时间戳和密码哈希。失败或中断的 smoke 可能已写入部分记录，重跑前先核对；不要删除已有历史。仅需检查服务状态时使用 `dc ps` 和健康端点。
+
+另在批准的真实 Staging 窗口完成人工入口检查：
 
 ```bash
 curl -I http://app.poolducktest.com
 curl -fsS https://app.poolducktest.com/health
 curl -fsS https://app.poolducktest.com/healthz
-docker compose -f docker-compose.yml -f docker-compose.staging.yml logs --since=15m reverse-proxy
 echo | openssl s_client -connect app.poolducktest.com:443 -servername app.poolducktest.com 2>/dev/null \
   | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
 ```
@@ -470,7 +497,7 @@ test "$(pg_volume)" = "$(cat "$LEGACY/postgres.volume")"
 | DB | `Staging PostgreSQL only` |
 | Mail provider | `mock` |
 | 测试命令 | `<commands>` |
-| 测试结果 | `pass` / `blocked` / `failed` |
+| 测试结果 | 退出码、四项服务状态、migration、seed（执行/跳过）、health、smoke 及人工待验项 |
 | 阻塞项 | `<none-or-details>` |
 
 ### 3.9 Platform control plane 初始化、恢复与紧急关闭（ADR-013）
@@ -503,17 +530,9 @@ test "$(pg_volume)" = "$(cat "$LEGACY/postgres.volume")"
 
 截至 Issues #110–#113 的本地完成范围，本 Runbook 尚未在 Staging 执行。
 
-## 4. 部署脚本与 workflow_dispatch 后续步骤
+## 4. 本机复核与后续触发方式
 
-无审批自动部署不在当前范围内。按 ADR-005，后续应先实现部署脚本，再评估 `workflow_dispatch`：
-
-1. 创建独立 Issue，实现幂等部署脚本并验证失败退出码、重复执行和恢复路径。
-2. 脚本检查目标环境、`.env`、commit、Compose config、migration、health 和 smoke，且不打印 secrets。
-3. 脚本稳定后，确认允许 Agent 修改 `.github/workflows/`。
-4. 创建 GitHub `staging` environment，并由人工在 UI 中配置 Staging secrets。
-5. workflow 调用同一个部署脚本，不复制另一套 SSH/Compose 逻辑。
-6. 首先只开放 `workflow_dispatch`，并保留环境审批。
-7. 是否启用 `main` 或 tag 自动发布，必须另行人工决定。
+本机隔离项目的命令、故障注入、恢复和留存核对见[演练说明](testing/staging-deploy-rehearsal.md)。后续若采用 `workflow_dispatch`，须另行批准触发与 GitHub Environment 权限，沿用相同部署入口。
 
 ## 5. 阻塞项报告模板
 

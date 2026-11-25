@@ -220,3 +220,7 @@ volumes:
 - `incomplete`（退出 2）表示没有可验证关联、缺少回执或数据库证据。被中途终止且没有对账末行的档位也记为缺证据。无回执且找不到幂等记录只说明当前快照未能确认提交。
 
 幂等键哈希、event/job ID 和预期租户地点只在进程内使用。数据库按档使用只读快照，收件快照比较只返回布尔值。只保留计数和结果，不保存逐行数据。取消窗口、worker 领取和逐项 provider 故障仍依原计划另行取证。
+
+## 10. Staging 部署脚本的本地验证
+
+在仓库根目录运行 `python -B deploy/staging/rehearsal/verify.py` 核对目标保护。增加 `--run` 在全新本机 Compose 项目执行实际部署、重跑、中断与恢复。环境准备、留存断言及记录格式见[隔离演练](testing/staging-deploy-rehearsal.md)。
