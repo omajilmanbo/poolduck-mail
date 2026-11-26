@@ -80,7 +80,27 @@
 - #166 迁移回滚守卫：在相同本地环境下，于 `backend/` 执行 `npm run test:tenant-deletion-rollback`；
   脚本仅在临时数据库中验证三层 rollback 对删除中状态的拒绝，以及状态清空后的逆序回滚。
 - Frontend：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`
-- 关键 E2E：准备合成 seed 并启动前后端后，在 `frontend/` 执行 `npm run test:e2e`
+- 关键 E2E：按下节从干净构建启动前端并运行浏览器用例。
+
+### 关键 E2E 本机复现
+
+1. 为每组准备独立的本机 PostgreSQL 16 合成数据库，并将 `DATABASE_URL` 指向该库。安装 Chrome 并设置
+   `PLAYWRIGHT_CHANNEL=chrome`。从仓库根目录执行 `npm --prefix backend ci`、`npm --prefix backend run db:deploy`、
+   `npm --prefix backend run local:seed` 和 `npm --prefix frontend ci`。
+2. 在构建前设置 `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001`，在无 `.next` 的检出中执行
+   `npm --prefix frontend run build`。设置 `CORS_ORIGIN=http://localhost:3000`、合成 `JWT_SECRET`、
+   `MAIL_PROVIDER=mock` 和 `REAL_MAIL_SEND_ENABLED=false`。分别以 `MAIL_MOCK_SEND_RESULT=success` / `failure`
+   启动独立的 `npm --prefix backend run start:dev` 进程，并以 `npm --prefix frontend run start` 启动前端。
+3. 等待 `/health` 和 `/healthz` 返回 200。验证冷启动时，让下面的 Playwright 用例发出新进程的首次 `/audit`
+   请求。它同时检查 HTTP 200 和下载文件的原始字节。
+
+   ```sh
+   npm --prefix frontend run test:e2e -- e2e/history-exports.spec.ts -g 'tenant audit CSV still downloads the original bytes'
+   ```
+
+4. 为 `success` / `failure` 分别设置 `E2E_EXPECT_MAIL_STATUS=sent` / `queued`，各执行一遍
+   `npm --prefix frontend run test:e2e`。
+   CI 每组都保留前后端日志及失败时的 Playwright trace。
 
 ## 4. 开发文档入口
 

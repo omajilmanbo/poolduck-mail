@@ -189,10 +189,13 @@ jobs:
       - name: Install frontend
         run: npm --prefix frontend ci
 
+      - name: Build frontend for E2E
+        run: npm --prefix frontend run build
+
       - name: Start application
         run: |
           npm --prefix backend run start:dev > backend-e2e.log 2>&1 &
-          npm --prefix frontend run dev > frontend-e2e.log 2>&1 &
+          npm --prefix frontend run start > frontend-e2e.log 2>&1 &
           for attempt in {1..30}; do
             if curl --fail --silent http://localhost:3001/health >/dev/null && curl --fail --silent http://localhost:3000/healthz >/dev/null; then
               exit 0

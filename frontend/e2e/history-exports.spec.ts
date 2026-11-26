@@ -138,7 +138,8 @@ test('tenant audit CSV still downloads the original bytes', async ({ page }) => 
   await page.route('**/api/audit-logs/export?*', (route) =>
     route.fulfill({ contentType: 'text/csv; charset=utf-8', body: csv }),
   );
-  await page.goto('/audit');
+  const auditPage = await page.goto('/audit');
+  expect(auditPage?.status()).toBe(200);
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: '导出 CSV' }).click();
   const file = await download;
