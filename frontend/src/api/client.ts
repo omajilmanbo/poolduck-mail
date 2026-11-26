@@ -123,6 +123,8 @@ export type ScanHistoryItem = {
   scan_type: string;
   same_action_warning: SameActionWarning | null;
   action: ScanAction;
+  /** Current effective action. Canceled scans return null. */
+  effective_action: ScanAction | null;
   action_source: ScanActionSource;
   received_at: string;
   status: MailJobStatus;

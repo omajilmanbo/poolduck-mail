@@ -35,8 +35,8 @@ const exports = [
   {
     label: '扫描',
     resource: 'scan-events',
-    header: '"received_at","location","person_code","person_name","action","action_source","status","effective_status","canceled_at","mail_job_id"',
-    row: '"2026-11-19T00:00:00Z","Synthetic Office","01K0ABC80001","Synthetic Person","entry","person_action_code","sent","active","","mail-1"',
+    header: '"received_at","location","person_code","person_name","action","action_source","status","effective_status","canceled_at","mail_job_id","effective_action"',
+    row: '"2026-11-19T00:00:00Z","Synthetic Office","01K0ABC80001","Synthetic Person","entry","person_action_code","sent","active","","mail-1","entry"',
   },
   {
     label: '邮件',

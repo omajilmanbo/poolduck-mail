@@ -148,7 +148,7 @@ describe('history workspace', () => {
 
   it('shows the server warning on a filtered row and clears its evidence when access is revoked', async () => {
     let revoked = false;
-    const exit = { ...historyItem('sent'), action: 'exit' as const, same_action_warning: {
+    const exit = { ...historyItem('sent'), action: 'exit' as const, effective_action: 'exit' as const, same_action_warning: {
       previous_scan_event_id: 'previous-exit', previous_received_at: '2026-07-19T23:59:55Z',
     } };
     vi.stubGlobal('fetch', createWorkspaceFetch((url) => {
@@ -168,11 +168,13 @@ describe('history workspace', () => {
   });
 
   it.each([
-    ['exit', 'person_action_code', '离开'],
-    ['unknown', 'legacy_unknown', '动作未知'],
-  ] as const)('renders persisted %s history as %s', async (action, source, label) => {
-    const item = historyItem('sent');
+    ['sent', 'exit', 'person_action_code', '离开'],
+    ['sent', 'unknown', 'legacy_unknown', '动作未知'],
+    ['canceled', 'exit', 'person_action_code', '离开'],
+  ] as const)('renders %s history with original action %s', async (status, action, source, label) => {
+    const item = historyItem(status);
     item.action = action;
+    item.effective_action = status === 'canceled' ? null : action;
     item.action_source = source;
     if (item.mail_job) {
       item.mail_job.action = action;
@@ -540,6 +542,7 @@ function historyItem(status: ScanHistoryItem['status'], errorMessage = status ==
     scan_type: 'entry',
     same_action_warning: null,
     action: 'entry',
+    effective_action: status === 'canceled' ? null : 'entry',
     action_source: 'person_action_code',
     received_at: '2026-07-20T01:02:03.000Z',
     status,
