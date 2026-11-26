@@ -60,6 +60,7 @@
 - #211 离线数据库验收见[运维手册的完整性检查步骤](operation.md#offline-integrity)。在 `backend/` 执行 `npm run test:offline-integrity` 可复现迁移回填及反例测试。设置 `APP_ENV=test` 或 `local`，将 `DATABASE_URL` 指向专用本机 PostgreSQL。测试账号需能创建临时数据库和 pgcrypto 扩展。脚本在新建的数据库内构造样本，结束时删除测试库。
 - ADR-023 租户生命周期迁移：在 `APP_ENV=local` 或 `test`、`DATABASE_URL` 指向本机 PostgreSQL 时，
   于 `backend/` 执行 `npm run test:tenant-lifecycle-migration`；脚本仅创建并删除随机命名的合成测试数据库。
+- 在相同本地环境下，于 `backend/` 运行 `npm run test:platform-provisioning-transaction`。脚本在临时数据库中经平台登录和 HTTP 开通，用独立 SQL 连接核对事务中途失败、提交时拒绝、审计不可写、同键重放和租户码碰撞重试，结束后删除该库。
 - 合成订阅：在 `APP_ENV=local` 或 `test`、`DATABASE_URL` 指向本机 PostgreSQL 时，于 `backend/` 执行
   `npm run test:synthetic-subscriptions`。连接字符串仅接受本机回环地址和可选的 `?schema=public`。
   脚本在随机命名的临时数据库中运行三个种子脚本，验证旧记录续期、跨年与重复执行，完成后删除该数据库。

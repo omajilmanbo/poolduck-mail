@@ -18,6 +18,7 @@ ADR-006/ADR-013 已 Accepted；运行时已由 #110–#112 在本地实现。pla
   创建平台账号，不得提交默认凭据
 - 人工创建 tenant 时显式填写 name、首个 tenant_manager 邮箱、trial/active 时间区间和
   正整数 location_limit；tenant_code 和一次性临时密码由服务端生成
+- 开通遇到 500 或网络中断时，保留该次请求标识，请运维核对结果。控制台再次提交表单会生成新幂等键，请先确认原请求的结果。[开通失败排查](operation.md#31-平台租户开通失败)
 - 临时密码只显示一次；可在该区域一键下载包含初始 tenant name、`tenant_code`、
   首个 tenant_manager 邮箱和临时密码的 UTF-8 CSV。CSV 包含明文凭据，必须安全保存、
   通过批准的安全渠道交付，并在交付后删除；首次登录仍强制改密

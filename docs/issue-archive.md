@@ -102,6 +102,7 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | [#219](https://github.com/omajilmanbo/poolduck-mail/issues/219) | 缺陷 | 用 PostgreSQL 时间显示新扫码和历史记录的可取消窗口 | 实时状态见 GitHub | 否，沿用 ADR-017 |
 | #38 | 运维 | PostgreSQL 备份与恢复策略 | 当前跟进项，实时状态见 GitHub | 是 |
 | #39 | 运维 | 日志、监控与告警策略 | 策略文档已完成并关闭；集中采集与真实告警仍待独立实施 | 是 |
+| [#207](https://github.com/omajilmanbo/poolduck-mail/issues/207) | 缺陷 | 按安全请求标识追溯平台租户开通的已确认回滚 | 实时状态见 GitHub，排查步骤见运维手册 §3.1 | 是，平台审计变更需独立人工审查 |
 | #225 | 工程改进 | Node.js 主版本与 Staging 工件晋级 | 24 与 22 均通过复验；Node 24 实施候选的[CI、双镜像复载及 mock 回执](testing/issue-225-node-runtime-2026-11-20.md)已记录，实际 Staging 验收待发布窗口 | 负责人于 2026-11-24 批准 D20 A，采用 Node 24。[ADR-030](decisions/ADR-030-node-runtime-major.md) |
 | #170 | 工程改进 | 为 ADR-024 的一年记录销毁建立到期索引、外键矩阵和安全迁移 | 本地实现；合成数据库迁移验收待审核 | 是，涉及数据迁移 |
 | #176 | 运维 | 完成 ADR-024 的销毁发布验收、告警与文档对齐 | 文档、计数工具与合成验收矩阵本地准备；PostgreSQL 端到端验收待执行 | 是，生产启用须人工审核 |
