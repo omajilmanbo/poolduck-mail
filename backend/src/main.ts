@@ -1,6 +1,8 @@
 import 'reflect-metadata';
+import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
+import { observeApiResponses } from './api-metrics';
 import { AppModule } from './app.module';
 
 export const CORS_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
@@ -18,12 +20,11 @@ export function parseCorsOrigins(rawOrigin: string | undefined) {
   return origins;
 }
 
-export async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+export function configureHttp(app: INestApplication) {
   const configService = app.get(ConfigService);
-  const port = Number(configService.get<string>('APP_PORT') ?? 3001);
   const corsOrigins = parseCorsOrigins(configService.get<string>('CORS_ORIGIN'));
 
+  if (configService.get<string>('API_METRICS_ENABLED') === 'true') observeApiResponses(app);
   app.enableCors({
     origin: corsOrigins,
     methods: CORS_METHODS,
@@ -36,7 +37,12 @@ export async function bootstrap() {
     ],
     credentials: true,
   });
+}
 
+export async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  configureHttp(app);
+  const port = Number(app.get(ConfigService).get<string>('APP_PORT') ?? 3001);
   await app.listen(port);
 }
 
