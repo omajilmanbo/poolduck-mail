@@ -101,6 +101,7 @@ GitHub Issue 是 Scope、状态、验收标准和讨论记录的权威来源；�
 | [#201](https://github.com/omajilmanbo/poolduck-mail/issues/201) | 产品缺陷 | 防止人员详情回填覆盖姓名和邮箱草稿，支持读取失败后重试 | 合成数据已复现，实时状态见 GitHub | 是，修复须审查人员资料交互 |
 | [#219](https://github.com/omajilmanbo/poolduck-mail/issues/219) | 缺陷 | 用 PostgreSQL 时间显示新扫码和历史记录的可取消窗口 | 实时状态见 GitHub | 否，沿用 ADR-017 |
 | #38 | 运维 | PostgreSQL 备份与恢复策略 | 当前跟进项，实时状态见 GitHub | 是 |
+| [#204](https://github.com/omajilmanbo/poolduck-mail/issues/204) | 缺陷 | 租户审计列表可按当前查询条件前后翻页，提交新条件回到首页 | 复用 #78 的租户查询游标，每页最多 25 条；实时状态见 GitHub | 否 |
 | #39 | 运维 | 日志、监控与告警策略 | 策略文档已完成并关闭；集中采集与真实告警仍待独立实施 | 是 |
 | #225 | 工程改进 | Node.js 主版本与 Staging 工件晋级 | 24 与 22 均通过复验；Node 24 实施候选的[CI、双镜像复载及 mock 回执](testing/issue-225-node-runtime-2026-11-20.md)已记录，实际 Staging 验收待发布窗口 | 负责人于 2026-11-24 批准 D20 A，采用 Node 24。[ADR-030](decisions/ADR-030-node-runtime-major.md) |
 | #227 | 运维 | 从 Backend 完成响应核对 API 5xx 比率和 p95 连续超时 | 已以本机合成请求验证单进程聚合日志及开关 | 目标环境采集、通知和恢复另行确认 |
