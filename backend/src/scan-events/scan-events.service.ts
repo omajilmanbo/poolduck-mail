@@ -207,6 +207,7 @@ export class ScanEventsService {
         'effective_status',
         'canceled_at',
         'mail_job_id',
+        'effective_action',
       ],
       ...rows.map((row) => {
         const item = this.historyFields(row);
@@ -221,6 +222,7 @@ export class ScanEventsService {
           item.effective_status,
           item.canceled_at ?? '',
           item.mail_job?.mail_job_id ?? '',
+          item.effective_action ?? '',
         ];
       }),
     ].map((row) => row.map((value) => this.csvCell(String(value))).join(',')).join('\r\n');
@@ -1042,6 +1044,7 @@ export class ScanEventsService {
     const status: ScanHistoryStatus =
       (mailJob?.status as ScanHistoryStatus | undefined) ?? 'queued';
     const canceled = row.canceledAt !== null || status === 'canceled';
+    const action = row.action as ScanAction;
 
     return {
       scan_event_id: row.id,
@@ -1054,7 +1057,8 @@ export class ScanEventsService {
       scan_code: row.scanCode,
       scan_type: row.scanType,
       same_action_warning: warning ?? null,
-      action: row.action as ScanAction,
+      action,
+      effective_action: canceled ? null : action,
       action_source: row.actionSource as ScanActionSource,
       received_at: row.receivedAt.toISOString(),
       status,

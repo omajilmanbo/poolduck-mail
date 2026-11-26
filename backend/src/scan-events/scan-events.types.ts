@@ -48,6 +48,7 @@ export type ScanEventHistoryItem = {
   scan_type: string;
   same_action_warning: SameActionWarning | null;
   action: ScanAction;
+  effective_action: ScanAction | null;
   action_source: ScanActionSource;
   received_at: string;
   status: ScanHistoryStatus;

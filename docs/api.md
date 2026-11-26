@@ -309,6 +309,7 @@ ADR-017 当前契约：
 - 租户边界：仅使用 JWT 中的 `tenant_id`；其他 tenant 的 ID 统一返回 `SCAN_EVENT_NOT_FOUND`
 - location 授权：operator 只能查询已分配 location 的记录；撤销后单条与列表查询立即不可见
 - 出参：`scan_event_id`, `location_id`, `location_name`, `person_code`, `person_name`, `scan_code`, `scan_type`, `action`, `action_source`, `received_at`, `status`, `mail_job`；关联 `mail_job` 同时返回固化的 `action`
+- 详情与列表项的 `action` 保留原始动作，`effective_action` 返回该行当前有效的 `entry`、`exit` 或 `unknown`。已取消行返回 `effective_action=null`，关联邮件的 `mail_job.action` 仍为创建任务时的动作快照。缺少人员关联的行可保留已记录的方向，地点、人员与前序记录的判断遵循下述提示规则。
 - 详情与列表每项都返回 `same_action_warning`。服务端在仍保留的同租户、地点和人员映射记录中，按 `received_at, id` 取紧邻的前一条有效进入或离开。动作相同则返回前述对象，否则为 `null`。已取消、未知动作或缺少人员/地点关联的记录均跳过。邮件投递成功与否不决定动作有效性。
 - 列表和详情中 `mail_job.error_message` 的安全展示规则与邮件任务列表和详情一致。
 
@@ -363,6 +364,7 @@ ADR-017 当前契约：
 - `GET /api/audit-logs`：仅 `tenant_manager`，按当前 tenant 查询；支持时间、action、result、resource_type、cursor、limit
 - `GET /api/audit-logs/export`：仅 `tenant_manager`，必须提供 `created_from` / `created_to`，范围不超过 31 天，最多 5000 行
 - `GET /api/scan-events/export` 与 `GET /api/mail-jobs/export`：仅 `tenant_manager`，相同的时间范围限制，可按 location/status 过滤
+- 扫码 CSV 在 `mail_job_id` 后追加 `effective_action`。已取消行的该列为空，旧记录中无法确认的动作显示 `unknown`。
 - CSV 使用 UTC ISO 时间；扫码与邮件导出包含 `person_code`、`action`、`action_source` 及固化的名称上下文，邮件邮箱格式为 `a***z@example.com`，不含正文、provider secret 或完整邮箱；所有导出动作写审计
 
 ## 6. Platform Control（ADR-013，#111 已实现）
