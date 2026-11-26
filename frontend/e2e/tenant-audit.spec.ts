@@ -28,9 +28,9 @@ const cursor = 'synthetic+cursor=/';
 
 test.use({ timezoneId: 'Asia/Tokyo' });
 
-async function login(page: Page, identifier: string) {
+async function login(page: Page, identifier: string, tenantCode = '10CA000001') {
   await page.goto('/');
-  await page.getByTestId('tenant-code-input').fill('10CA000001');
+  await page.getByTestId('tenant-code-input').fill(tenantCode);
   await page.getByTestId('identifier-input').fill(identifier);
   await page.getByTestId('password-input').fill('PoolduckLocal123!');
   await page.getByTestId('login-submit').click();
@@ -94,11 +94,13 @@ test('tenant audit pages through the submitted filters and resets on a new query
 });
 
 test('operator cannot open tenant audit or use the list API with a cursor', async ({ page }) => {
-  await login(page, 'local-operator');
+  // Use the separately seeded operator to isolate the workspace login quota.
+  await login(page, 'suspended-operator', '10CA000002');
   await expect(page.getByRole('link', { name: '审计', exact: true })).toHaveCount(0);
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
   const denied = await page.request.get(`${apiBase}/api/audit-logs?cursor=${encodeURIComponent(cursor)}`);
   expect(denied.status()).toBe(403);
+  expect(await denied.json()).toMatchObject({ code: 'ROLE_FORBIDDEN' });
 
   await page.goto('/audit');
   await expect(page).toHaveURL('/');
